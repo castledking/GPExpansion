@@ -1,13 +1,13 @@
 <p align="center">
-<img alt="GPExpansion" width=100% height=auto src="https://raw.githubusercontent.com/castledking/GPExpansion/main/assets/banner.png">
+<img alt="GPExpansion" width=100% height=auto src="https://repository-images.githubusercontent.com/68339667/9b3f7c00-ce61-11ea-82d1-208eaa0606e8">
 </p>
 
 <h1 align="center">Extend GriefPrevention with rental signs, mailboxes, and more</h1>
 
 <p align="center">
-<a href="https://github.com/castledking/GPExpansion/releases"><img alt="Downloads" src="https://img.shields.io/badge/Downloads-green" height="50px"></a>
-<a href="#features"><img alt="Features" src="https://img.shields.io/badge/Features-blue" height="50px"></a>
-<a href="#configuration"><img alt="Config" src="https://img.shields.io/badge/Config-gray" height="50px"></a>
+<a href="https://github.com/castledking/GPExpansion/releases"><img alt="Downloads" src="https://img.shields.io/badge/Downloads-green" height="70px"></a>
+<a href="https://github.com/castledking/GPExpansion/wiki"><img alt="Docs" src="https://img.shields.io/badge/Docs-gray?logo=readthedocs&logoColor=white" height="70px"></a>
+<a href="#support"><img alt="Get Help" src="https://img.shields.io/badge/Get%20Help-yellow?logo=amazoncloudwatch&logoColor=white" height="70px"></a>
 </p>
 
 GPExpansion adds powerful features to [GriefPrevention](https://github.com/GriefPrevention/GriefPrevention) including **rental signs**, **claim mailboxes**, **sign protection**, and more — all while maintaining the self-service philosophy.
