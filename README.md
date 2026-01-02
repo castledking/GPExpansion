@@ -40,16 +40,67 @@ Give each claim a mailbox where other players can deposit items.
 - Storage warnings when mailbox is nearly full
 - Purchasable via signs with configurable prices
 
+### � Sell Signs
+Allow claim owners to sell their claims to other players using signs.
+- Set claim prices
+- Automatic transfer of ownership of claim
+- Supports both Vault economy and item-based payments
+
 ### 🔒 Sign Protection
 Protect your rental and mailbox signs from unauthorized modification.
 - Admin-only sign breaking for active rentals
 - Automatic cleanup on sign removal
 
-### 📋 Claim Management
+### �📋 Claim Management
 - `/claim name` - Set claim name
 - `/claim ban` - Ban players from your claims
 - `/claim unban` - Unban players from your claims
 - `/mailbox` - Manage your mailboxes
+
+---
+
+## Sign Formats
+
+### Rental Signs
+```
+[rent claim]
+<id>
+<ecoType>
+<ecoAmt>;<renewalTime>;<maxTime>
+```
+- `<id>` - Do `/claimlist` to get this
+- `<ecoType>` - Accepts `money`, `claimblocks`, `exp` or `item`
+- `<ecoAmt>` - The cost per renewal period
+- `<renewalTime>` - Duration of each rental period
+- `<maxTime>` - Maximum total rental duration
+
+> **Note:** Hold the item you wish to set in your offhand while creating the sign.
+
+### Sell Signs
+```
+[sell claim]
+<id>
+<ecoType>
+<ecoAmt>
+```
+- `<id>` - Do `/claimlist` to get this
+- `<ecoType>` - Accepts `money`, `claimblocks`, `exp` or `item`
+- `<ecoAmt>` - The sale price
+
+> **Note:** Hold the item you wish to set in your offhand while creating the sign.
+
+### Mailbox Signs
+```
+[mailbox]
+<id>
+<ecoType>
+<ecoAmt>
+```
+- `<id>` - Do `/claimlist` to get this
+- `<ecoType>` - Accepts `money`, `claimblocks`, `exp` or `item`
+- `<ecoAmt>` - The mailbox purchase price
+
+> **Note:** You need to create a 1x1x1 3D subdivision in your claim with a supported container type (barrel, hopper, chest, etc.).
 
 ---
 
