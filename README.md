@@ -1,0 +1,132 @@
+<p align="center">
+<img alt="GPExpansion" width=100% height=auto src="https://raw.githubusercontent.com/castledking/GPExpansion/main/assets/banner.png">
+</p>
+
+<h1 align="center">Extend GriefPrevention with rental signs, mailboxes, and more</h1>
+
+<p align="center">
+<a href="https://github.com/castledking/GPExpansion/releases"><img alt="Downloads" src="https://img.shields.io/badge/Downloads-green" height="50px"></a>
+<a href="#features"><img alt="Features" src="https://img.shields.io/badge/Features-blue" height="50px"></a>
+<a href="#configuration"><img alt="Config" src="https://img.shields.io/badge/Config-gray" height="50px"></a>
+</p>
+
+GPExpansion adds powerful features to [GriefPrevention](https://github.com/GriefPrevention/GriefPrevention) including **rental signs**, **claim mailboxes**, **sign protection**, and more — all while maintaining the self-service philosophy.
+
+Haven't heard of GriefPrevention 3D Subdivisions? Get it [here](https://github.com/castledking/GriefPrevention3D) to enable mailbox support. This is a fork that replaces the GriefPrevention jar.
+
+---
+
+## Supported Platforms
+**Spigot, Paper, Purpur, and Folia**
+
+Requires [GriefPrevention](https://github.com/GriefPrevention/GriefPrevention) and optionally [Vault](https://github.com/MilkBowl/Vault) for economy features.
+
+Optionally, replace GriefPrevention with [GriefPrevention3D](https://github.com/castledking/GriefPrevention3D) for mailbox support.
+
+---
+
+## Features
+
+### 🏠 Rental Signs
+Allow claim owners to rent out their claims to other players using signs.
+- Set rental prices and durations
+- Automatic trust/untrust on rental start/expiry
+- Supports both Vault economy and item-based payments
+
+### 📬 Claim Mailboxes
+Give each claim a mailbox where other players can deposit items.
+- Owners have full access to retrieve items
+- Non-owners can only deposit, not withdraw
+- Storage warnings when mailbox is nearly full
+- Purchasable via signs with configurable prices
+
+### 🔒 Sign Protection
+Protect your rental and mailbox signs from unauthorized modification.
+- Admin-only sign breaking for active rentals
+- Automatic cleanup on sign removal
+
+### 📋 Claim Management
+- `/claim info` - View detailed claim information
+- `/claim list` - List all your claims
+- `/mailbox` - Manage your mailboxes
+
+---
+
+## Installation
+
+1. Download the latest release
+2. Place `GPExpansion.jar` in your `plugins` folder
+3. Ensure GriefPrevention is installed
+4. (Optional) Install Vault for economy support
+5. Restart your server
+6. Configure `plugins/GPExpansion/config.yml`
+
+---
+
+## Configuration
+
+The plugin creates a `config.yml` with sensible defaults. Key options include:
+
+```yaml
+# Debug settings
+debug:
+  # Enable debug logging for GPBridge to troubleshoot claim/subclaim detection
+  enabled: true
+  
+# Default limits for sign creation (can be overridden by permissions)
+defaults:
+  # Default maximum number of sell signs a player can create
+  max-sell-signs: 5
+  # Default maximum number of rent signs a player can create
+  max-rent-signs: 5
+  # Default maximum number of mailbox signs a player can create
+  max-mailbox-signs: 5
+  
+# Permission tracking settings
+permission-tracking:
+  # Enable tracking of player permissions for sign limits
+  enabled: true
+  # How often to check for permission changes (in minutes)
+  check-interval: 5
+```
+
+---
+
+## Permissions
+
+| Permission | Description |
+|------------|-------------|
+| `griefprevention.sign.create.rent` | Create rental signs |
+| `griefprevention.sign.create.mailbox` | Create mailbox signs |
+| `griefprevention.sign.create.sell` | Create sell signs |
+| `griefprevention.sign.use.rent` | Use rental signs |
+| `griefprevention.sign.use.mailbox` | Use mailbox signs |
+| `griefprevention.sign.use.sell` | Use sell signs |
+| `griefprevention.admin` | Admin commands and sign management |
+
+---
+
+## Support
+
+- [Issue Tracker](https://github.com/castledking/GPExpansion/issues) - Report bugs or problems
+- [Discussions](https://github.com/castledking/GPExpansion/discussions) - Feature requests and questions
+- [Wiki](https://github.com/castledking/GPExpansion/wiki) - Detailed documentation and guides
+- [Discord](https://discord.gg/pCKdCX6nYr) - Join our community
+
+---
+
+## Building from Source
+
+```bash
+git clone https://github.com/castledking/GPExpansion.git
+cd GPExpansion
+mvn clean install
+```
+
+The compiled jar will be in `target/`.
+
+---
+
+<p align="center">
+<i>Built to extend GriefPrevention with love ❤️</i>
+</p>

@@ -1,0 +1,151 @@
+name: GPExpansion
+version: 0.1.0
+main: dev.towki.gpexpansion.GPExpansionPlugin
+description: GriefPrevention Expansion
+api-version: '1.20'
+author: Towki
+website: https://discord.com/invite/pCKdCX6nYr
+softdepend: [GriefPrevention, Vault, VaultUnlocked]
+folia-supported: true
+
+# Register our listeners
+listeners:
+  - dev.towki.gpexpansion.listener.SignListener
+  - dev.towki.gpexpansion.listener.BanEnforcementListener
+  - dev.towki.gpexpansion.listener.CommandInterceptListener
+
+# Register our commands
+commands:
+  claim:
+    description: Claim management command
+    usage: /<command>
+    permission: griefprevention.claims
+  confirm:
+    description: Confirm actions
+    usage: /<command>
+    permission: griefprevention.sign.confirm
+  gpx:
+    description: GPExpansion admin commands
+    usage: /<command>
+    permission: griefprevention.admin
+  mailbox:
+    description: Mailbox management command
+    usage: /<command>
+    permission: griefprevention.sign.use.mailbox
+
+permissions:
+  griefprevention.claims:
+    description: Allows access to /claim
+    default: true
+
+  griefprevention.claim.name:
+    description: Allows using /claim name
+    default: op
+
+  griefprevention.claim.name.color.*:
+    description: Allows specific colors via & codes and MiniMessage tags
+    default: op
+
+  griefprevention.claim.name.format.*:
+    description: Allows specific formats via & codes and MiniMessage tags
+    default: op
+
+  griefprevention.claim.name.color.gradient:
+    description: Allows gradient/rainbow MiniMessage tags
+    default: op
+
+  griefprevention.sign.create.rent:
+    description: Allows creating rent signs
+    default: op
+
+  griefprevention.sign.use.rent:
+    description: Allows using rent signs
+    default: true
+
+  griefprevention.sign.create.buy:
+    description: Allows creating buy signs
+    default: op
+
+  griefprevention.sign.use.buy:
+    description: Allows using buy signs
+    default: true
+
+  griefprevention.sign.create.buy.1:
+    description: Allows creating 1 buy sign
+    default: false
+
+  griefprevention.sign.create.buy.5:
+    description: Allows creating 5 buy signs
+    default: false
+
+  griefprevention.sign.create.buy.10:
+    description: Allows creating 10 buy signs
+    default: false
+
+  griefprevention.sign.create.buy.25:
+    description: Allows creating 25 buy signs
+    default: false
+
+  griefprevention.sign.create.buy.50:
+    description: Allows creating 50 buy signs
+    default: false
+
+  griefprevention.sign.create.buy.100:
+    description: Allows creating 100 buy signs
+    default: false
+
+  griefprevention.sign.create.rent.1:
+    description: Allows creating 1 rent sign
+    default: false
+
+  griefprevention.sign.create.rent.5:
+    description: Allows creating 5 rent signs
+    default: false
+
+  griefprevention.sign.create.rent.10:
+    description: Allows creating 10 rent signs
+    default: false
+
+  griefprevention.sign.create.rent.25:
+    description: Allows creating 25 rent signs
+    default: false
+
+  griefprevention.sign.create.rent.50:
+    description: Allows creating 50 rent signs
+    default: false
+
+  griefprevention.sign.create.rent.100:
+    description: Allows creating 100 rent signs
+    default: false
+
+  griefprevention.sign.create.mailbox:
+    description: Allows creating mailbox signs
+    default: op
+
+  griefprevention.sign.create.mailbox.1:
+    description: Allows creating 1 mailbox sign
+    default: false
+
+  griefprevention.sign.create.mailbox.5:
+    description: Allows creating 5 mailbox signs
+    default: false
+
+  griefprevention.sign.create.mailbox.10:
+    description: Allows creating 10 mailbox signs
+    default: false
+
+  griefprevention.sign.create.mailbox.25:
+    description: Allows creating 25 mailbox signs
+    default: false
+
+  griefprevention.sign.create.mailbox.50:
+    description: Allows creating 50 mailbox signs
+    default: false
+
+  griefprevention.sign.create.mailbox.100:
+    description: Allows creating 100 mailbox signs
+    default: false
+
+  griefprevention.admin:
+    description: Allows access to GPExpansion admin commands
+    default: op

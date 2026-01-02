@@ -1,0 +1,22 @@
+# Default configuration for GPExpansion
+
+# Debug settings
+debug:
+  # Enable debug logging for GPBridge to troubleshoot claim/subclaim detection
+  enabled: false
+
+# Default limits for sign creation (can be overridden by permissions)
+defaults:
+  # Default maximum number of sell signs a player can create
+  max-sell-signs: 5
+  # Default maximum number of rent signs a player can create
+  max-rent-signs: 5
+  # Default maximum number of mailbox signs a player can create
+  max-mailbox-signs: 5
+
+# Permission tracking settings
+permission-tracking:
+  # Enable tracking of player permissions for sign limits
+  enabled: true
+  # How often to check for permission changes (in minutes)
+  check-interval: 5
