@@ -5,8 +5,26 @@ description: GriefPrevention Expansion
 api-version: '1.20'
 author: Towki
 website: https://discord.com/invite/pCKdCX6nYr
-softdepend: [GriefPrevention, Vault, VaultUnlocked]
 folia-supported: true
+
+dependencies:
+  server:
+    GriefPrevention:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    Vault:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    VaultUnlocked:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    packetevents:
+      load: BEFORE
+      required: false
+      join-classpath: true
 
 # Register our listeners
 listeners:
@@ -29,9 +47,21 @@ commands:
     usage: /<command>
     permission: griefprevention.admin
   mailbox:
-    description: Mailbox management command
+    description: Mailbox setup wizard command
     usage: /<command>
-    permission: griefprevention.sign.use.mailbox
+    permission: griefprevention.sign.create.mailbox
+  rentclaim:
+    description: Rent claim setup wizard command
+    usage: /<command>
+    permission: griefprevention.sign.create.rent
+  sellclaim:
+    description: Sell claim setup wizard command
+    usage: /<command>
+    permission: griefprevention.sign.create.sell
+  claiminfo:
+    description: Show detailed claim information
+    usage: /<command> [claimId]
+    permission: griefprevention.claiminfo
 
 permissions:
   griefprevention.claims:
@@ -54,20 +84,70 @@ permissions:
     description: Allows gradient/rainbow MiniMessage tags
     default: op
 
+  # === RENT SIGN PERMISSIONS ===
   griefprevention.sign.create.rent:
     description: Allows creating rent signs
-    default: op
+    default: true
 
   griefprevention.sign.use.rent:
     description: Allows using rent signs
     default: true
 
-  griefprevention.sign.create.buy:
-    description: Allows creating buy signs
+  griefprevention.sign.create.rent.anywhere:
+    description: Allows creating rent signs outside own claims
     default: op
 
+  griefprevention.sign.rent.money:
+    description: Allows using money economy for rent signs
+    default: true
+
+  griefprevention.sign.rent.exp:
+    description: Allows using exp economy for rent signs
+    default: op
+
+  griefprevention.sign.rent.claimblocks:
+    description: Allows using claimblocks economy for rent signs
+    default: op
+
+  griefprevention.sign.rent.item:
+    description: Allows using item economy for rent signs
+    default: op
+
+  # === SELL/BUY SIGN PERMISSIONS ===
+  griefprevention.sign.create.sell:
+    description: Allows creating sell/buy signs
+    default: true
+
+  griefprevention.sign.use.sell:
+    description: Allows using sell/buy signs
+    default: true
+
+  griefprevention.sign.create.sell.anywhere:
+    description: Allows creating sell signs outside own claims
+    default: op
+
+  griefprevention.sign.sell.money:
+    description: Allows using money economy for sell signs
+    default: true
+
+  griefprevention.sign.sell.exp:
+    description: Allows using exp economy for sell signs
+    default: op
+
+  griefprevention.sign.sell.claimblocks:
+    description: Allows using claimblocks economy for sell signs
+    default: op
+
+  griefprevention.sign.sell.item:
+    description: Allows using item economy for sell signs
+    default: op
+
+  griefprevention.sign.create.buy:
+    description: Allows creating buy signs (alias for sell)
+    default: true
+
   griefprevention.sign.use.buy:
-    description: Allows using buy signs
+    description: Allows using buy signs (alias for sell)
     default: true
 
   griefprevention.sign.create.buy.1:
@@ -118,8 +198,33 @@ permissions:
     description: Allows creating 100 rent signs
     default: false
 
+  # === MAILBOX SIGN PERMISSIONS ===
   griefprevention.sign.create.mailbox:
     description: Allows creating mailbox signs
+    default: true
+
+  griefprevention.sign.use.mailbox:
+    description: Allows using mailbox signs
+    default: true
+
+  griefprevention.sign.create.mailbox.anywhere:
+    description: Allows creating mailbox signs outside own claims
+    default: op
+
+  griefprevention.sign.mailbox.money:
+    description: Allows using money economy for mailbox signs
+    default: true
+
+  griefprevention.sign.mailbox.exp:
+    description: Allows using exp economy for mailbox signs
+    default: op
+
+  griefprevention.sign.mailbox.claimblocks:
+    description: Allows using claimblocks economy for mailbox signs
+    default: op
+
+  griefprevention.sign.mailbox.item:
+    description: Allows using item economy for mailbox signs
     default: op
 
   griefprevention.sign.create.mailbox.1:
@@ -148,4 +253,30 @@ permissions:
 
   griefprevention.admin:
     description: Allows access to GPExpansion admin commands
+    default: op
+
+  # Claim info permissions
+  griefprevention.claiminfo:
+    description: Allows using /claiminfo command
+    default: true
+
+  griefprevention.claiminfo.other:
+    description: Allows viewing info for claims you don't own
+    default: op
+
+  # Claim ban/unban permissions
+  griefprevention.claim.ban:
+    description: Allows banning players from your claims
+    default: true
+
+  griefprevention.claim.ban.other:
+    description: Allows banning players from claims you don't own
+    default: op
+
+  griefprevention.claim.unban:
+    description: Allows unbanning players from your claims
+    default: true
+
+  griefprevention.claim.unban.other:
+    description: Allows unbanning players from claims you don't own
     default: op

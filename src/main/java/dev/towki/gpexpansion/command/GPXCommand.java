@@ -23,9 +23,11 @@ import java.util.stream.Collectors;
  */
 public class GPXCommand implements CommandExecutor, TabCompleter {
     
+    private final GPExpansionPlugin plugin;
     private final SignLimitManager signLimitManager;
     
     public GPXCommand(GPExpansionPlugin plugin) {
+        this.plugin = plugin;
         this.signLimitManager = plugin.getSignLimitManager();
     }
     
@@ -37,7 +39,41 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         
-        if (args.length < 4) {
+        if (args.length == 0) {
+            showHelp(sender);
+            return true;
+        }
+        
+        String subCommand = args[0].toLowerCase();
+        
+        // Handle reload subcommand
+        if (subCommand.equals("reload")) {
+            plugin.reloadAll();
+            sender.sendMessage(plugin.getMessages().get("general.reload-success"));
+            return true;
+        }
+        
+        // Handle debug subcommand
+        if (subCommand.equals("debug")) {
+            boolean current = plugin.getConfig().getBoolean("debug.enabled", false);
+            plugin.getConfig().set("debug.enabled", !current);
+            plugin.saveConfig();
+            dev.towki.gpexpansion.gp.GPBridge.setDebug(!current);
+            if (!current) {
+                sender.sendMessage(plugin.getMessages().get("admin.debug-enabled"));
+            } else {
+                sender.sendMessage(plugin.getMessages().get("admin.debug-disabled"));
+            }
+            return true;
+        }
+        
+        // Handle max subcommand
+        if (!subCommand.equals("max")) {
+            showHelp(sender);
+            return true;
+        }
+        
+        if (args.length < 5) {
             sender.sendMessage(Component.text("Usage: /gpx max <sell|rent|mailbox> <add|take|set> <player> <amount>", NamedTextColor.RED));
             return true;
         }
@@ -150,6 +186,14 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         return true;
     }
     
+    private void showHelp(CommandSender sender) {
+        sender.sendMessage(plugin.getMessages().get("admin.gpx-help-header"));
+        sender.sendMessage(plugin.getMessages().get("admin.gpx-reload"));
+        sender.sendMessage(plugin.getMessages().get("admin.gpx-debug"));
+        sender.sendMessage(Component.text("/gpx max <sell|rent|mailbox> <add|take|set> <player> <amount>", NamedTextColor.YELLOW)
+            .append(Component.text(" - Manage sign limits", NamedTextColor.GRAY)));
+    }
+    
     @Override
     public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         // Only allow tab completion for admins
@@ -160,9 +204,11 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         List<String> completions = new ArrayList<>();
         
         if (args.length == 1) {
-            // First argument: "max"
-            if ("max".startsWith(args[0].toLowerCase())) {
-                completions.add("max");
+            // First argument: subcommands
+            for (String sub : Arrays.asList("reload", "debug", "max")) {
+                if (sub.startsWith(args[0].toLowerCase())) {
+                    completions.add(sub);
+                }
             }
         } else if (args.length == 2 && args[0].equalsIgnoreCase("max")) {
             // Second argument: "sell", "rent", or "mailbox"

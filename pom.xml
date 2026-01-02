@@ -5,7 +5,7 @@
 
   <groupId>dev.towki.gpexpansion</groupId>
   <artifactId>gpexpansion</artifactId>
-  <version>0.1.0a</version>
+  <version>0.1.1a</version>
   <name>GPExpansion</name>
   <description>GriefPrevention Expansion</description>
 
@@ -30,6 +30,14 @@
     <repository>
       <id>jitpack.io</id>
       <url>https://jitpack.io</url>
+    </repository>
+    <repository>
+      <id>codemc-releases</id>
+      <url>https://repo.codemc.io/repository/maven-releases/</url>
+    </repository>
+    <repository>
+      <id>codemc-snapshots</id>
+      <url>https://repo.codemc.io/repository/maven-snapshots/</url>
     </repository>
   </repositories>
 
@@ -69,6 +77,14 @@
       <groupId>com.github.GriefPrevention</groupId>
       <artifactId>GriefPrevention</artifactId>
       <version>5b7d6c484fd611f024ba068bd031883197dcea9a</version>
+      <scope>provided</scope>
+    </dependency>
+    
+    <!-- PacketEvents for sign GUI manipulation (optional) -->
+    <dependency>
+      <groupId>com.github.retrooper</groupId>
+      <artifactId>packetevents-spigot</artifactId>
+      <version>2.11.1</version>
       <scope>provided</scope>
     </dependency>
   </dependencies>

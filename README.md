@@ -31,7 +31,8 @@ Optionally, replace GriefPrevention with [GriefPrevention3D](https://github.com/
 Allow claim owners to rent out their claims to other players using signs.
 - Set rental prices and durations
 - Automatic trust/untrust on rental start/expiry
-- Supports both Vault economy and item-based payments
+- Supports Vault economy, experience, claim blocks, and item-based payments
+- Interactive setup wizard with `/rentclaim` command
 
 ### 📬 Claim Mailboxes
 Give each claim a mailbox where other players can deposit items.
@@ -39,68 +40,132 @@ Give each claim a mailbox where other players can deposit items.
 - Non-owners can only deposit, not withdraw
 - Storage warnings when mailbox is nearly full
 - Purchasable via signs with configurable prices
+- Interactive setup wizard with `/mailbox` command
 
-### � Sell Signs
+### 🏷️ Sell Signs
 Allow claim owners to sell their claims to other players using signs.
 - Set claim prices
 - Automatic transfer of ownership of claim
-- Supports both Vault economy and item-based payments
+- Supports Vault economy, experience, claim blocks, and item-based payments
+- Interactive setup wizard with `/sellclaim` command
 
 ### 🔒 Sign Protection
 Protect your rental and mailbox signs from unauthorized modification.
 - Admin-only sign breaking for active rentals
 - Automatic cleanup on sign removal
 
-### �📋 Claim Management
+### 📋 Claim Management
 - `/claim name` - Set claim name
 - `/claim ban` - Ban players from your claims
 - `/claim unban` - Unban players from your claims
+- `/claim info` - View detailed claim information
 - `/mailbox` - Manage your mailboxes
+- `/gpx reload` - Reload configuration and language files
+- `/gpx max` - Manage player sign creation limits
 
 ---
 
 ## Sign Formats
 
+All sign types support flexible formatting where `<ecoType>` is optional and defaults to `money` if only a number is provided.
+
 ### Rental Signs
-```
-[rent claim]
-<id>
-<ecoType>
-<ecoAmt>;<renewalTime>;<maxTime>
-```
-- `<id>` - Do `/claimlist` to get this
-- `<ecoType>` - Accepts `money`, `claimblocks`, `exp` or `item`
-- `<ecoAmt>` - The cost per renewal period
-- `<renewalTime>` - Duration of each rental period
-- `<maxTime>` - Maximum total rental duration
 
-> **Note:** Hold the item you wish to set in your offhand while creating the sign.
-
-### Sell Signs
+**Short Format** (place sign inside claim):
 ```
-[sell claim]
-<id>
+[rent]
+<renewTime>
+<ecoAmt>
+```
+OR with explicit eco type:
+```
+[rent]
+<renewTime>
 <ecoType>
 <ecoAmt>
 ```
-- `<id>` - Do `/claimlist` to get this
-- `<ecoType>` - Accepts `money`, `claimblocks`, `exp` or `item`
+
+**Condensed Format** (outside claim):
+```
+[rent]
+<id>;<ecoAmt>;<renewTime>
+```
+OR with max time:
+```
+[rent]
+<id>;<ecoAmt>;<renewTime>;<maxTime>
+```
+
+- `<id>` - Do `/claimlist` to get this (not needed for short format)
+- `<ecoType>` - Accepts `money`, `claimblocks`, `exp` or `item` (optional, defaults to `money`)
+- `<ecoAmt>` - The cost per renewal period
+- `<renewTime>` - Duration of each rental period (e.g., `1w`, `7d`, `24h`)
+- `<maxTime>` - Maximum total rental duration (optional, defaults to `<renewTime>`)
+
+> **Note:** Hold the item you wish to set in your offhand while creating an item-based sign.
+
+### Sell/Buy Signs
+
+**Short Format** (place sign inside claim):
+```
+[sell]
+<ecoAmt>
+```
+OR
+```
+[sell]
+<ecoType>
+<ecoAmt>
+```
+
+**Condensed Format** (outside claim):
+```
+[sell]
+<id>;<ecoAmt>
+```
+OR with explicit eco type:
+```
+[sell]
+<id>;<ecoType>;<ecoAmt>
+```
+
+- `<id>` - Do `/claimlist` to get this (not needed for short format)
+- `<ecoType>` - Accepts `money`, `claimblocks`, `exp` or `item` (optional, defaults to `money`)
 - `<ecoAmt>` - The sale price
 
-> **Note:** Hold the item you wish to set in your offhand while creating the sign.
+> **Note:** Hold the item you wish to set in your offhand while creating an item-based sign.
 
 ### Mailbox Signs
+
+**Condensed Format** (outside claim):
 ```
 [mailbox]
-<id>
-<ecoType>
-<ecoAmt>
+<id>;<ecoAmt>
 ```
+OR with explicit eco type:
+```
+[mailbox]
+<id>;<ecoType>;<ecoAmt>
+```
+
 - `<id>` - Do `/claimlist` to get this
-- `<ecoType>` - Accepts `money`, `claimblocks`, `exp` or `item`
+- `<ecoType>` - Accepts `money`, `claimblocks`, `exp` or `item` (optional, defaults to `money`)
 - `<ecoAmt>` - The mailbox purchase price
 
 > **Note:** You need to create a 1x1x1 3D subdivision in your claim with a supported container type (barrel, hopper, chest, etc.).
+
+### Setup Wizards
+
+Use the interactive setup wizards for easier sign creation:
+- `/rentclaim` - Start rental sign setup wizard
+- `/sellclaim` - Start sell sign setup wizard  
+- `/mailbox` - Start mailbox setup wizard
+
+The wizard will guide you through:
+1. Claim selection (automatic if standing in your claim)
+2. Payment type selection
+3. Price/duration configuration
+4. Optional auto-paste mode for sign placement
 
 ---
 
@@ -117,8 +182,9 @@ Protect your rental and mailbox signs from unauthorized modification.
 
 ## Configuration
 
-The plugin creates a `config.yml` with sensible defaults. Key options include:
+The plugin creates `config.yml` and `lang.yml` with sensible defaults. Key options include:
 
+### config.yml
 ```yaml
 # Debug settings
 debug:
@@ -142,19 +208,67 @@ permission-tracking:
   check-interval: 5
 ```
 
+### lang.yml
+All messages are customizable in `lang.yml`. The file includes sections for:
+- General messages (prefix, permissions, etc.)
+- Sign creation messages
+- Wizard prompts and errors
+- Claim command messages
+- Admin messages
+
+Use `/gpx reload` to reload both configuration files without restarting.
+
 ---
 
 ## Permissions
 
+### Sign Creation
 | Permission | Description |
 |------------|-------------|
 | `griefprevention.sign.create.rent` | Create rental signs |
-| `griefprevention.sign.create.mailbox` | Create mailbox signs |
+| `griefprevention.sign.create.rent.anywhere` | Create rental signs outside the target claim |
 | `griefprevention.sign.create.sell` | Create sell signs |
+| `griefprevention.sign.create.sell.anywhere` | Create sell signs outside the target claim |
+| `griefprevention.sign.create.mailbox` | Create mailbox signs |
+
+### Sign Usage
+| Permission | Description |
+|------------|-------------|
 | `griefprevention.sign.use.rent` | Use rental signs |
-| `griefprevention.sign.use.mailbox` | Use mailbox signs |
 | `griefprevention.sign.use.sell` | Use sell signs |
+| `griefprevention.sign.use.mailbox` | Use mailbox signs |
+
+### Economy Types
+| Permission | Description |
+|------------|-------------|
+| `griefprevention.sign.eco.money` | Create signs with money payments |
+| `griefprevention.sign.eco.exp` | Create signs with experience payments |
+| `griefprevention.sign.eco.claimblocks` | Create signs with claim block payments |
+| `griefprevention.sign.eco.item` | Create signs with item payments |
+
+### Sign Limits
+| Permission | Description |
+|------------|-------------|
+| `griefprevention.sign.limit.rent.<number>` | Limit to <number> rental signs |
+| `griefprevention.sign.limit.sell.<number>` | Limit to <number> sell signs |
+| `griefprevention.sign.limit.mailbox.<number>` | Limit to <number> mailbox signs |
+
+### Claim Management
+| Permission | Description |
+|------------|-------------|
+| `griefprevention.claim.name` | Set claim names with `/claim name` |
+| `griefprevention.claim.ban` | Ban players from claims with `/claim ban` |
+| `griefprevention.claim.unban` | Unban players from claims with `/claim unban` |
+| `griefprevention.claim.transfer` | Transfer claim ownership with `/claim transfer` |
+| `griefprevention.claim.info` | View claim info with `/claim info` |
+
+### Admin
+| Permission | Description |
+|------------|-------------|
 | `griefprevention.admin` | Admin commands and sign management |
+| `gpexpansion.admin.reload` | Use `/gpx reload` command |
+| `gpexpansion.admin.max` | Use `/gpx max` command |
+| `gpexpansion.admin.debug` | Use `/gpx debug` command |
 
 ---
 

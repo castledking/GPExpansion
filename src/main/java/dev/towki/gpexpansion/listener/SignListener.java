@@ -172,6 +172,23 @@ public class SignListener implements Listener {
         return parseRenewal(input, kind);
     }
     
+    // Check if a string looks like a number (for flexible ecoType/ecoAmt parsing)
+    private boolean looksLikeNumber(String input) {
+        if (input == null || input.isEmpty()) return false;
+        // Match integers or decimals, optionally with L suffix for levels
+        return input.matches("^\\d+(\\.\\d+)?[Ll]?$");
+    }
+    
+    // Check if a string looks like an economy kind
+    private boolean looksLikeEcoKind(String input) {
+        if (input == null || input.isEmpty()) return false;
+        String lower = input.toLowerCase();
+        return lower.startsWith("money") || lower.startsWith("$") ||
+               lower.startsWith("xp") || lower.startsWith("exp") || lower.startsWith("experience") ||
+               lower.startsWith("claimblocks") || lower.startsWith("blocks") || lower.startsWith("cb") ||
+               lower.startsWith("item");
+    }
+    
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onSignCreate(@NotNull SignChangeEvent event) {
         // Log basic sign creation info
@@ -201,10 +218,15 @@ public class SignListener implements Listener {
         
         String line0Text = LegacyComponentSerializer.legacySection().serialize(line0).trim();
         String strippedLine0 = stripLegacyColors(line0Text).trim();
-        boolean rent = strippedLine0.equalsIgnoreCase("[Rent Claim]") || strippedLine0.equalsIgnoreCase("[Rented]") || strippedLine0.equalsIgnoreCase("[Renew]");
-        boolean sell = strippedLine0.equalsIgnoreCase("[Buy Claim]") || strippedLine0.equalsIgnoreCase("[Sell Claim]");
+        // Support both [rent]/[rent claim] and [buy]/[buy claim]/[sell claim] headers
+        boolean rent = strippedLine0.equalsIgnoreCase("[Rent Claim]") || strippedLine0.equalsIgnoreCase("[Rent]") 
+                    || strippedLine0.equalsIgnoreCase("[Rented]") || strippedLine0.equalsIgnoreCase("[Renew]");
+        boolean sell = strippedLine0.equalsIgnoreCase("[Buy Claim]") || strippedLine0.equalsIgnoreCase("[Buy]")
+                    || strippedLine0.equalsIgnoreCase("[Sell Claim]") || strippedLine0.equalsIgnoreCase("[Sell]");
         boolean mailbox = strippedLine0.equalsIgnoreCase("[Mailbox]");
         boolean invalid = strippedLine0.equalsIgnoreCase("[Invalid Rental]") || strippedLine0.equalsIgnoreCase("[Invalid Listing]");
+        // Check if using short header format (no claim ID on line 1, uses sign location)
+        boolean useLocationClaim = strippedLine0.equalsIgnoreCase("[Rent]") || strippedLine0.equalsIgnoreCase("[Buy]") || strippedLine0.equalsIgnoreCase("[Sell]");
 
         if (invalid) {
             return;
@@ -226,27 +248,81 @@ public class SignListener implements Listener {
                        (sell ? player.hasPermission("griefprevention.sign.create.buy") : 
                                player.hasPermission("griefprevention.sign.create.mailbox"));
         if (!hasPerm) {
-            player.sendMessage(Component.text("You don't have permission to create this sign.", NamedTextColor.RED));
+            String signType = rent ? "rent" : (sell ? "sell" : "mailbox");
+            plugin.getMessages().send(player, "permissions.create-sign-denied", "{signtype}", signType);
             return; // Let it place but don't format
+        }
+        
+        // Read raw line1 for claim location check
+        String line1Raw = stripLegacyColors(safeLine(event, 1)).trim();
+        
+        // Determine target claim - either from ID or from sign location
+        String targetClaimId = null;
+        Object targetClaim = null;
+        
+        if (useLocationClaim) {
+            // Short format: [rent] or [buy] - get claim at sign location
+            Optional<Object> claimAtSign = gp.getClaimAt(event.getBlock().getLocation());
+            if (claimAtSign.isPresent()) {
+                targetClaim = claimAtSign.get();
+                targetClaimId = gp.getClaimId(targetClaim).orElse(null);
+            }
+            if (targetClaimId == null) {
+                plugin.getMessages().send(player, "sign-creation.not-in-claim");
+                return;
+            }
+        } else if (!mailbox) {
+            // Long format with claim ID on line 1
+            targetClaimId = line1Raw.contains(";") ? line1Raw.split(";")[0].trim() : line1Raw;
+            if (!targetClaimId.isEmpty()) {
+                Optional<Object> claimOpt = gp.findClaimById(targetClaimId);
+                if (claimOpt.isPresent()) {
+                    targetClaim = claimOpt.get();
+                }
+            }
+        }
+        
+        // Check if sign is being placed outside the target claim (for rent/sell signs)
+        if ((rent || sell) && targetClaim != null) {
+            Optional<Object> claimAtSign = gp.getClaimAt(event.getBlock().getLocation());
+            boolean signInsideClaim = claimAtSign.isPresent() && 
+                gp.getClaimId(claimAtSign.get()).orElse("").equals(targetClaimId);
+            
+            if (!signInsideClaim) {
+                // Sign is outside the claim - check for .anywhere permission
+                String anywherePermission = rent ? "griefprevention.sign.create.rent.anywhere" 
+                                                 : "griefprevention.sign.create.buy.anywhere";
+                if (!player.hasPermission(anywherePermission)) {
+                    String signTypeStr = rent ? "rent" : "sell";
+                    plugin.getMessages().send(player, "permissions.anywhere-denied", "{signtype}", signTypeStr);
+                    return;
+                }
+            }
+            
+            // Verify player owns the claim
+            if (!gp.isOwner(targetClaim, player.getUniqueId()) && !player.hasPermission("griefprevention.admin")) {
+                plugin.getMessages().send(player, "sign-creation.not-claim-owner");
+                return;
+            }
         }
 
         // Check sign limits
         if (rent && !signLimitManager.canCreateRentSign(player)) {
             int limit = signLimitManager.getRentLimit(player);
             int current = signLimitManager.getCurrentRentSigns(player);
-            player.sendMessage(Component.text("You have reached your rent sign limit (" + current + "/" + limit + ").", NamedTextColor.RED));
+            plugin.getMessages().send(player, "sign-creation.rent-limit-reached", "{current}", String.valueOf(current), "{max}", String.valueOf(limit));
             return;
         }
         if (sell && !signLimitManager.canCreateSellSign(player)) {
             int limit = signLimitManager.getSellLimit(player);
             int current = signLimitManager.getCurrentSellSigns(player);
-            player.sendMessage(Component.text("You have reached your sell sign limit (" + current + "/" + limit + ").", NamedTextColor.RED));
+            plugin.getMessages().send(player, "sign-creation.sell-limit-reached", "{current}", String.valueOf(current), "{max}", String.valueOf(limit));
             return;
         }
         if (mailbox && !signLimitManager.canCreateMailboxSign(player)) {
             int limit = signLimitManager.getMailboxLimit(player);
             int current = signLimitManager.getCurrentMailboxSigns(player);
-            player.sendMessage(Component.text("You have reached your mailbox sign limit (" + current + "/" + limit + ").", NamedTextColor.RED));
+            plugin.getMessages().send(player, "sign-creation.mailbox-limit-reached", "{current}", String.valueOf(current), "{max}", String.valueOf(limit));
             return;
         }
 
@@ -261,51 +337,142 @@ public class SignListener implements Listener {
         String ecoKindStr;
         String renewalSpecStr;
         
-        // Check if line 1 contains semicolons (semicolon-delimited format)
-        if (line1.contains(";")) {
+        // Handle different sign formats
+        if (useLocationClaim) {
+            // Short format: [rent] or [buy] - claim ID comes from sign location
+            claimId = targetClaimId;
+            
+            if (rent) {
+                // Rent short format:
+                // Option 1: <renewTime> on line 1, <ecoAmt> on line 2 (no max time)
+                // Option 2: <renewTime> <maxTime> on line 1, <ecoAmt> on line 2
+                // Option 3: <renewTime> <maxTime> on line 1, <ecoType> on line 2, <ecoAmt> on line 3
+                String[] durations = line1.split("\\s+");
+                String renewTime = durations[0].trim();
+                String maxTime = durations.length > 1 ? durations[1].trim() : renewTime; // Default maxTime to renewTime if not specified
+                
+                // Check if line2 looks like a number (ecoAmt with default money type)
+                if (looksLikeNumber(line2)) {
+                    ecoKindStr = "money";
+                    renewalSpecStr = line2 + ";" + renewTime + ";" + maxTime;
+                } else if (!line2.isEmpty()) {
+                    // line2 is ecoType, line3 is ecoAmt
+                    ecoKindStr = line2;
+                    renewalSpecStr = line3 + ";" + renewTime + ";" + maxTime;
+                } else {
+                    // No amount provided - this is an error
+                    player.sendMessage(Component.text("Invalid format. Line 2 should contain the payment amount", NamedTextColor.RED));
+                    return;
+                }
+            } else {
+                // Sell/Buy short format:
+                // Line 1: empty or ignored (claim from location)
+                // Line 2: [ecoType] | <ecoAmt>
+                // Line 3: [ecoAmt] (if line 2 is ecoType)
+                if (looksLikeNumber(line1) && line2.isEmpty()) {
+                    // Just amount on line 1
+                    ecoKindStr = "money";
+                    renewalSpecStr = line1;
+                } else if (looksLikeNumber(line2)) {
+                    ecoKindStr = "money";
+                    renewalSpecStr = line2;
+                } else {
+                    ecoKindStr = line2;
+                    renewalSpecStr = line3;
+                }
+            }
+        } else if (line1.contains(";")) {
+            // Semicolon-delimited format on line 1
             String[] parts = line1.split(";");
             if (sell) {
-                // For sell signs: [Sell];<claimId>;<ecoKind>;<ecoAmount>
-                if (parts.length < 4) {
-                    player.sendMessage(Component.text("Invalid format. Expected: [Buy Claim];<claimId>;<ecoKind>;<ecoAmount>", NamedTextColor.RED));
+                // For sell signs: <claimId>;<ecoKind>;<ecoAmount> or <claimId>;<ecoAmount>
+                if (parts.length < 2) {
+                    player.sendMessage(Component.text("Invalid format. Expected: <claimId>;<ecoAmount> or <claimId>;<ecoKind>;<ecoAmount>", NamedTextColor.RED));
                     return;
                 }
-                claimId = parts[1].trim();
-                ecoKindStr = parts[2].trim();
-                renewalSpecStr = parts[3].trim();
+                claimId = parts[0].trim();
+                if (parts.length >= 3) {
+                    ecoKindStr = parts[1].trim();
+                    renewalSpecStr = parts[2].trim();
+                } else {
+                    // Default to money if just claimId;amount
+                    ecoKindStr = "money";
+                    renewalSpecStr = parts[1].trim();
+                }
             } else if (rent) {
-                // For rent signs: [Rent];<claimId>;<ecoKind>;<ecoAmount>;<perClick>;<maxCap>
-                if (parts.length < 5) {
-                    player.sendMessage(Component.text("Invalid format. Expected: [Rent Claim];<claimId>;<ecoKind>;<ecoAmount>;<perClick>;<maxCap>", NamedTextColor.RED));
+                // For rent signs: <claimId>;<ecoKind>;<ecoAmount>;<renewalTime>;<maxTime> or <claimId>;<ecoAmount>;<renewalTime>;<maxTime>
+                // Also supports: <claimId>;<ecoAmount>;<renewalTime> (maxTime defaults to renewalTime)
+                if (parts.length < 3) {
+                    player.sendMessage(Component.text("Invalid format. Expected: <claimId>;<ecoAmount>;<renewalTime> [;<maxTime>]", NamedTextColor.RED));
                     return;
                 }
-                claimId = parts[1].trim();
-                ecoKindStr = parts[2].trim();
-                renewalSpecStr = parts[3].trim() + ";" + parts[4].trim() + ";" + (parts.length > 5 ? parts[5].trim() : "");
+                claimId = parts[0].trim();
+                // Check if second part looks like an ecoKind or a number
+                if (looksLikeEcoKind(parts[1].trim())) {
+                    ecoKindStr = parts[1].trim();
+                    String ecoAmt = parts[2].trim();
+                    String renewTime = parts[3].trim();
+                    String maxTime = parts.length > 4 ? parts[4].trim() : renewTime; // Default maxTime to renewTime
+                    renewalSpecStr = ecoAmt + ";" + renewTime + ";" + maxTime;
+                } else {
+                    ecoKindStr = "money";
+                    String ecoAmt = parts[1].trim();
+                    String renewTime = parts[2].trim();
+                    String maxTime = parts.length > 3 ? parts[3].trim() : renewTime; // Default maxTime to renewTime
+                    renewalSpecStr = ecoAmt + ";" + renewTime + ";" + maxTime;
+                }
             } else {
-                // For mailbox signs: [Mailbox];<claimId>;<ecoKind>;<amount>
-                if (parts.length < 4) {
-                    player.sendMessage(Component.text("Invalid format. Expected: [Mailbox];<claimId>;<ecoKind>;<amount>", NamedTextColor.RED));
+                // For mailbox signs: <claimId>;<ecoKind>;<amount> or <claimId>;<amount>
+                if (parts.length < 2) {
+                    player.sendMessage(Component.text("Invalid format. Expected: <claimId>;<ecoAmount> or <claimId>;<ecoKind>;<ecoAmount>", NamedTextColor.RED));
                     return;
                 }
-                claimId = parts[1].trim();
-                ecoKindStr = parts[2].trim();
-                renewalSpecStr = parts[3].trim();
+                claimId = parts[0].trim();
+                if (parts.length >= 3) {
+                    ecoKindStr = parts[1].trim();
+                    renewalSpecStr = parts[2].trim();
+                } else {
+                    ecoKindStr = "money";
+                    renewalSpecStr = parts[1].trim();
+                }
             }
         } else {
-            // Old line-based format
+            // Standard line-based format with flexible ecoType/ecoAmt
             claimId = line1;
-            ecoKindStr = line2;
-            renewalSpecStr = line3;
+            
+            // Check if line2 looks like a number (ecoAmt with default money type)
+            if (looksLikeNumber(line2)) {
+                ecoKindStr = "money";
+                if (rent) {
+                    // For rent, we need durations - check if line3 has them
+                    if (line3.contains(";")) {
+                        String[] durParts = line3.split(";");
+                        if (durParts.length >= 2) {
+                            renewalSpecStr = line2 + ";" + durParts[0].trim() + ";" + durParts[1].trim();
+                        } else {
+                            renewalSpecStr = line2 + ";" + line3 + ";" + line3;
+                        }
+                    } else {
+                        player.sendMessage(Component.text("For rent signs with numeric amount, line 4 should be: <renewTime>;<maxTime>", NamedTextColor.RED));
+                        return;
+                    }
+                } else {
+                    renewalSpecStr = line2;
+                }
+            } else {
+                // line2 is ecoType, line3 contains amount (and possibly durations for rent)
+                ecoKindStr = line2;
+                renewalSpecStr = line3;
+            }
         }
 
         // Validate claim ID exists
-        if (claimId.isEmpty()) {
-            player.sendMessage(Component.text("Line 2 must be a ClaimID.", NamedTextColor.RED));
+        if (claimId == null || claimId.isEmpty()) {
+            plugin.getMessages().send(player, "sign-creation.invalid-format", "{details}", "Line 2 must be a ClaimID.");
             return;
         }
         if (!gp.findClaimById(claimId).isPresent()) {
-            player.sendMessage(Component.text("Claim ID not found: " + claimId, NamedTextColor.RED));
+            plugin.getMessages().send(player, "sign-creation.invalid-claim-id", "{id}", claimId);
             return;
         }
 
@@ -314,7 +481,7 @@ public class SignListener implements Listener {
         if (mailbox) {
             // Check if we're running on GP3D fork
             if (!gp.isGP3D()) {
-                player.sendMessage(Component.text("Mailbox signs require GP3D (GriefPrevention 3D) to be installed.", NamedTextColor.RED));
+                plugin.getMessages().send(player, "sign-creation.gp3d-required");
                 return;
             }
             
@@ -322,14 +489,16 @@ public class SignListener implements Listener {
             
             // Check if it's a subdivision and 3D claim
             if (!gp.isSubdivision(claim) || !gp.is3DClaim(claim)) {
-                player.sendMessage(Component.text("Mailbox signs must reference a 3D subdivision.", NamedTextColor.RED));
+                plugin.getMessages().send(player, "sign-creation.mailbox-must-be-subdivision");
                 return;
             }
             
             int[] dimensions = gp.getClaimDimensions(claim);
             if (dimensions[0] != 1 || dimensions[1] != 1 || dimensions[2] != 1) {
-                player.sendMessage(Component.text("Mailbox signs must reference a 1x1x1 subdivision (current: " + 
-                    dimensions[0] + "x" + dimensions[1] + "x" + dimensions[2] + ").", NamedTextColor.RED));
+                plugin.getMessages().send(player, "sign-creation.mailbox-wrong-size", 
+                    "{width}", String.valueOf(dimensions[0]), 
+                    "{height}", String.valueOf(dimensions[1]), 
+                    "{depth}", String.valueOf(dimensions[2]));
                 return;
             }
         }
@@ -341,27 +510,32 @@ public class SignListener implements Listener {
             kind = parseEcoKind(ecoKindStr);
         } catch (IllegalArgumentException e) {
             formatInvalidSign(event, rent, claimId, ecoKindStr, renewalSpecStr);
-            player.sendMessage(Component.text("Invalid economy type: " + ecoKindStr, NamedTextColor.RED));
+            plugin.getMessages().send(player, "sign-creation.invalid-economy-type", "{type}", ecoKindStr);
+            return;
+        }
+
+        // Check economy type permission based on sign type
+        String signType = rent ? "rent" : (sell ? "sell" : "mailbox");
+        String ecoPermission = "griefprevention.sign." + signType + "." + kind.name().toLowerCase();
+        if (!player.hasPermission(ecoPermission)) {
+            String ecoName = kind.name().toLowerCase();
+            if (kind == EcoKind.EXPERIENCE) ecoName = "exp";
+            plugin.getMessages().sendEconomyPermissionDenied(player, ecoName, signType, ecoPermission);
             return;
         }
 
         if (kind == EcoKind.MONEY && !economyAvailable) {
             formatInvalidSign(event, rent, claimId, ecoKindStr, renewalSpecStr);
-            player.sendMessage(Component.text("Money rentals require a Vault economy provider.", NamedTextColor.RED));
+            plugin.getMessages().send(player, "sign-creation.vault-required");
             return;
         }
 
-        if (kind == null) {
-            formatInvalidSign(event, rent, claimId, ecoKindStr, renewalSpecStr);
-            player.sendMessage(Component.text("Invalid economy tag.", NamedTextColor.RED));
-            return;
-        }
         // Item requires holding an item (not air)
         final ItemStack itemInHand;
         if (kind == EcoKind.ITEM) {
             ItemStack tmp = player.getInventory().getItemInOffHand();
             if (tmp == null || tmp.getType() == Material.AIR) {
-                player.sendMessage(Component.text("Hold the item in your offhand when creating a [Buy Claim]/[Rent Claim] Item sign.", NamedTextColor.RED));
+                plugin.getMessages().send(player, "sign-creation.item-required");
                 return;
             }
             itemInHand = tmp;
@@ -438,8 +612,8 @@ public class SignListener implements Listener {
                 org.bukkit.block.Block block = event.getBlock();
                 if (block.getState() instanceof Sign sign) {
                     PersistentDataContainer pdc = sign.getPersistentDataContainer();
-                    String signType = mailbox ? "MAILBOX" : (rent ? "RENT" : "SELL");
-                    pdc.set(keyKind(), PersistentDataType.STRING, signType);
+                    String pdcSignType = mailbox ? "MAILBOX" : (rent ? "RENT" : "SELL");
+                    pdc.set(keyKind(), PersistentDataType.STRING, pdcSignType);
                     pdc.set(keyClaim(), PersistentDataType.STRING, finalClaimId);
                     pdc.set(keyEcoAmt(), PersistentDataType.STRING, renewal.ecoAmtRaw);
                     pdc.set(keyPerClick(), PersistentDataType.STRING, renewal.perClick);

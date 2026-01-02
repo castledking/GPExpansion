@@ -1,0 +1,254 @@
+# GPExpansion Language File
+# Use & for color codes, supports MiniMessage format
+# Placeholders are shown in {brackets}
+
+# =============================================================================
+# GENERAL MESSAGES
+# =============================================================================
+general:
+  prefix: "&8[&6GPX&8]&r "
+  no-permission: "&cYou don't have permission to do that."
+  reload-success: "&aConfiguration and language files reloaded successfully."
+  reload-fail: "&cFailed to reload configuration: {error}"
+  player-only: "&cThis command can only be used by players."
+  unknown-player: "&cUnknown player: {player}"
+
+# =============================================================================
+# PERMISSION MESSAGES
+# =============================================================================
+permissions:
+  # Economy type permission denied
+  economy-type-denied: "&c✖ You don't have permission to use &6{economy}&c economy for {signtype} signs."
+  economy-type-denied-detail: "&7  Missing: &e{permission}"
+  
+  # Sign creation permission denied
+  create-sign-denied: "&cYou don't have permission to create {signtype} signs."
+  create-sign-denied-detail: "&7  Missing: &e{permission}"
+  
+  # Sign use permission denied
+  use-sign-denied: "&cYou don't have permission to use {signtype} signs."
+  use-sign-denied-detail: "&7  Missing: &e{permission}"
+  
+  # Anywhere permission (creating signs outside own claims)
+  anywhere-denied: "&cYou can only create {signtype} signs in your own claims."
+  anywhere-denied-detail: "&7  Missing: &e{permission}"
+
+# =============================================================================
+# SIGN CREATION MESSAGES
+# =============================================================================
+sign-creation:
+  # Success messages
+  rent-sign-created: "&aRent sign created successfully!"
+  sell-sign-created: "&aSell sign created successfully!"
+  mailbox-sign-created: "&aMailbox sign created successfully!"
+  
+  # Limit messages
+  rent-limit-reached: "&cYou have reached your rent sign limit ({current}/{max})."
+  sell-limit-reached: "&cYou have reached your sell sign limit ({current}/{max})."
+  mailbox-limit-reached: "&cYou have reached your mailbox sign limit ({current}/{max})."
+  
+  # Validation errors
+  invalid-economy-type: "&cInvalid economy type: {type}"
+  invalid-claim-id: "&cClaim not found with ID: {id}"
+  invalid-format: "&cInvalid sign format. {details}"
+  
+  # Economy-specific errors
+  vault-required: "&cMoney economy requires a Vault economy provider."
+  item-required: "&cHold the payment item in your offhand when creating an Item sign."
+  
+  # Claim validation
+  not-in-claim: "&cThis sign must be placed inside a claim."
+  not-claim-owner: "&cYou must be the owner of this claim to create this sign."
+  claim-already-rented: "&cThis claim is already being rented."
+  claim-already-for-sale: "&cThis claim is already for sale."
+  
+  # Mailbox validation
+  gp3d-required: "&cMailbox signs require GP3D (GriefPrevention 3D) to be installed."
+  mailbox-must-be-subdivision: "&cMailbox signs must reference a 3D subdivision."
+  mailbox-wrong-size: "&cMailbox signs must reference a 1x1x1 subdivision (current: {width}x{height}x{depth})."
+
+# =============================================================================
+# SIGN DESTRUCTION MESSAGES
+# =============================================================================
+sign-destruction:
+  # Confirmation required
+  confirm-destroy-rent: "&eAre you sure you want to destroy this rent sign? Type &6/confirm&e to confirm."
+  confirm-destroy-sell: "&eAre you sure you want to destroy this sell sign? Type &6/confirm&e to confirm."
+  confirm-destroy-mailbox: "&eAre you sure you want to destroy this mailbox sign? Type &6/confirm&e to confirm."
+  
+  # Success messages
+  rent-sign-destroyed: "&aRent sign destroyed."
+  sell-sign-destroyed: "&aSell sign destroyed."
+  mailbox-sign-destroyed: "&aMailbox sign destroyed."
+  
+  # Permission denied
+  cannot-destroy-not-owner: "&cYou cannot destroy this sign - you are not the claim owner."
+  cannot-destroy-active-rental: "&cYou cannot destroy this sign while the claim is being rented."
+
+# =============================================================================
+# SIGN INTERACTION MESSAGES
+# =============================================================================
+sign-interaction:
+  # Rent sign messages
+  rent-success: "&aYou have rented this claim for {duration}!"
+  rent-extended: "&aRental extended by {duration}. Total: {total}"
+  rent-max-reached: "&eYou have reached the maximum rental duration."
+  rent-cannot-afford: "&cYou cannot afford this rental. Cost: {cost}"
+  rent-already-renting: "&cYou are already renting this claim."
+  rent-claim-unavailable: "&cThis claim is not available for rent."
+  
+  # Sell sign messages
+  buy-success: "&aCongratulations! You now own this claim!"
+  buy-cannot-afford: "&cYou cannot afford this claim. Cost: {cost}"
+  buy-already-owner: "&cYou already own this claim."
+  buy-claim-unavailable: "&cThis claim is not available for purchase."
+  
+  # Mailbox messages
+  mailbox-deposit-success: "&aDeposited {amount} into the mailbox!"
+  mailbox-deposit-fail: "&cFailed to deposit: {reason}"
+  mailbox-empty: "&eThe mailbox is empty."
+  mailbox-collected: "&aCollected {amount} from the mailbox!"
+
+# =============================================================================
+# SETUP WIZARD MESSAGES
+# =============================================================================
+wizard:
+  # General wizard messages
+  cancelled: "&cSetup wizard cancelled."
+  timeout: "&cSetup wizard timed out."
+  already-in-wizard: "&cYou are already in a setup wizard. Use &e/cancelsetup&c to cancel."
+  previous-cancelled: "&7(Previous setup wizard cancelled)"
+  
+  # Validation errors
+  claim-not-found: "&cClaim ID not found: {id}"
+  not-claim-owner: "&cYou don't own that claim!"
+  invalid-claim-id: "&cInvalid claim ID. Please enter a number.\n&7(Type 'cancel' to exit the wizard)"
+  invalid-duration: "&cInvalid duration format. Use: &e<number><s/m/h/d/w>\n&7Examples: &e30s&7, &e1h&7, &e7d&7, &e1w"
+  invalid-economy-type: "&cInvalid economy type.\n&7Valid options: &emoney&7, &eexp&7, &eclaimblocks&7, &eitem"
+  invalid-price: "&cInvalid price. Please enter a number."
+  vault-required: "&cMoney payments require Vault and an economy plugin.\n&7Please choose a different payment type."
+  yes-or-no: "&7Type &ayes&7 or &cno&7."
+  confirm-prompt: "&7Type &ayes&7 to confirm or &cno&7 to cancel."
+  
+  # Mailbox validation
+  gp3d-required: "&cMailbox setup requires GP3D (GriefPrevention 3D) to be installed."
+  mailbox-must-be-subdivision: "&cMailbox must reference a 3D subdivision."
+  mailbox-wrong-size: "&cMailbox must reference a 1x1x1 subdivision (current: {width}x{height}x{depth})."
+  
+  # Rent claim wizard
+  rent-start: "&aRenting claim &6{id}&a..."
+  rent-start-no-claim: "&a&l=== Rent Claim Sign Setup ==="
+  rent-enter-claim-id: "&eEnter the claim ID:"
+  rent-enter-claim-id-hint: "&7(Quick tip: do &6/claimlist&7 to view your claim IDs)"
+  rent-enter-economy: "&eWhat payment type?"
+  rent-enter-economy-hint: "&7Options: &emoney&7, &eexp&7, &eclaimblocks&7, &eitem"
+  rent-enter-amount: "&eWhat's the price per rental period?"
+  rent-enter-duration: "&eHow long should each rental period be?"
+  rent-enter-duration-hint: "&7Format: &e<number><s/m/h/d/w>&7 (e.g., &e1d&7 for 1 day, &e1w&7 for 1 week)"
+  rent-enter-max-duration: "&eWhat's the maximum total rental time?"
+  rent-enter-max-duration-hint: "&7Format: &e<number><s/m/h/d/w>&7 (e.g., &e30d&7 for 30 days, &e12w&7 for 12 weeks)"
+  rent-complete: "&a✓ Rent sign format ready!\n&7The next sign you place will be automatically configured.\n&7Type &e/cancelsetup&7 to cancel auto-paste mode."
+  
+  # Sell claim wizard
+  sell-start: "&aSelling claim &6{id}&a..."
+  sell-start-no-claim: "&a&l=== Sell Claim Sign Setup ==="
+  sell-enter-claim-id: "&eEnter the claim ID:"
+  sell-enter-claim-id-hint: "&7(Quick tip: do &6/claimlist&7 to view your claim IDs)"
+  sell-enter-economy: "&eWhat payment type?"
+  sell-enter-economy-hint: "&7Options: &emoney&7, &eexp&7, &eclaimblocks&7, &eitem"
+  sell-enter-amount: "&eWhat's the sale price?"
+  sell-complete: "&a✓ Sell sign format ready!\n&7The next sign you place will be automatically configured.\n&7Type &e/cancelsetup&7 to cancel auto-paste mode."
+  
+  # Mailbox wizard
+  mailbox-start: "&aSetting up mailbox for claim &6{id}&a..."
+  mailbox-start-no-claim: "&a&l=== Mailbox Sign Setup ==="
+  mailbox-enter-claim-id: "&eEnter the 1x1x1 subdivision claim ID:"
+  mailbox-enter-claim-id-hint: "&7(Quick tip: do &6/claimlist&7 to view your claim IDs)"
+  mailbox-enter-economy: "&eWhat payment type?"
+  mailbox-enter-economy-hint: "&7Options: &emoney&7, &eexp&7, &eclaimblocks&7, &eitem"
+  mailbox-enter-amount: "&eWhat's the deposit amount?"
+  mailbox-complete: "&a✓ Mailbox sign format ready!\n&7The next sign you place will be automatically configured.\n&7Type &e/cancelsetup&7 to cancel auto-paste mode."
+  
+  # Step prompts (generic)
+  step-prompt: "&aStep {step}: {prompt}"
+  cancel-hint: "&8(Type 'cancel' at any time to exit)"
+  
+  # Auto-paste messages
+  auto-paste-ready: "&a✓ Sign format loaded! Edit if needed, then click Done."
+  auto-paste-item-reminder: "&e⚠ Hold the payment item in your offhand when placing the sign!"
+  auto-paste-cancelled: "&cAuto-paste mode cancelled."
+  auto-paste-expired: "&eAuto-paste mode has expired. Run the wizard again if needed."
+
+# =============================================================================
+# CLAIM COMMAND MESSAGES
+# =============================================================================
+claim:
+  # Claim list headers
+  list-header: "&eClaims ({count}):"
+  list-trusted-header: "&eTrusted Claims ({count}):"
+  list-admin-header: "&eAdmin Claims ({count}):"
+  list-empty: "&7You don't own any claims."
+  list-no-admin: "&7No admin claims found."
+  
+  # Claim line format (used in /claim list)
+  # Placeholders: {id}, {name}, {world}, {x}, {z}, {area}
+  line-format: "&eID {id} &e({name}&e) {world}: x{x}, z{z} (-{area} blocks)"
+  line-format-unnamed: "&eID {id} &e(unnamed) {world}: x{x}, z{z} (-{area} blocks)"
+  
+  # Subclaim line format
+  # Placeholders: {id}, {name}, {world}, {x}, {z}, {parent}
+  subline-format: "&7- ID &f{id} &7({name}&7) &f{world}&7: &fx{x}&7, z&f{z} &8(&6Child of {parent}&8)"
+  subline-format-unnamed: "&7- ID &f{id} &7(unnamed) &f{world}&7: &fx{x}&7, z&f{z} &8(&6Child of {parent}&8)"
+  
+  # Claim info (for detailed view)
+  info-header: "&6=== Claim Info ==="
+  info-id: "&7ID: &e{id}"
+  info-name: "&7Name: &e{name}"
+  info-owner: "&7Owner: &e{owner}"
+  info-world: "&7World: &e{world}"
+  info-location: "&7Location: &ex{x}, z{z}"
+  info-size: "&7Size: &e{width} x {depth} ({area} blocks)"
+  info-type: "&7Type: &e{type}"
+  
+  # Claim naming
+  name-set: "&aClaim name set to: {name}"
+  name-cleared: "&aClaim name cleared."
+  name-too-long: "&cClaim name is too long (max {max} characters)."
+  name-invalid-chars: "&cClaim name contains invalid characters."
+  name-no-permission: "&cYou lack permission: &egpexpansion.claim.name"
+  
+  # Trust list
+  trustlist-header: "&6=== Trust List for Claim {id} ==="
+  trustlist-empty: "&7No players are trusted in this claim."
+  trustlist-entry: "&7- &e{player}&7: {level}"
+  
+  # Claim not found
+  not-found: "&cClaim ID not found: {id}"
+  not-owner: "&cYou must own claim {id} to do that."
+  
+  # Transfer
+  transfer-success: "&aClaim {id} transferred to {player}."
+  transfer-received: "&aYou are now the owner of claim {id}."
+  transfer-failed: "&cFailed to transfer claim {id}."
+  
+  # Ban/Unban
+  ban-success: "&aBanned {player} from claim {id}."
+  ban-public: "&aClaim {id} is now public-banned."
+  ban-already: "&eClaim {id} already has a public ban."
+  unban-success: "&aUnbanned {player} from claim {id}."
+  unban-public: "&aClaim {id} is no longer public-banned."
+
+# =============================================================================
+# ADMIN MESSAGES
+# =============================================================================
+admin:
+  # GPX admin commands
+  gpx-help-header: "&6=== GPExpansion Admin Commands ==="
+  gpx-reload: "&e/gpx reload &7- Reload config and language files"
+  gpx-debug: "&e/gpx debug &7- Toggle debug mode"
+  gpx-info: "&e/gpx info &7- Show plugin information"
+  gpx-max: "&e/gpx max &7- Modify player creation limits."
+  
+  # Debug mode
+  debug-enabled: "&aDebug mode enabled."
+  debug-disabled: "&cDebug mode disabled."

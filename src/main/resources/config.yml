@@ -5,6 +5,11 @@ debug:
   # Enable debug logging for GPBridge to troubleshoot claim/subclaim detection
   enabled: false
 
+# Message settings
+messages:
+  # Show detailed permission info when player lacks permission (e.g., "Missing: griefprevention.sign.rent.exp")
+  show-permission-details: true
+
 # Default limits for sign creation (can be overridden by permissions)
 defaults:
   # Default maximum number of sell signs a player can create

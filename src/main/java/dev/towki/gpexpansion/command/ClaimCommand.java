@@ -234,7 +234,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private boolean requirePlayer(CommandSender sender) {
         if (!(sender instanceof Player)) {
-            sender.sendMessage(Component.text("Only players can use this.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("general.player-only"));
             return false;
         }
         return true;
@@ -273,7 +273,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 try {
                     java.util.Optional<Object> claimOpt = gp.findClaimById(possibleId);
                     if (!claimOpt.isPresent()) {
-                        sender.sendMessage(Component.text("Claim ID not found: " + possibleId, NamedTextColor.RED));
+                        sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", possibleId));
                         return;
                     }
                     
@@ -478,7 +478,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     
     private boolean handleTransferClaim(CommandSender sender, String[] args) {
         if (!sender.hasPermission("griefprevention.transferclaim")) {
-            sender.sendMessage(Component.text("You lack permission: griefprevention.transferclaim", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
             return true;
         }
 
@@ -509,13 +509,13 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
         Optional<Object> claimOpt = gp.findClaimById(claimId);
         if (!claimOpt.isPresent()) {
-            sender.sendMessage(Component.text("Claim ID not found: " + claimId, NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", claimId));
             return true;
         }
 
         UUID targetUuid = resolvePlayerUuid(targetName);
         if (targetUuid == null) {
-            sender.sendMessage(Component.text("Unknown player: " + targetName, NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("general.unknown-player", "{player}", targetName));
             return true;
         }
 
@@ -527,25 +527,25 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             Player player = (Player) sender;
             boolean admin = sender.isOp() || sender.hasPermission("griefprevention.admin");
             if (!admin && !gp.isOwner(mainClaim, player.getUniqueId())) {
-                sender.sendMessage(Component.text("You must own claim " + mainClaimId + " to transfer it.", NamedTextColor.RED));
+                sender.sendMessage(plugin.getMessages().get("claim.not-owner", "{id}", mainClaimId));
                 return true;
             }
         }
 
         boolean transferred = gp.transferClaimOwner(mainClaim, targetUuid);
         if (!transferred) {
-            sender.sendMessage(Component.text("Failed to transfer claim " + mainClaimId + ".", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.transfer-failed", "{id}", mainClaimId));
             return true;
         }
 
         OfflinePlayer offline = Bukkit.getOfflinePlayer(targetUuid);
         String displayName = offline.getName() != null ? offline.getName() : targetName;
 
-        sender.sendMessage(Component.text("Claim " + mainClaimId + " transferred to " + displayName + ".", NamedTextColor.GREEN));
+        sender.sendMessage(plugin.getMessages().get("claim.transfer-success", "{id}", mainClaimId, "{player}", displayName));
 
         Player targetOnline = Bukkit.getPlayer(targetUuid);
         if (targetOnline != null) {
-            targetOnline.sendMessage(Component.text("You are now the owner of claim " + mainClaimId + ".", NamedTextColor.GREEN));
+            targetOnline.sendMessage(plugin.getMessages().get("claim.transfer-received", "{id}", mainClaimId));
         }
 
         return true;
@@ -605,13 +605,13 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     
     private boolean handleBan(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
-        if (!sender.hasPermission("gpexpansion.claim.ban")) {
-            sender.sendMessage(Component.text("You lack permission: gpexpansion.claim.ban", NamedTextColor.RED));
+        if (!sender.hasPermission("griefprevention.claim.ban")) {
+            sender.sendMessage(Component.text("You lack permission: griefprevention.claim.ban", NamedTextColor.RED));
             return true;
         }
 
         Player player = (Player) sender;
-        boolean allowOther = sender.hasPermission("gpexpansion.claim.ban.other");
+        boolean allowOther = sender.hasPermission("griefprevention.claim.ban.other");
 
         if (args.length == 0) {
             sender.sendMessage(Component.text("Usage: /claim ban <player|public> [claimId]", NamedTextColor.YELLOW));
@@ -695,13 +695,13 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     
     private boolean handleUnban(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
-        if (!sender.hasPermission("griefprevention.claim.ban")) {
-            sender.sendMessage(Component.text("You lack permission: griefprevention.claim.ban", NamedTextColor.RED));
+        if (!sender.hasPermission("griefprevention.claim.unban")) {
+            sender.sendMessage(Component.text("You lack permission: griefprevention.claim.unban", NamedTextColor.RED));
             return true;
         }
 
         Player player = (Player) sender;
-        boolean allowOther = sender.hasPermission("griefprevention.claim.ban.other");
+        boolean allowOther = sender.hasPermission("griefprevention.claim.unban.other");
 
         if (args.length == 0) {
             sender.sendMessage(Component.text("Usage: /claim unban <player|public> [claimId]", NamedTextColor.YELLOW));

@@ -1,8 +1,16 @@
 package dev.towki.gpexpansion;
 
+import dev.towki.gpexpansion.command.CancelSetupCommand;
 import dev.towki.gpexpansion.command.ClaimCommand;
+import dev.towki.gpexpansion.command.ClaimInfoCommand;
 import dev.towki.gpexpansion.command.GPXCommand;
 import dev.towki.gpexpansion.command.MailboxCommand;
+import dev.towki.gpexpansion.command.RentClaimCommand;
+import dev.towki.gpexpansion.command.SellClaimCommand;
+import dev.towki.gpexpansion.setup.SetupWizardManager;
+import dev.towki.gpexpansion.setup.SetupChatListener;
+import dev.towki.gpexpansion.setup.SignAutoPasteListener;
+import dev.towki.gpexpansion.setup.SignPacketListener;
 import dev.towki.gpexpansion.gp.GPBridge;
 import dev.towki.gpexpansion.listener.SignListener;
 import dev.towki.gpexpansion.listener.MailboxListener;
@@ -15,6 +23,7 @@ import dev.towki.gpexpansion.storage.RentalStore;
 import dev.towki.gpexpansion.storage.MailboxStore;
 import dev.towki.gpexpansion.command.PaperCommandWrapper;
 import dev.towki.gpexpansion.permission.SignLimitManager;
+import dev.towki.gpexpansion.util.Messages;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -46,6 +55,8 @@ public final class GPExpansionPlugin extends JavaPlugin {
     private MailboxStore mailboxStore;
     private SignLimitManager signLimitManager;
     private MailboxListener mailboxListener;
+    private SetupWizardManager setupWizardManager;
+    private Messages messages;
 
     @Override
     public void onLoad() {
@@ -56,6 +67,9 @@ public final class GPExpansionPlugin extends JavaPlugin {
     public void onEnable() {
         // Save default config if it doesn't exist
         saveDefaultConfig();
+        
+        // Initialize messages/lang system
+        messages = new Messages(this);
         
         // Enable debug mode if configured
         if (getConfig().getBoolean("debug.enabled", false)) {
@@ -190,6 +204,88 @@ public final class GPExpansionPlugin extends JavaPlugin {
                                 mailboxCommand
                         );
                         map.register("gpexpansion", mailboxWrapper);
+                        
+                        // Initialize setup wizard manager
+                        setupWizardManager = new SetupWizardManager(this);
+                        
+                        // Register chat listener for wizard (must be done here after wizard manager is created)
+                        Bukkit.getPluginManager().registerEvents(new SetupChatListener(GPExpansionPlugin.this, setupWizardManager), GPExpansionPlugin.this);
+                        getLogger().info("- Registered SetupChatListener for wizard commands");
+                        
+                        // Wire wizard manager to mailbox command
+                        mailboxCommand.setWizardManager(setupWizardManager);
+                        
+                        // Register /rentclaim command
+                        RentClaimCommand rentClaimCommand = new RentClaimCommand(this, setupWizardManager);
+                        Command rentClaimWrapper = new PaperCommandWrapper(
+                                this,
+                                "rentclaim",
+                                "Start rental sign setup wizard",
+                                "/rentclaim [claimId]",
+                                Collections.emptyList(),
+                                rentClaimCommand,
+                                rentClaimCommand
+                        );
+                        map.register("gpexpansion", rentClaimWrapper);
+                        
+                        // Register /sellclaim command
+                        SellClaimCommand sellClaimCommand = new SellClaimCommand(this, setupWizardManager);
+                        Command sellClaimWrapper = new PaperCommandWrapper(
+                                this,
+                                "sellclaim",
+                                "Start sell sign setup wizard",
+                                "/sellclaim [claimId]",
+                                Collections.emptyList(),
+                                sellClaimCommand,
+                                sellClaimCommand
+                        );
+                        map.register("gpexpansion", sellClaimWrapper);
+                        
+                        // Register /claiminfo command
+                        ClaimInfoCommand claimInfoCommand = new ClaimInfoCommand(this);
+                        Command claimInfoWrapper = new PaperCommandWrapper(
+                                this,
+                                "claiminfo",
+                                "Show detailed claim information",
+                                "/claiminfo [claimId]",
+                                Collections.emptyList(),
+                                claimInfoCommand,
+                                claimInfoCommand
+                        );
+                        map.register("gpexpansion", claimInfoWrapper);
+                        
+                        // Register /cancelsetup command
+                        CancelSetupCommand cancelSetupCommand = new CancelSetupCommand(setupWizardManager);
+                        Command cancelSetupWrapper = new PaperCommandWrapper(
+                                this,
+                                "cancelsetup",
+                                "Cancel setup wizard or auto-paste mode",
+                                "/cancelsetup",
+                                Collections.emptyList(),
+                                cancelSetupCommand,
+                                cancelSetupCommand
+                        );
+                        map.register("gpexpansion", cancelSetupWrapper);
+                        
+                        // Register sign auto-paste listener (fallback for SignChangeEvent injection)
+                        SignAutoPasteListener autoPasteListener = new SignAutoPasteListener(GPExpansionPlugin.this, setupWizardManager);
+                        Bukkit.getPluginManager().registerEvents(autoPasteListener, GPExpansionPlugin.this);
+                        getLogger().info("- Registered SignAutoPasteListener for auto-paste mode");
+                        
+                        // Try to register PacketEvents listener for better sign GUI experience
+                        if (isPacketEventsAvailable()) {
+                            try {
+                                SignPacketListener packetListener = new SignPacketListener(GPExpansionPlugin.this, setupWizardManager);
+                                packetListener.register();
+                                // Tell autoPasteListener that PacketEvents is handling sign pre-fill
+                                autoPasteListener.setPacketEventsAvailable(true);
+                            } catch (Exception e) {
+                                getLogger().warning("Failed to register PacketEvents listener: " + e.getMessage());
+                                getLogger().info("Falling back to GUI bypass mode");
+                            }
+                        } else {
+                            getLogger().info("PacketEvents not found - sign wizard will use fallback mode (GUI bypass)");
+                        }
                     } else {
                         getLogger().severe("Could not obtain CommandMap to register /claim");
                     }
@@ -199,7 +295,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
             } catch (ReflectiveOperationException e) {
                 getLogger().severe("Failed to register /claim command: " + e.getMessage());
             }
-            getLogger().info("Registered /claim, /trustlist, /adminclaimlist and /gpx commands under GPExpansion");
+            getLogger().info("Registered /claim, /trustlist, /adminclaimlist, /gpx, /rentclaim, /sellclaim, /cancelsetup commands under GPExpansion");
         });
 
         // Register listeners
@@ -229,7 +325,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new dev.towki.gpexpansion.listener.SignDisplayListener(this), this);
         // Economy late-hook listener
         Bukkit.getPluginManager().registerEvents(new dev.towki.gpexpansion.listener.EconomyHookListener(this), this);
-
+        
         getLogger().info(() -> "GPExpansion enabled");
     }
 
@@ -397,6 +493,24 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
     public void refreshEconomy() {
         setupEconomy();
+    }
+    
+    /**
+     * Get the messages/lang manager.
+     */
+    public Messages getMessages() {
+        return messages;
+    }
+    
+    /**
+     * Reload config and language files.
+     */
+    public void reloadAll() {
+        reloadConfig();
+        messages.loadLanguageFile();
+        
+        // Re-apply debug setting
+        GPBridge.setDebug(getConfig().getBoolean("debug.enabled", false));
     }
 
     // Economy bridge methods to support both legacy Vault and Vault 2 without a hard compile dependency on v2
@@ -666,6 +780,22 @@ public final class GPExpansionPlugin extends JavaPlugin {
                 }
             }
         } catch (Throwable ignored) { }
+        return false;
+    }
+    
+    /**
+     * Check if PacketEvents plugin is available.
+     */
+    private boolean isPacketEventsAvailable() {
+        // Check by plugin instance - more reliable than Class.forName
+        org.bukkit.plugin.Plugin pe = Bukkit.getPluginManager().getPlugin("packetevents");
+        if (pe == null) {
+            pe = Bukkit.getPluginManager().getPlugin("PacketEvents");
+        }
+        if (pe != null && pe.isEnabled()) {
+            getLogger().info("PacketEvents detected: " + pe.getName() + " v" + pe.getDescription().getVersion());
+            return true;
+        }
         return false;
     }
 }
