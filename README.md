@@ -46,8 +46,9 @@ Protect your rental and mailbox signs from unauthorized modification.
 - Automatic cleanup on sign removal
 
 ### 📋 Claim Management
-- `/claim info` - View detailed claim information
-- `/claim list` - List all your claims
+- `/claim name` - Set claim name
+- `/claim ban` - Ban players from your claims
+- `/claim unban` - Unban players from your claims
 - `/mailbox` - Manage your mailboxes
 
 ---
