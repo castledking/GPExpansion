@@ -1,0 +1,51 @@
+# Admin Menu GUI Configuration
+# This menu appears when admins click on "Admin Menu" in the main /claim GUI
+
+title: "&c&lAdmin Claim Menu"
+size: 9
+
+# Slot positions
+slots:
+  admin-claims: 2
+  all-player-claims: 6
+  back: 4
+
+# Item configurations
+items:
+  admin-claims:
+    material: COMMAND_BLOCK
+    name: "&c&lAdmin Claims"
+    lore:
+      - "&7View and manage all admin claims"
+      - "&7on the server."
+      - ""
+      - "&7• Search by ID or name"
+      - "&7• Filter and sort claims"
+      - "&7• View children claims"
+      - "&7• Manage claim settings"
+      - ""
+      - "&eClick to view admin claims"
+
+  all-player-claims:
+    material: PLAYER_HEAD
+    name: "&a&lAll Player Claims"
+    lore:
+      - "&7View all player claims"
+      - "&7on the server."
+      - ""
+      - "&7• Search by player, ID, or name"
+      - "&7• Filter and sort claims"
+      - "&7• View children claims"
+      - "&7• Manage any claim settings"
+      - ""
+      - "&eClick to view all player claims"
+
+  back:
+    material: ARROW
+    name: "&c&lBack"
+    lore:
+      - "&7Return to main menu"
+
+  filler:
+    material: GRAY_STAINED_GLASS_PANE
+    name: " "

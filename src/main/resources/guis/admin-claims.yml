@@ -1,0 +1,65 @@
+# Admin Claims GUI Configuration
+# Shows all admin claims on the server
+
+title: "&c&lAdmin Claims"
+size: 54
+
+# Filter types available
+filters:
+  - ALL
+  - RENTED
+  - MAILBOXES
+  - REGULAR
+
+# Item configurations
+items:
+  filter:
+    material: HOPPER
+    name: "&6&lFilter: {filter}"
+    lore:
+      - "&7Current: &e{filter}"
+      - ""
+      - "&eClick to cycle filter"
+
+  back:
+    material: ARROW
+    name: "&c&lBack"
+    lore:
+      - "&7Return to admin menu"
+
+  search:
+    material: COMPASS
+    name: "&b&lSearch Claims"
+    lore:
+      - "&7Search claims by ID or name"
+      - ""
+      - "&eClick to search"
+
+  prev-page:
+    material: ARROW
+    name: "&e&l« Previous Page"
+    lore:
+      - "&7Page {current}/{total}"
+
+  next-page:
+    material: ARROW
+    name: "&e&lNext Page »"
+    lore:
+      - "&7Page {current}/{total}"
+
+  filler:
+    material: GRAY_STAINED_GLASS_PANE
+    name: " "
+
+# Claim item template
+claim-item:
+  name: "&c{name}"
+  lore:
+    - "&7ID: &f{id}"
+    - "&7Location: &f{location}"
+    - "&7Area: &f{area} blocks"
+    - "&7Children: &6{children}"
+    - ""
+    - "&a▸ Left-click to teleport"
+    - "&b▸ Right-click to rename"
+    - "&e▸ Shift+Left-click for options"

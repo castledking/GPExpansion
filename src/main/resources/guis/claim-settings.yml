@@ -1,0 +1,38 @@
+# Claim Settings GUI Configuration
+# Edit claim settings like bans and spawn point
+
+title: "&e&lClaim Settings - #{id}"
+size: 27
+
+filler:
+  material: GRAY_STAINED_GLASS_PANE
+
+items:
+  banned-players:
+    material: BARRIER
+    name: "&c&lBanned Players"
+    lore:
+      - "&7Manage players banned from this claim"
+      - ""
+      - "&7Currently banned: &6{count}"
+  
+  spawn-point:
+    material: ENDER_PEARL
+    name: "&b&lSpawn Point"
+    lore:
+      - "&7Set the teleport spawn point"
+  
+  back:
+    material: ARROW
+    name: "&c&lBack"
+    lore:
+      - "&7Return to claim options"
+
+# Permission-based lore
+permissions:
+  ban-allowed: "&a✓ You can manage bans"
+  ban-denied: "&c✗ No permission to manage bans"
+  ban-denied-detail: "&8Missing: griefprevention.claim.ban"
+  spawn-allowed: "&a✓ You can set spawn point"
+  spawn-denied: "&c✗ No permission to set spawn"
+  spawn-denied-detail: "&8Missing: griefprevention.claim.setspawn"

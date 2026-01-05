@@ -4,9 +4,7 @@ import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
 import dev.towki.gpexpansion.setup.SetupSession.SetupType;
 import dev.towki.gpexpansion.setup.SetupWizardManager;
-
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
+import dev.towki.gpexpansion.util.Messages;
 
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -40,13 +38,15 @@ public class RentClaimCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage(Component.text("This command can only be used by players.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().getRaw("general.player-only"));
             return true;
         }
         
         // Check permission
         if (!player.hasPermission("griefprevention.sign.create.rent")) {
-            player.sendMessage(Component.text("You don't have permission to create rental signs.", NamedTextColor.RED));
+            Messages messages = plugin.getMessages();
+            messages.send(player, "permissions.create-sign-denied", "signtype", "rental");
+            messages.send(player, "permissions.create-sign-denied-detail", "permission", "griefprevention.sign.create.rent");
             return true;
         }
         

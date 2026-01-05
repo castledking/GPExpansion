@@ -91,7 +91,7 @@ public class SignAutoPasteListener implements Listener {
         ItemStack itemInHand = event.getItemInHand();
         
         // Schedule sign placement for next tick (after cancel takes effect)
-        Bukkit.getScheduler().runTask(plugin, () -> {
+        runOnPlayer(player, () -> {
             // Re-place the sign block manually
             Block targetBlock = loc.getBlock();
             targetBlock.setType(signType, false);
@@ -177,5 +177,9 @@ public class SignAutoPasteListener implements Listener {
     private boolean isSign(Material material) {
         String name = material.name();
         return name.endsWith("_SIGN") || name.endsWith("_HANGING_SIGN");
+    }
+    
+    private void runOnPlayer(Player player, Runnable task) {
+        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runOnEntity(plugin, player, task, null);
     }
 }

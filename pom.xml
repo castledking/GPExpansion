@@ -5,7 +5,7 @@
 
   <groupId>dev.towki.gpexpansion</groupId>
   <artifactId>gpexpansion</artifactId>
-  <version>0.1.1a</version>
+  <version>0.1.2a</version>
   <name>GPExpansion</name>
   <description>GriefPrevention Expansion</description>
 
@@ -38,6 +38,14 @@
     <repository>
       <id>codemc-snapshots</id>
       <url>https://repo.codemc.io/repository/maven-snapshots/</url>
+    </repository>
+    <repository>
+      <id>codemc-nms</id>
+      <url>https://repo.codemc.io/repository/nms/</url>
+    </repository>
+    <repository>
+      <id>placeholderapi</id>
+      <url>https://repo.extendedclip.com/content/repositories/placeholderapi/</url>
     </repository>
   </repositories>
 
@@ -87,6 +95,15 @@
       <version>2.11.1</version>
       <scope>provided</scope>
     </dependency>
+    
+    <!-- PlaceholderAPI for font images from ItemsAdder/Oraxen/Nexo -->
+    <dependency>
+      <groupId>me.clip</groupId>
+      <artifactId>placeholderapi</artifactId>
+      <version>2.11.6</version>
+      <scope>provided</scope>
+    </dependency>
+    
   </dependencies>
 
   <build>

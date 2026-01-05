@@ -54,6 +54,55 @@ public class Messages {
         DEFAULTS.put("sign-creation.vault-required", "&cMoney economy requires a Vault economy provider.");
         DEFAULTS.put("sign-creation.item-required", "&cHold the payment item in your offhand when creating an Item sign.");
         
+        // Sign interaction
+        DEFAULTS.put("sign-interaction.rent-success", "&aYou have rented claim {id} for {duration}. Cost: {cost}");
+        DEFAULTS.put("sign-interaction.rent-too-close-to-max", "&cYou cannot renew yet - Next available renewal: &7{time}");
+        DEFAULTS.put("sign-interaction.confirmation-header-line", "&8&m●                                                   &8●");
+        DEFAULTS.put("sign-interaction.confirmation-title-rent", "&6&l>> Rent Confirmation <<");
+        DEFAULTS.put("sign-interaction.confirmation-title-purchase", "&6&l>> Purchase Confirmation <<");
+        DEFAULTS.put("sign-interaction.confirmation-item", "&7Item: &eclaim {id}");
+        DEFAULTS.put("sign-interaction.confirmation-duration", "&7Duration: &e{duration}");
+        DEFAULTS.put("sign-interaction.confirmation-cost", "&7Cost: &e{cost}");
+        DEFAULTS.put("sign-interaction.confirmation-button-confirm", "&a&lCONFIRM");
+        DEFAULTS.put("sign-interaction.confirmation-button-cancel", "&c&lCANCEL");
+        DEFAULTS.put("sign-interaction.confirmation-hover-confirm-rent", "&aClick to confirm rent");
+        DEFAULTS.put("sign-interaction.confirmation-hover-confirm-purchase", "&aClick to confirm purchase");
+        DEFAULTS.put("sign-interaction.confirmation-hover-cancel", "&cClick to cancel");
+        DEFAULTS.put("sign-interaction.confirmation-cancelled", "&eCancelled.");
+        
+        // Claim teleport
+        DEFAULTS.put("claim.teleport-usage", "&cUsage: /claim tp <claimId> [player]");
+        DEFAULTS.put("claim.teleport-success", "&aTeleported to claim &6{id}&a.");
+        DEFAULTS.put("claim.teleport-other-success", "&aTeleported &6{player}&a to claim &6{id}&a.");
+        DEFAULTS.put("claim.teleport-by-other", "&aYou were teleported to claim &6{id}&a.");
+        DEFAULTS.put("claim.teleport-no-location", "&cCould not find a teleport location for claim &6{id}&c.");
+        DEFAULTS.put("claim.player-not-found", "&cPlayer not found: &6{player}");
+        DEFAULTS.put("claim.setspawn-not-in-claim", "&cYou must be standing inside a claim to set its spawn point.");
+        DEFAULTS.put("claim.setspawn-not-owner", "&cYou must be the owner of this claim to set its spawn point.");
+        DEFAULTS.put("claim.setspawn-success", "&aSpawn point set for claim &6{id}&a.");
+        DEFAULTS.put("claim.setspawn-error", "&cAn error occurred while setting the spawn point.");
+        
+        // GUI messages
+        DEFAULTS.put("gui.rename-prompt", "&eType the new name for claim &6{id}&e in chat, or type &ccancel&e to cancel.");
+        DEFAULTS.put("gui.rental-renew-hint", "&eFind the rental sign for claim &6{id}&e and right-click to renew.");
+        DEFAULTS.put("gui.ban-manage-hint", "&eManaging bans for claim &6{id}&e:");
+        DEFAULTS.put("gui.not-enabled", "&cGUI mode is not enabled.");
+        DEFAULTS.put("gui.claim-listed", "&aClaim &6{id}&a is now publicly listed!");
+        DEFAULTS.put("gui.claim-unlisted", "&eClaim &6{id}&e is no longer publicly listed.");
+        DEFAULTS.put("gui.icon-set", "&aIcon set for claim &6{id}&a.");
+        DEFAULTS.put("gui.description-set", "&aDescription set for claim &6{id}&a.");
+        DEFAULTS.put("gui.claim-renamed", "&aClaim &6{id}&a renamed to &f{name}&a.");
+        DEFAULTS.put("gui.search-no-results", "&cNo claims found matching: &e{query}");
+        DEFAULTS.put("gui.search-found", "&aFound claim: &f{name} &7(ID: {id})");
+        DEFAULTS.put("gui.player-unbanned", "&aUnbanned &f{player}&a from claim &6{id}&a.");
+        DEFAULTS.put("gui.player-banned", "&aBanned &f{player}&a from claim &6{id}&a.");
+        DEFAULTS.put("gui.color-not-allowed", "&cYou don't have permission to use the color code &e{code}&c.");
+        DEFAULTS.put("gui.format-not-allowed", "&cYou don't have permission to use the format code &e{code}&c.");
+        DEFAULTS.put("claim.global-usage", "&cUsage: /claim global <true|false> [claimId]");
+        DEFAULTS.put("claim.global-not-in-claim", "&cYou must be standing in a claim or provide a claim ID.");
+        DEFAULTS.put("claim.global-not-owner", "&cYou must own this claim to toggle its global listing.");
+        DEFAULTS.put("claim.global-limit-reached", "&cYou have reached your global claim limit! &7({current}/{max})");
+        
         // Wizard - General
         DEFAULTS.put("wizard.cancelled", "&cSetup wizard cancelled.");
         DEFAULTS.put("wizard.previous-cancelled", "&7(Previous setup wizard cancelled)");
@@ -146,6 +195,31 @@ public class Messages {
                 new InputStreamReader(defaultStream, StandardCharsets.UTF_8)
             );
             langConfig.setDefaults(defaultConfig);
+        }
+        
+        // Add any missing keys from DEFAULTS to the user's lang.yml
+        addMissingKeys();
+    }
+    
+    /**
+     * Check for missing keys in the lang.yml and add them from DEFAULTS.
+     * This allows new messages to be automatically added without users deleting their config.
+     */
+    private void addMissingKeys() {
+        boolean modified = false;
+        
+        for (Map.Entry<String, String> entry : DEFAULTS.entrySet()) {
+            String key = entry.getKey();
+            if (!langConfig.contains(key)) {
+                langConfig.set(key, entry.getValue());
+                modified = true;
+                plugin.getLogger().info("Added missing lang key: " + key);
+            }
+        }
+        
+        if (modified) {
+            saveLanguageFile();
+            plugin.getLogger().info("Updated lang.yml with missing keys.");
         }
     }
     

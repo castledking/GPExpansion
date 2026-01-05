@@ -28,7 +28,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
@@ -97,7 +96,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBS = Arrays.asList(
             // Our features
-            "name", "list", "create", "adminlist",
+            "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -121,18 +120,100 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             "ban", "unban", "banlist"
     );
 
-    // Remove legacy color codes if sender lacks color permission. Keeps formatting for now.
-    private String enforceNamePermissions(CommandSender sender, String legacy) {
-        if (sender.hasPermission("griefprevention.claim.name.color")) {
-            return legacy;
+    // Color code to permission name mapping
+    private static final java.util.Map<Character, String> COLOR_PERMISSIONS = new java.util.HashMap<>();
+    private static final java.util.Map<Character, String> FORMAT_PERMISSIONS = new java.util.HashMap<>();
+    static {
+        // Colors: &0-&9, &a-&f
+        COLOR_PERMISSIONS.put('0', "black");
+        COLOR_PERMISSIONS.put('1', "dark_blue");
+        COLOR_PERMISSIONS.put('2', "dark_green");
+        COLOR_PERMISSIONS.put('3', "dark_aqua");
+        COLOR_PERMISSIONS.put('4', "dark_red");
+        COLOR_PERMISSIONS.put('5', "dark_purple");
+        COLOR_PERMISSIONS.put('6', "gold");
+        COLOR_PERMISSIONS.put('7', "gray");
+        COLOR_PERMISSIONS.put('8', "dark_gray");
+        COLOR_PERMISSIONS.put('9', "blue");
+        COLOR_PERMISSIONS.put('a', "green");
+        COLOR_PERMISSIONS.put('b', "aqua");
+        COLOR_PERMISSIONS.put('c', "red");
+        COLOR_PERMISSIONS.put('d', "light_purple");
+        COLOR_PERMISSIONS.put('e', "yellow");
+        COLOR_PERMISSIONS.put('f', "white");
+        // Formats: &k-&o, &r
+        FORMAT_PERMISSIONS.put('k', "obfuscated");
+        FORMAT_PERMISSIONS.put('l', "bold");
+        FORMAT_PERMISSIONS.put('m', "strikethrough");
+        FORMAT_PERMISSIONS.put('n', "underline");
+        FORMAT_PERMISSIONS.put('o', "italic");
+        FORMAT_PERMISSIONS.put('r', "reset");
+    }
+    
+    /**
+     * Filter color and format codes based on player permissions.
+     * Permission structure: griefprevention.claim.color.<color> and griefprevention.claim.format.<format>
+     * Used for both /claim name and /claim desc commands.
+     */
+    private String enforceColorPermissions(CommandSender sender, String text) {
+        if (text == null || text.isEmpty()) return text;
+        
+        // Check for wildcard permissions first
+        boolean hasAllColors = sender.hasPermission("griefprevention.claim.color.*");
+        boolean hasAllFormats = sender.hasPermission("griefprevention.claim.format.*");
+        
+        if (hasAllColors && hasAllFormats) {
+            return text; // Has all permissions, return unchanged
         }
-        String s = legacy;
-        // Strip hex color sequences: §x§R§R§G§G§B§B (case-insensitive)
-        s = s.replaceAll("(?i)§x(§[0-9A-F]){6}", "");
-        s = s.replaceAll("(?i)&x(&[0-9A-F]){6}", "");
-        // Strip standard color codes §0-§9 §a-§f and & variants (preserve formatting like k-o and r)
-        s = s.replaceAll("(?i)[§&][0-9A-F]", "");
-        return s;
+        
+        StringBuilder result = new StringBuilder();
+        char[] chars = text.toCharArray();
+        
+        for (int i = 0; i < chars.length; i++) {
+            char c = chars[i];
+            
+            // Check for color/format code prefix (& or §)
+            if ((c == '&' || c == '\u00A7') && i + 1 < chars.length) {
+                char code = Character.toLowerCase(chars[i + 1]);
+                
+                // Check if it's a color code (0-9, a-f)
+                if (COLOR_PERMISSIONS.containsKey(code)) {
+                    if (hasAllColors || sender.hasPermission("griefprevention.claim.color." + COLOR_PERMISSIONS.get(code))) {
+                        result.append(c).append(chars[i + 1]);
+                    }
+                    // Skip the code character regardless
+                    i++;
+                    continue;
+                }
+                
+                // Check if it's a format code (k-o, r)
+                if (FORMAT_PERMISSIONS.containsKey(code)) {
+                    if (hasAllFormats || sender.hasPermission("griefprevention.claim.format." + FORMAT_PERMISSIONS.get(code))) {
+                        result.append(c).append(chars[i + 1]);
+                    }
+                    // Skip the code character regardless
+                    i++;
+                    continue;
+                }
+                
+                // Check for hex color codes: &x&R&R&G&G&B&B or §x§R§R§G§G§B§B
+                if (code == 'x' && i + 13 < chars.length) {
+                    // Hex colors require the wildcard color permission
+                    if (hasAllColors) {
+                        // Copy the full hex sequence
+                        for (int j = 0; j < 14; j++) {
+                            result.append(chars[i + j]);
+                        }
+                    }
+                    i += 13; // Skip the hex sequence
+                    continue;
+                }
+            }
+            
+            result.append(c);
+        }
+        
+        return result.toString();
     }
 
     // Convert legacy section sign codes (§) to ampersand codes (&) for GP-friendly storage/display
@@ -170,7 +251,24 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         if (command.getName().equalsIgnoreCase("claimslist") || label.equalsIgnoreCase("claimslist") || label.equalsIgnoreCase("claimlist")) {
             return handleList(sender, args);
         }
+        // Support standalone /claimtp command
+        if (command.getName().equalsIgnoreCase("claimtp") || label.equalsIgnoreCase("claimtp")) {
+            return handleTeleport(sender, args);
+        }
+        // Support standalone /setclaimspawn command
+        if (command.getName().equalsIgnoreCase("setclaimspawn") || label.equalsIgnoreCase("setclaimspawn")) {
+            return handleSetSpawn(sender, args);
+        }
+        // Support standalone /globalclaimlist command
+        if (command.getName().equalsIgnoreCase("globalclaimlist") || label.equalsIgnoreCase("globalclaimlist")) {
+            return handleGlobalList(sender);
+        }
         if (args.length == 0) {
+            // Check if GUI mode is enabled and sender is a player
+            if (sender instanceof Player && plugin.getGUIManager() != null && plugin.getGUIManager().isGUIEnabled()) {
+                plugin.getGUIManager().openMainMenu((Player) sender);
+                return true;
+            }
             sender.sendMessage(Component.text("/" + label + " <" + String.join("|", SUBS) + ">", NamedTextColor.YELLOW));
             return true;
         }
@@ -226,6 +324,20 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 return handleEvict(sender, subArgs);
             case "collectrent":
                 return handleCollectRent(sender, subArgs);
+            case "tp":
+            case "teleport":
+                return handleTeleport(sender, subArgs);
+            case "setspawn":
+                return handleSetSpawn(sender, subArgs);
+            case "globallist":
+                return handleGlobalList(sender);
+            case "global":
+                return handleToggleGlobal(sender, subArgs);
+            case "icon":
+                return handleIcon(sender, subArgs);
+            case "desc":
+            case "description":
+                return handleDescription(sender, subArgs);
             default:
                 sender.sendMessage(Component.text("Unknown subcommand. Try: " + String.join(", ", SUBS), NamedTextColor.RED));
                 return true;
@@ -586,7 +698,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        String enforced = enforceNamePermissions(sender, legacyName);
+        String enforced = enforceColorPermissions(sender, legacyName);
         String stored = toAmpersand(enforced);
 
         Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, "rename this claim");
@@ -600,6 +712,110 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         String display = stored.isEmpty() ? "&7unnamed" : stored;
         String feedback = String.format("&aClaim %s renamed to %s", ctx.claimId, display);
         sender.sendMessage(parseColorCodes(feedback));
+        return true;
+    }
+    
+    // /claim icon [id] - Set claim icon using held item
+    private boolean handleIcon(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        if (!sender.hasPermission("gpexpansion.claim.icon")) {
+            sender.sendMessage(Component.text("You lack permission: gpexpansion.claim.icon", NamedTextColor.RED));
+            return true;
+        }
+
+        Player player = (Player) sender;
+        boolean allowOther = sender.hasPermission("gpexpansion.claim.icon.other") || sender.hasPermission("griefprevention.admin");
+
+        // Get the item in hand
+        org.bukkit.inventory.ItemStack item = player.getInventory().getItemInMainHand();
+        if (item == null || item.getType() == org.bukkit.Material.AIR) {
+            sender.sendMessage(Component.text("You must hold an item to set as the claim icon.", NamedTextColor.RED));
+            return true;
+        }
+
+        String materialName = item.getType().name();
+
+        // Check for explicit claim ID
+        Optional<Object> explicitClaim = Optional.empty();
+        String explicitId = null;
+        if (args.length >= 1) {
+            String possibleId = args[0];
+            Optional<Object> looked = gp.findClaimById(possibleId);
+            if (looked.isPresent()) {
+                explicitClaim = looked;
+                explicitId = possibleId;
+            } else {
+                sender.sendMessage(Component.text("Claim not found: " + possibleId, NamedTextColor.RED));
+                return true;
+            }
+        }
+
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, "set icon for this claim");
+        if (!ctxOpt.isPresent()) return true;
+
+        ClaimContext ctx = ctxOpt.get();
+        plugin.getIconStore().set(ctx.claimId, materialName);
+        plugin.getIconStore().save();
+
+        sender.sendMessage(Component.text("Claim " + ctx.claimId + " icon set to " + materialName, NamedTextColor.GREEN));
+        return true;
+    }
+    
+    // /claim desc <description...> [id] - Set claim description
+    private boolean handleDescription(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        if (!sender.hasPermission("gpexpansion.claim.description")) {
+            sender.sendMessage(Component.text("You lack permission: gpexpansion.claim.description", NamedTextColor.RED));
+            return true;
+        }
+
+        Player player = (Player) sender;
+        boolean allowOther = sender.hasPermission("gpexpansion.claim.description.other") || sender.hasPermission("griefprevention.admin");
+
+        if (args.length == 0) {
+            sender.sendMessage(Component.text("Usage: /claim desc <description...> [claimId]", NamedTextColor.YELLOW));
+            return true;
+        }
+
+        Optional<Object> explicitClaim = Optional.empty();
+        String explicitId = null;
+        String[] descParts = args;
+
+        // Check if last argument is a claim ID
+        if (allowOther && args.length >= 2) {
+            String possibleId = args[args.length - 1];
+            Optional<Object> looked = gp.findClaimById(possibleId);
+            if (looked.isPresent()) {
+                explicitClaim = looked;
+                explicitId = possibleId;
+                descParts = Arrays.copyOf(args, args.length - 1);
+            }
+        }
+
+        String description = String.join(" ", descParts).trim();
+        if (description.isEmpty()) {
+            sender.sendMessage(Component.text("Usage: /claim desc <description...> [claimId]", NamedTextColor.YELLOW));
+            return true;
+        }
+
+        // Apply color/format permissions (same as name)
+        description = enforceColorPermissions(sender, description);
+        description = toAmpersand(description);
+
+        // Limit description length
+        if (description.length() > 64) {
+            description = description.substring(0, 64);
+            sender.sendMessage(Component.text("Description truncated to 64 characters.", NamedTextColor.YELLOW));
+        }
+
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, "set description for this claim");
+        if (!ctxOpt.isPresent()) return true;
+
+        ClaimContext ctx = ctxOpt.get();
+        plugin.getClaimDataStore().setDescription(ctx.claimId, description);
+        plugin.getClaimDataStore().save();
+
+        sender.sendMessage(Component.text("Claim " + ctx.claimId + " description set to: " + description, NamedTextColor.GREEN));
         return true;
     }
     
@@ -1328,30 +1544,260 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
-        if (sender instanceof Player && isFolia()) {
-            // For Folia, we need to handle tab completion on the main thread
-            Player player = (Player) sender;
-            CompletableFuture<List<String>> future = new CompletableFuture<>();
-            player.getScheduler().execute(plugin, () -> {
-                future.complete(completeTab(sender, command, alias, args));
-            }, null, 1L);
-            try {
-                return future.join();
-            } catch (Exception e) {
-                return Collections.emptyList();
-            }
-        }
+        // Tab completion already runs on the correct thread (entity's region thread on Folia)
+        // Do NOT use blocking operations like CompletableFuture.join() here
         return completeTab(sender, command, alias, args);
     }
     
-    private @Nullable List<String> completeTab(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
-        if (args.length == 1) {
-            String prefix = args[0].toLowerCase(Locale.ROOT);
-            return SUBS.stream().filter(s -> s.startsWith(prefix)).collect(Collectors.toList());
+    // /claim tp|teleport <claimId> [player]
+    private boolean handleTeleport(CommandSender sender, String[] args) {
+        if (args.length < 1) {
+            sender.sendMessage(plugin.getMessages().get("claim.teleport-usage"));
+            return true;
         }
+        
+        String claimId = args[0];
+        Player targetPlayer;
+        
+        // Check if teleporting another player
         if (args.length >= 2) {
+            // Need .other permission
+            if (!sender.hasPermission("griefprevention.claim.teleport.other")) {
+                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                return true;
+            }
+            targetPlayer = Bukkit.getPlayer(args[1]);
+            if (targetPlayer == null) {
+                sender.sendMessage(plugin.getMessages().get("claim.player-not-found", "{player}", args[1]));
+                return true;
+            }
+        } else {
+            // Teleporting self
+            if (!requirePlayer(sender)) return true;
+            if (!sender.hasPermission("griefprevention.claim.teleport")) {
+                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                return true;
+            }
+            targetPlayer = (Player) sender;
+        }
+        
+        // Find the claim
+        Optional<Object> claimOpt = gp.findClaimById(claimId);
+        if (!claimOpt.isPresent()) {
+            sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", claimId));
+            return true;
+        }
+        
+        Object claim = claimOpt.get();
+        
+        // Get teleport location - prefer custom spawn, fallback to claim center
+        dev.towki.gpexpansion.storage.SpawnStore spawnStore = plugin.getSpawnStore();
+        Optional<Location> spawnOpt = spawnStore.get(claimId);
+        
+        Location teleportLoc;
+        if (spawnOpt.isPresent()) {
+            teleportLoc = spawnOpt.get();
+        } else {
+            // Use claim center as fallback
+            Optional<Location> centerOpt = gp.getClaimCenter(claim);
+            if (!centerOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.teleport-no-location", "{id}", claimId));
+                return true;
+            }
+            teleportLoc = centerOpt.get();
+        }
+        
+        // Teleport the player
+        final Player finalTarget = targetPlayer;
+        final Location finalLoc = teleportLoc;
+        plugin.teleportEntity(finalTarget, finalLoc);
+        
+        if (sender == targetPlayer) {
+            sender.sendMessage(plugin.getMessages().get("claim.teleport-success", "{id}", claimId));
+        } else {
+            sender.sendMessage(plugin.getMessages().get("claim.teleport-other-success", "{player}", targetPlayer.getName(), "{id}", claimId));
+            targetPlayer.sendMessage(plugin.getMessages().get("claim.teleport-by-other", "{id}", claimId));
+        }
+        
+        return true;
+    }
+    
+    // /claim setspawn
+    private boolean handleSetSpawn(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+        
+        // Get the claim at player's location
+        Location loc = player.getLocation();
+        Optional<Object> claimOpt = gp.getClaimAt(loc);
+        
+        if (!claimOpt.isPresent()) {
+            sender.sendMessage(plugin.getMessages().get("claim.setspawn-not-in-claim"));
+            return true;
+        }
+        
+        Object claim = claimOpt.get();
+        Optional<String> claimIdOpt = gp.getClaimId(claim);
+        if (!claimIdOpt.isPresent()) {
+            sender.sendMessage(plugin.getMessages().get("claim.setspawn-error"));
+            return true;
+        }
+        String claimId = claimIdOpt.get();
+        
+        // Check ownership (unless has .other permission)
+        boolean hasOtherPerm = player.hasPermission("griefprevention.claim.setspawn.other");
+        if (!hasOtherPerm) {
+            if (!player.hasPermission("griefprevention.claim.setspawn")) {
+                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                return true;
+            }
+            
+            try {
+                Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
+                if (ownerId == null || !ownerId.equals(player.getUniqueId())) {
+                    sender.sendMessage(plugin.getMessages().get("claim.setspawn-not-owner"));
+                    return true;
+                }
+            } catch (Exception e) {
+                sender.sendMessage(plugin.getMessages().get("claim.setspawn-error"));
+                return true;
+            }
+        }
+        
+        // Save the spawn point
+        dev.towki.gpexpansion.storage.SpawnStore spawnStore = plugin.getSpawnStore();
+        spawnStore.set(claimId, loc);
+        spawnStore.save();
+        
+        sender.sendMessage(plugin.getMessages().get("claim.setspawn-success", "{id}", claimId));
+        return true;
+    }
+    
+    // /claim globallist or /globalclaimlist
+    private boolean handleGlobalList(CommandSender sender) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+        
+        if (!player.hasPermission("griefprevention.claim.gui.globallist")) {
+            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+        
+        if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
+            sender.sendMessage(plugin.getMessages().get("gui.not-enabled"));
+            return true;
+        }
+        
+        plugin.getGUIManager().openGlobalClaimList(player);
+        return true;
+    }
+    
+    // /claim global true|false [claimId]
+    private boolean handleToggleGlobal(CommandSender sender, String[] args) {
+        if (args.length < 1) {
+            sender.sendMessage(plugin.getMessages().get("claim.global-usage"));
+            return true;
+        }
+        
+        String valueStr = args[0].toLowerCase();
+        boolean value;
+        if (valueStr.equals("true") || valueStr.equals("on") || valueStr.equals("yes")) {
+            value = true;
+        } else if (valueStr.equals("false") || valueStr.equals("off") || valueStr.equals("no")) {
+            value = false;
+        } else {
+            sender.sendMessage(plugin.getMessages().get("claim.global-usage"));
+            return true;
+        }
+        
+        Object claim;
+        String claimId;
+        
+        if (args.length >= 2) {
+            // Claim ID provided
+            claimId = args[1];
+            java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
+            if (!claimOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", claimId));
+                return true;
+            }
+            claim = claimOpt.get();
+        } else {
+            // Use claim at player's location
+            if (!requirePlayer(sender)) return true;
+            Player player = (Player) sender;
+            java.util.Optional<Object> claimOpt = gp.getClaimAt(player.getLocation());
+            if (!claimOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.global-not-in-claim"));
+                return true;
+            }
+            claim = claimOpt.get();
+            java.util.Optional<String> idOpt = gp.getClaimId(claim);
+            if (!idOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("general.error"));
+                return true;
+            }
+            claimId = idOpt.get();
+        }
+        
+        // Check ownership/permission
+        boolean hasOtherPerm = sender.hasPermission("griefprevention.claim.toggleglobal.other");
+        if (!hasOtherPerm) {
+            if (!sender.hasPermission("griefprevention.claim.toggleglobal")) {
+                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                return true;
+            }
+            
+            // Check ownership
+            if (sender instanceof Player) {
+                try {
+                    Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
+                    if (ownerId == null || !ownerId.equals(((Player) sender).getUniqueId())) {
+                        sender.sendMessage(plugin.getMessages().get("claim.global-not-owner"));
+                        return true;
+                    }
+                } catch (Exception e) {
+                    sender.sendMessage(plugin.getMessages().get("general.error"));
+                    return true;
+                }
+            }
+        }
+        
+        // Check global claim limit if trying to make a claim global
+        if (value && sender instanceof Player) {
+            Player player = (Player) sender;
+            dev.towki.gpexpansion.permission.SignLimitManager limitManager = plugin.getSignLimitManager();
+            if (!limitManager.canMakeClaimGlobal(player)) {
+                int limit = limitManager.getGlobalClaimLimit(player);
+                int current = limitManager.getCurrentGlobalClaims(player);
+                sender.sendMessage(plugin.getMessages().get("claim.global-limit-reached", 
+                    "{current}", String.valueOf(current), 
+                    "{max}", String.valueOf(limit)));
+                return true;
+            }
+        }
+        
+        // Toggle the global listing
+        dev.towki.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
+        dataStore.setPublicListed(claimId, value);
+        dataStore.save();
+        
+        if (value) {
+            sender.sendMessage(plugin.getMessages().get("gui.claim-listed", "{id}", claimId));
+        } else {
+            sender.sendMessage(plugin.getMessages().get("gui.claim-unlisted", "{id}", claimId));
+        }
+        return true;
+    }
+    
+    private List<String> completeTab(CommandSender sender, Command command, String alias, String[] args) {
+        if (args.length == 1) {
+            return SUBS.stream()
+                .filter(s -> s.toLowerCase().startsWith(args[0].toLowerCase()))
+                .collect(Collectors.toList());
+        }
+        if (args.length > 1) {
             String sub = args[0].toLowerCase(Locale.ROOT);
-            // Basic suggestions; can be expanded
             switch (sub) {
                 case "name":
                     return Collections.singletonList("<name...>");
@@ -1359,6 +1805,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                     return Collections.singletonList("<radius>");
                 case "adminclaimslist":
                 case "adminlist":
+                case "globallist":
                     return new ArrayList<>();
                 case "ban":
                 case "unban":
@@ -1376,6 +1823,17 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 case "evict":
                     if (args.length == 2) return Arrays.asList("cancel", "status", "[claimId]");
                     return new ArrayList<>();
+                case "tp":
+                case "teleport":
+                    if (args.length == 2) return Collections.singletonList("<claimId>");
+                    if (args.length == 3) return Bukkit.getOnlinePlayers().stream().map(Player::getName).collect(Collectors.toList());
+                    return new ArrayList<>();
+                case "setspawn":
+                    return new ArrayList<>();
+                case "global":
+                    if (args.length == 2) return Arrays.asList("true", "false");
+                    if (args.length == 3) return Collections.singletonList("[claimId]");
+                    return new ArrayList<>();
                 case "trustlist":
                 case "restrictsubclaim":
                 case "explosions":
@@ -1384,12 +1842,13 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 case "abandon":
                     if (args.length == 2) return Arrays.asList("all", "[claimId]");
                     return new ArrayList<>();
-                case "list":
-                case "banlist":
-                case "subdivideclaim":
-                case "3dsubdivideclaim":
-                case "abandonall":
-                case "basic":
+                case "icon":
+                    if (args.length == 2) return Collections.singletonList("[claimId]");
+                    return new ArrayList<>();
+                case "desc":
+                case "description":
+                    if (args.length == 2) return Collections.singletonList("<description...>");
+                    return new ArrayList<>();
                 default:
                     return new ArrayList<>();
             }

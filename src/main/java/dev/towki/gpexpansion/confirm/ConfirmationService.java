@@ -70,38 +70,47 @@ public class ConfirmationService {
     }
 
     private void showChatConfirmation(Player player, Action action, String claimId, String ecoFormatted, String time, String token) {
-        String actionWord = action == Action.BUY ? "Purchase" : "Rent";
-        String itemType = action == Action.BUY ? "this claim" : "claim " + claimId;
+        // Get messages from lang
+        Component headerLine = plugin.getMessages().get("sign-interaction.confirmation-header-line");
+        String titleKey = action == Action.BUY ? "sign-interaction.confirmation-title-purchase" : "sign-interaction.confirmation-title-rent";
+        Component title = plugin.getMessages().get(titleKey);
+        Component itemLine = plugin.getMessages().get("sign-interaction.confirmation-item", "{id}", claimId);
+        Component durationLine = plugin.getMessages().get("sign-interaction.confirmation-duration", "{duration}", time);
+        Component costLine = plugin.getMessages().get("sign-interaction.confirmation-cost", "{cost}", ecoFormatted);
+        
+        Component confirmBtn = plugin.getMessages().get("sign-interaction.confirmation-button-confirm");
+        Component cancelBtn = plugin.getMessages().get("sign-interaction.confirmation-button-cancel");
+        String hoverConfirmKey = action == Action.BUY ? "sign-interaction.confirmation-hover-confirm-purchase" : "sign-interaction.confirmation-hover-confirm-rent";
+        Component hoverConfirm = plugin.getMessages().get(hoverConfirmKey);
+        Component hoverCancel = plugin.getMessages().get("sign-interaction.confirmation-hover-cancel");
 
-        // Build the main message with color coding
-        Component header = Component.text("\n" + ">> " + actionWord + " Confirmation <<", NamedTextColor.GOLD, net.kyori.adventure.text.format.TextDecoration.BOLD)
+        // Build the main message
+        Component header = Component.newline()
+                .append(title)
                 .append(Component.newline())
-                .append(Component.text("Item: ", NamedTextColor.GRAY))
-                .append(Component.text(itemType, NamedTextColor.YELLOW))
+                .append(itemLine)
                 .append(Component.newline())
-                .append(Component.text("Duration: ", NamedTextColor.GRAY))
-                .append(Component.text(time, NamedTextColor.YELLOW))
+                .append(durationLine)
                 .append(Component.newline())
-                .append(Component.text("Cost: ", NamedTextColor.GRAY))
-                .append(Component.text(ecoFormatted, NamedTextColor.YELLOW));
+                .append(costLine);
 
         // Build the clickable buttons
         Component buttons = Component.text("[", NamedTextColor.DARK_GRAY)
-                .append(Component.text("CONFIRM", NamedTextColor.GREEN, net.kyori.adventure.text.format.TextDecoration.BOLD)
-                        .hoverEvent(HoverEvent.showText(Component.text("Click to confirm " + actionWord.toLowerCase(), NamedTextColor.GREEN)))
+                .append(confirmBtn
+                        .hoverEvent(HoverEvent.showText(hoverConfirm))
                         .clickEvent(ClickEvent.runCommand("/gpxconfirm " + token + " accept")))
                 .append(Component.text(" | ", NamedTextColor.DARK_GRAY))
-                .append(Component.text("CANCEL", NamedTextColor.RED, net.kyori.adventure.text.format.TextDecoration.BOLD)
-                        .hoverEvent(HoverEvent.showText(Component.text("Click to cancel", NamedTextColor.RED)))
+                .append(cancelBtn
+                        .hoverEvent(HoverEvent.showText(hoverCancel))
                         .clickEvent(ClickEvent.runCommand("/gpxconfirm " + token + " cancel")))
                 .append(Component.text("]", NamedTextColor.DARK_GRAY));
 
-        // Send the messages
-        player.sendMessage(Component.text("-----------------------------------------------------\n", NamedTextColor.DARK_GRAY));
+        // Send the messages with improved header/footer
+        player.sendMessage(headerLine);
         player.sendMessage(header);
         player.sendMessage(Component.text(""));
         player.sendMessage(buttons);
-        player.sendMessage(Component.text("\n" + "-----------------------------------------------------", NamedTextColor.DARK_GRAY));
+        player.sendMessage(headerLine);
     }
 
     public boolean handle(Player player, String token, boolean accept) {
@@ -109,7 +118,7 @@ public class ConfirmationService {
         if (p == null) return false;
         if (!p.player.equals(player.getUniqueId())) return false;
         if (!accept) {
-            player.sendMessage(Component.text("Cancelled.", NamedTextColor.YELLOW));
+            plugin.getMessages().send(player, "sign-interaction.confirmation-cancelled");
             return true;
         }
         // Execute action now (Folia safe)
@@ -131,7 +140,7 @@ public class ConfirmationService {
             plugin.runAtEntity(player, () -> {
                 if (!signListener.charge(player, EcoKind.valueOf(p.kind), p.ecoAmtRaw, null)) return; // message already sent on failure
                 // Then update the sign and store on the sign's region thread
-                plugin.runAtLocation(p.signLoc, () -> completeRent(player, p.claimId, p.perClick, p.maxCap, p.signLoc));
+                plugin.runAtLocation(p.signLoc, () -> completeRent(player, p.claimId, p.perClick, p.maxCap, p.signLoc, p.kind, p.ecoAmtRaw));
             });
             return true;
         } else {
@@ -208,7 +217,7 @@ public class ConfirmationService {
     }
 
     // Must be called on the sign's region thread. Charging is expected to be done beforehand.
-    private void completeRent(Player player, String claimId, String perClick, String maxCap, Location signLoc) {
+    private void completeRent(Player player, String claimId, String perClick, String maxCap, Location signLoc, String kind, String ecoAmtRaw) {
         org.bukkit.block.Block b = signLoc.getBlock();
         if (!(b.getState() instanceof Sign)) return;
         Sign sign = (Sign) b.getState();
@@ -279,7 +288,11 @@ public class ConfirmationService {
             store.save();
         }
         long addedMillis = newExpiry - now;
-        player.sendMessage(Component.text("You have rented claim " + claimId + " for " + formatDuration(addedMillis) + ".", NamedTextColor.GREEN));
+        String costFormatted = formatEcoAmount(kind, ecoAmtRaw);
+        plugin.getMessages().send(player, "sign-interaction.rent-success",
+            "{id}", claimId,
+            "{duration}", formatDuration(addedMillis),
+            "{cost}", costFormatted);
     }
 
     private void handleOwnerPayment(Object claim, String renterName, String claimId, String kind, String amount, boolean isPurchase) {
@@ -312,7 +325,18 @@ public class ConfirmationService {
             switch (kind) {
                 case "MONEY":
                     if (plugin.isEconomyAvailable()) {
-                        plugin.depositMoney(player, amt);
+                        // Apply tax if enabled
+                        double taxAmount = 0;
+                        double netAmount = amt;
+                        if (plugin.isTaxEnabled()) {
+                            taxAmount = plugin.calculateTax(amt);
+                            netAmount = amt - taxAmount;
+                            // Deposit tax to tax account
+                            if (taxAmount > 0) {
+                                plugin.depositToAccount(plugin.getTaxAccountName(), taxAmount);
+                            }
+                        }
+                        plugin.depositMoney(player, netAmount);
                     }
                     break;
                 case "EXPERIENCE":
@@ -377,6 +401,30 @@ public class ConfirmationService {
 
         if (sb.length() == 0) return "<1min";
         return sb.toString();
+    }
+
+    private String formatEcoAmount(String kind, String ecoAmtRaw) {
+        if (kind == null || ecoAmtRaw == null) return ecoAmtRaw;
+        switch (kind.toUpperCase()) {
+            case "MONEY":
+                try {
+                    double amount = Double.parseDouble(ecoAmtRaw);
+                    return plugin.formatMoney(amount);
+                } catch (NumberFormatException e) {
+                    return "$" + ecoAmtRaw;
+                }
+            case "EXPERIENCE":
+                boolean levels = ecoAmtRaw.toUpperCase().endsWith("L");
+                return levels ? 
+                    ecoAmtRaw.substring(0, ecoAmtRaw.length() - 1) + " Levels" : 
+                    ecoAmtRaw + " XP";
+            case "CLAIMBLOCKS":
+                return ecoAmtRaw + " blocks";
+            case "ITEM":
+                return ecoAmtRaw + " items";
+            default:
+                return ecoAmtRaw;
+        }
     }
 
     private void cleanup() {

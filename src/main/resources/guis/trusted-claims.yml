@@ -1,0 +1,35 @@
+# Trusted Claims GUI Configuration
+# Shows claims where the player has trust
+
+title: "&a&lTrusted Claims"
+size: 54
+
+filler:
+  material: GRAY_STAINED_GLASS_PANE
+
+items:
+  claim:
+    name: "&a{name}"
+    lore:
+      - "&7ID: &f{id}"
+      - "&7Owner: &f{owner}"
+      - "&7Location: &f{location}"
+      - "&7Area: &f{area} blocks"
+  
+  filter:
+    material: HOPPER
+    name: "&6&lFilter: {filter}"
+    lore:
+      - "&7Current: &e{filter}"
+      - ""
+      - "&eClick to cycle filter"
+  
+  back:
+    material: ARROW
+    name: "&c&lBack"
+    lore:
+      - "&7Return to main menu"
+
+actions:
+  teleport: "&a▸ Left-click to teleport"
+  renew: "&b▸ Right-click to renew rental"

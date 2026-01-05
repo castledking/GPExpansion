@@ -1,0 +1,41 @@
+# Children Claims GUI Configuration
+# Shows subdivisions of a parent claim
+
+title: "&e&lSubdivisions - #{id}"
+size: 54
+
+filler:
+  material: GRAY_STAINED_GLASS_PANE
+
+items:
+  subdivision:
+    name: "&e{name}"
+    lore:
+      - "&7ID: &f{id}"
+      - "&7Type: &f{type}"
+      - "&7Location: &f{location}"
+      - "&7Area: &f{area} blocks"
+  
+  filter:
+    material: HOPPER
+    name: "&6&lFilter: {filter}"
+    lore:
+      - "&7Current: &e{filter}"
+      - ""
+      - "&eClick to cycle filter"
+  
+  back:
+    material: ARROW
+    name: "&c&lBack"
+    lore:
+      - "&7Return to claim options"
+
+actions:
+  teleport: "&a▸ Left-click to teleport"
+  rename: "&b▸ Right-click to rename"
+  view-inner: "&e▸ Shift+Left-click to view inner subdivisions"
+  options: "&e▸ Shift+Left-click for options"
+
+types:
+  subdivision-2d: "2D Subdivision"
+  subdivision-3d: "3D Subdivision"

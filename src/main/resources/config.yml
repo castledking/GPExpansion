@@ -25,3 +25,18 @@ permission-tracking:
   enabled: true
   # How often to check for permission changes (in minutes)
   check-interval: 5
+
+# GUI settings
+gui:
+  # Enable GUI mode for /claim command
+  # When enabled, /claim opens an interactive menu instead of showing subcommand list
+  enabled: true
+
+# Tax settings (requires Vault economy)
+tax:
+  # Percentage of rent/purchase payments taken as tax (0 to disable)
+  # The tax is deducted from the landlord's payment and deposited to the tax account
+  percent: 5
+  # The NPC account name to deposit tax into
+  # This account is automatically created if it doesn't exist
+  account-name: "Tax"

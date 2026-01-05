@@ -90,9 +90,10 @@ sign-destruction:
 # =============================================================================
 sign-interaction:
   # Rent sign messages
-  rent-success: "&aYou have rented this claim for {duration}!"
+  rent-success: "&aYou have rented claim {id} for {duration}. Cost: {cost}"
   rent-extended: "&aRental extended by {duration}. Total: {total}"
   rent-max-reached: "&eYou have reached the maximum rental duration."
+  rent-too-close-to-max: "&cYou cannot renew yet - Next available renewal: &7{time}"
   rent-cannot-afford: "&cYou cannot afford this rental. Cost: {cost}"
   rent-already-renting: "&cYou are already renting this claim."
   rent-claim-unavailable: "&cThis claim is not available for rent."
@@ -108,6 +109,86 @@ sign-interaction:
   mailbox-deposit-fail: "&cFailed to deposit: {reason}"
   mailbox-empty: "&eThe mailbox is empty."
   mailbox-collected: "&aCollected {amount} from the mailbox!"
+  
+  # Confirmation dialog
+  confirmation-header-line: "&8&m●                                                   &8●"
+  confirmation-title-rent: "&6&l>> Rent Confirmation <<"
+  confirmation-title-purchase: "&6&l>> Purchase Confirmation <<"
+  confirmation-item: "&7Item: &eclaim {id}"
+  confirmation-duration: "&7Duration: &e{duration}"
+  confirmation-cost: "&7Cost: &e{cost}"
+  confirmation-button-confirm: "&a&lCONFIRM"
+  confirmation-button-cancel: "&c&lCANCEL"
+  confirmation-hover-confirm-rent: "&aClick to confirm rent"
+  confirmation-hover-confirm-purchase: "&aClick to confirm purchase"
+  confirmation-hover-cancel: "&cClick to cancel"
+  confirmation-cancelled: "&eCancelled."
+
+# =============================================================================
+# CLAIM TELEPORT MESSAGES
+# =============================================================================
+claim:
+  teleport-usage: "&cUsage: /claim tp <claimId> [player]"
+  teleport-success: "&aTeleported to claim &6{id}&a."
+  teleport-other-success: "&aTeleported &6{player}&a to claim &6{id}&a."
+  teleport-by-other: "&aYou were teleported to claim &6{id}&a."
+  teleport-no-location: "&cCould not find a teleport location for claim &6{id}&c."
+  player-not-found: "&cPlayer not found: &6{player}"
+  setspawn-not-in-claim: "&cYou must be standing inside a claim to set its spawn point."
+  setspawn-not-owner: "&cYou must be the owner of this claim to set its spawn point."
+  setspawn-success: "&aSpawn point set for claim &6{id}&a."
+  setspawn-error: "&cAn error occurred while setting the spawn point."
+
+# =============================================================================
+# GUI MESSAGES
+# =============================================================================
+gui:
+  rename-prompt: "&eType the new name for claim &6{id}&e in chat, or type &ccancel&e to cancel."
+  rental-renew-hint: "&eFind the rental sign for claim &6{id}&e and right-click to renew."
+  ban-manage-hint: "&eManaging bans for claim &6{id}&e:"
+  not-enabled: "&cGUI mode is not enabled."
+  claim-listed: "&aClaim &6{id}&a is now publicly listed!"
+  claim-unlisted: "&eClaim &6{id}&e is no longer publicly listed."
+  icon-set: "&aIcon set for claim &6{id}&a."
+  description-set: "&aDescription set for claim &6{id}&a."
+  claim-renamed: "&aClaim &6{id}&a renamed to &f{name}&a."
+  search-no-results: "&cNo claims found matching: &e{query}"
+  search-found: "&aFound claim: &f{name} &7(ID: {id})"
+  player-unbanned: "&aUnbanned &f{player}&a from claim &6{id}&a."
+  player-banned: "&aBanned &f{player}&a from claim &6{id}&a."
+  color-not-allowed: "&cYou don't have permission to use the color code &e{code}&c."
+  format-not-allowed: "&cYou don't have permission to use the format code &e{code}&c."
+
+claim:
+  global-usage: "&cUsage: /claim global <true|false> [claimId]"
+  global-not-in-claim: "&cYou must be standing in a claim or provide a claim ID."
+  global-not-owner: "&cYou must own this claim to toggle its global listing."
+
+# =============================================================================
+# COMMAND MESSAGES
+# =============================================================================
+commands:
+  # Mailbox command
+  mailbox-help-title: "&6Mailbox Usage:"
+  mailbox-help-step1: "&71. Create a 1x1x1 3D subdivision claim"
+  mailbox-help-step2: "&72. Place a container (chest/barrel) inside it"
+  mailbox-help-step3: "&73. Run /mailbox <claimId> to start the setup wizard"
+  mailbox-help-step4: "&74. Or create a [Mailbox] sign manually"
+  mailbox-commands-title: "&eCommands:"
+  mailbox-cmd-setup: "&7/mailbox <id> - Start setup wizard"
+  mailbox-cmd-help: "&7/mailbox help - Show this help"
+  
+  # Rent claim command
+  rentclaim-help-title: "&6Rent Claim Usage:"
+  rentclaim-help-desc: "&7Creates a rental sign for your claim"
+  rentclaim-cmd-setup: "&7/rentclaim [id] - Start rental sign setup wizard"
+  rentclaim-cmd-hint: "&7(If no ID provided, uses current claim)"
+  
+  # Sell claim command
+  sellclaim-help-title: "&6Sell Claim Usage:"
+  sellclaim-help-desc: "&7Creates a sell sign for your claim"
+  sellclaim-cmd-setup: "&7/sellclaim [id] - Start sell sign setup wizard"
+  sellclaim-cmd-hint: "&7(If no ID provided, uses current claim)"
 
 # =============================================================================
 # SETUP WIZARD MESSAGES

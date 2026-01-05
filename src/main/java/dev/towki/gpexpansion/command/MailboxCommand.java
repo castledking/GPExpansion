@@ -4,9 +4,7 @@ import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
 import dev.towki.gpexpansion.setup.SetupSession.SetupType;
 import dev.towki.gpexpansion.setup.SetupWizardManager;
-
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
+import dev.towki.gpexpansion.util.Messages;
 
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -26,10 +24,12 @@ import java.util.stream.Collectors;
  */
 public class MailboxCommand implements CommandExecutor, TabCompleter {
     
+    private final GPExpansionPlugin plugin;
     private SetupWizardManager wizardManager;
     private final GPBridge gp;
     
     public MailboxCommand(GPExpansionPlugin plugin) {
+        this.plugin = plugin;
         this.gp = new GPBridge();
     }
     
@@ -50,7 +50,9 @@ public class MailboxCommand implements CommandExecutor, TabCompleter {
         
         // Check permission
         if (!player.hasPermission("griefprevention.sign.create.mailbox")) {
-            player.sendMessage(Component.text("You don't have permission to create mailbox signs.", NamedTextColor.RED));
+            Messages messages = plugin.getMessages();
+            messages.send(player, "permissions.create-sign-denied", "signtype", "mailbox");
+            messages.send(player, "permissions.create-sign-denied-detail", "permission", "griefprevention.sign.create.mailbox");
             return true;
         }
         
@@ -74,15 +76,29 @@ public class MailboxCommand implements CommandExecutor, TabCompleter {
     }
     
     private void showHelp(CommandSender sender) {
-        sender.sendMessage(Component.text("Mailbox Usage:", NamedTextColor.GOLD));
-        sender.sendMessage(Component.text("1. Create a 1x1x1 3D subdivision claim", NamedTextColor.GRAY));
-        sender.sendMessage(Component.text("2. Place a container (chest/barrel) inside it", NamedTextColor.GRAY));
-        sender.sendMessage(Component.text("3. Run /mailbox <claimId> to start the setup wizard", NamedTextColor.GRAY));
-        sender.sendMessage(Component.text("4. Or create a [Mailbox] sign manually", NamedTextColor.GRAY));
-        sender.sendMessage(Component.text("", NamedTextColor.GRAY));
-        sender.sendMessage(Component.text("Commands:", NamedTextColor.YELLOW));
-        sender.sendMessage(Component.text("/mailbox <id> - Start setup wizard", NamedTextColor.GRAY));
-        sender.sendMessage(Component.text("/mailbox help - Show this help", NamedTextColor.GRAY));
+        Messages messages = plugin.getMessages();
+        if (sender instanceof Player player) {
+            messages.send(player, "commands.mailbox-help-title");
+            messages.send(player, "commands.mailbox-help-step1");
+            messages.send(player, "commands.mailbox-help-step2");
+            messages.send(player, "commands.mailbox-help-step3");
+            messages.send(player, "commands.mailbox-help-step4");
+            player.sendMessage("");
+            messages.send(player, "commands.mailbox-commands-title");
+            messages.send(player, "commands.mailbox-cmd-setup");
+            messages.send(player, "commands.mailbox-cmd-help");
+        } else {
+            // Console fallback
+            sender.sendMessage(messages.getRaw("commands.mailbox-help-title"));
+            sender.sendMessage(messages.getRaw("commands.mailbox-help-step1"));
+            sender.sendMessage(messages.getRaw("commands.mailbox-help-step2"));
+            sender.sendMessage(messages.getRaw("commands.mailbox-help-step3"));
+            sender.sendMessage(messages.getRaw("commands.mailbox-help-step4"));
+            sender.sendMessage("");
+            sender.sendMessage(messages.getRaw("commands.mailbox-commands-title"));
+            sender.sendMessage(messages.getRaw("commands.mailbox-cmd-setup"));
+            sender.sendMessage(messages.getRaw("commands.mailbox-cmd-help"));
+        }
     }
     
     @Override

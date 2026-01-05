@@ -25,6 +25,22 @@ dependencies:
       load: BEFORE
       required: false
       join-classpath: true
+    PlaceholderAPI:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    ItemsAdder:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    Oraxen:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    Nexo:
+      load: BEFORE
+      required: false
+      join-classpath: true
 
 # Register our listeners
 listeners:
@@ -280,3 +296,154 @@ permissions:
   griefprevention.claim.unban.other:
     description: Allows unbanning players from claims you don't own
     default: op
+
+  # === CLAIM TELEPORT PERMISSIONS ===
+  griefprevention.claim.teleport:
+    description: Allows teleporting to claims
+    default: true
+
+  griefprevention.claim.teleport.other:
+    description: Allows teleporting other players to claims
+    default: op
+
+  griefprevention.claim.setspawn:
+    description: Allows setting teleport spawn point for your claims
+    default: true
+
+  griefprevention.claim.setspawn.other:
+    description: Allows setting spawn points for other players' claims
+    default: op
+
+  griefprevention.claim.gui.globallist:
+    description: Allows viewing the global public claim list GUI
+    default: true
+
+  griefprevention.claim.toggleglobal:
+    description: Allows toggling public listing for your own claims
+    default: true
+
+  griefprevention.claim.toggleglobal.other:
+    description: Allows toggling public listing for claims you don't own
+    default: op
+
+  # === GLOBAL CLAIM LIMIT PERMISSIONS ===
+  griefprevention.claim.toggleglobal.*:
+    description: Allows unlimited global claims
+    default: op
+
+  griefprevention.claim.toggleglobal.5:
+    description: Allows up to 5 global claims (default)
+    default: true
+
+  griefprevention.claim.toggleglobal.10:
+    description: Allows up to 10 global claims
+    default: false
+
+  griefprevention.claim.toggleglobal.25:
+    description: Allows up to 25 global claims
+    default: false
+
+  griefprevention.claim.toggleglobal.50:
+    description: Allows up to 50 global claims
+    default: false
+
+  griefprevention.claim.toggleglobal.100:
+    description: Allows up to 100 global claims
+    default: false
+
+  # === CLAIM COLOR/FORMAT PERMISSIONS (for /claim name and /claim desc) ===
+  griefprevention.claim.color.*:
+    description: Allows using all color codes in claim names and descriptions
+    default: op
+
+  griefprevention.claim.color.black:
+    description: Allows using &0 (black) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.dark_blue:
+    description: Allows using &1 (dark blue) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.dark_green:
+    description: Allows using &2 (dark green) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.dark_aqua:
+    description: Allows using &3 (dark aqua) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.dark_red:
+    description: Allows using &4 (dark red) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.dark_purple:
+    description: Allows using &5 (dark purple) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.gold:
+    description: Allows using &6 (gold) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.gray:
+    description: Allows using &7 (gray) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.dark_gray:
+    description: Allows using &8 (dark gray) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.blue:
+    description: Allows using &9 (blue) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.green:
+    description: Allows using &a (green) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.aqua:
+    description: Allows using &b (aqua) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.red:
+    description: Allows using &c (red) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.light_purple:
+    description: Allows using &d (light purple) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.yellow:
+    description: Allows using &e (yellow) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.color.white:
+    description: Allows using &f (white) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.format.*:
+    description: Allows using all formatting codes in claim names and descriptions
+    default: op
+
+  griefprevention.claim.format.bold:
+    description: Allows using &l (bold) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.format.italic:
+    description: Allows using &o (italic) in claim names/descriptions
+    default: true
+
+  griefprevention.claim.format.underline:
+    description: Allows using &n (underline) in claim names/descriptions
+    default: false
+
+  griefprevention.claim.format.strikethrough:
+    description: Allows using &m (strikethrough) in claim names/descriptions
+    default: false
+
+  griefprevention.claim.format.obfuscated:
+    description: Allows using &k (obfuscated/magic) in claim names/descriptions
+    default: false
+
+  griefprevention.claim.format.reset:
+    description: Allows using &r (reset) in claim names/descriptions
+    default: true

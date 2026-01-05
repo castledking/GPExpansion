@@ -1653,4 +1653,31 @@ public class GPBridge {
             f.set(pd, value);
         } catch (ReflectiveOperationException ignored) {}
     }
+
+    /**
+     * Get all admin claims.
+     */
+    public List<Object> getAdminClaims() {
+        List<Object> results = new ArrayList<>();
+        if (!isAvailable()) return results;
+        for (Object claim : getAllClaims()) {
+            if (claim != null && isAdminClaim(claim) && !isSubdivision(claim)) {
+                results.add(claim);
+            }
+        }
+        return results;
+    }
+
+    /**
+     * Get the owner UUID of a claim.
+     */
+    public UUID getClaimOwner(Object claim) {
+        if (claim == null) return null;
+        try {
+            Method getOwnerID = claim.getClass().getMethod("getOwnerID");
+            Object owner = getOwnerID.invoke(claim);
+            if (owner instanceof UUID) return (UUID) owner;
+        } catch (ReflectiveOperationException ignored) {}
+        return null;
+    }
 }

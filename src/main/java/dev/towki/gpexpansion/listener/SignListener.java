@@ -179,6 +179,44 @@ public class SignListener implements Listener {
         return input.matches("^\\d+(\\.\\d+)?[Ll]?$");
     }
     
+    // Parse duration string (e.g., "7d", "1w", "24h") to milliseconds
+    private long parseDurationToMillis(String s) {
+        if (s == null || s.isEmpty()) return 0L;
+        String numStr = s.replaceAll("[^0-9]", "");
+        if (numStr.isEmpty()) return 0L;
+        long n = Long.parseLong(numStr);
+        char unit = Character.toLowerCase(s.charAt(s.length() - 1));
+        switch (unit) {
+            case 's': return n * 1000L;
+            case 'm': return n * 60L * 1000L;
+            case 'h': return n * 60L * 60L * 1000L;
+            case 'd': return n * 24L * 60L * 60L * 1000L;
+            case 'w': return n * 7L * 24L * 60L * 60L * 1000L;
+            default: return 0L;
+        }
+    }
+    
+    // Format duration in milliseconds to a human-readable string (e.g., "3d 5h")
+    private String formatDurationForMessage(long millis) {
+        if (millis <= 0) return "now";
+        long seconds = millis / 1000L;
+        
+        long days = seconds / (24L * 3600);
+        seconds %= 24L * 3600;
+        long hours = seconds / 3600L;
+        seconds %= 3600L;
+        long minutes = seconds / 60L;
+        
+        StringBuilder sb = new StringBuilder();
+        int parts = 0;
+        if (days > 0 && parts < 2) { sb.append(days).append("d"); parts++; }
+        if (hours > 0 && parts < 2) { if (sb.length() > 0) sb.append(" "); sb.append(hours).append("h"); parts++; }
+        if (minutes > 0 && parts < 2) { if (sb.length() > 0) sb.append(" "); sb.append(minutes).append("m"); parts++; }
+        
+        if (sb.length() == 0) return "<1m";
+        return sb.toString();
+    }
+    
     // Check if a string looks like an economy kind
     private boolean looksLikeEcoKind(String input) {
         if (input == null || input.isEmpty()) return false;
@@ -530,17 +568,22 @@ public class SignListener implements Listener {
             return;
         }
 
-        // Item requires holding an item (not air)
+        // Item economy - check if player is holding an item (allow creation without item, can be fixed later)
         final ItemStack itemInHand;
+        final boolean missingItem;
         if (kind == EcoKind.ITEM) {
             ItemStack tmp = player.getInventory().getItemInOffHand();
             if (tmp == null || tmp.getType() == Material.AIR) {
-                plugin.getMessages().send(player, "sign-creation.item-required");
-                return;
+                // Allow sign creation without item - player can fix it by right-clicking with item in offhand
+                itemInHand = null;
+                missingItem = true;
+            } else {
+                itemInHand = tmp;
+                missingItem = false;
             }
-            itemInHand = tmp;
         } else {
             itemInHand = null;
+            missingItem = false;
         }
 
         // Validate renewal: For sell signs, just ecoAmount; for rent signs, <ecoAmt>[L?];<perClickDuration>;<maxCapDuration>
@@ -634,6 +677,11 @@ public class SignListener implements Listener {
         player.sendMessage(Component.text("Sign created for claim ", NamedTextColor.GREEN)
             .append(Component.text(claimId, NamedTextColor.GOLD))
             .append(Component.text(".", NamedTextColor.GREEN)));
+        
+        // If ITEM sign was created without an item, tell them how to fix it
+        if (missingItem) {
+            player.sendMessage(Component.text("Hold the payment item in your offhand and right-click the sign to set it.", NamedTextColor.YELLOW));
+        }
     }
 
     private void formatInvalidSign(SignChangeEvent event, boolean rent, String claimId, String ecoKindStr, String renewalSpecStr) {
@@ -752,6 +800,53 @@ public class SignListener implements Listener {
             return;
         }
         
+        // Check if this is an ITEM sign missing item data - allow claim owner to fix it
+        if (kind == EcoKind.ITEM) {
+            String itemB64 = pdc.get(keyItemB64(), PersistentDataType.STRING);
+            if (itemB64 == null || itemB64.isEmpty()) {
+                // Check if player is the claim owner
+                Optional<Object> ownerCheckOpt = gp.findClaimById(claimId);
+                boolean isOwner = false;
+                if (ownerCheckOpt.isPresent()) {
+                    try {
+                        Object ownerId = ownerCheckOpt.get().getClass().getMethod("getOwnerID").invoke(ownerCheckOpt.get());
+                        isOwner = ownerId != null && ownerId.equals(player.getUniqueId());
+                    } catch (ReflectiveOperationException ignored) {}
+                }
+                
+                if (isOwner) {
+                    // Owner can fix the sign by holding item in offhand
+                    ItemStack offhandItem = player.getInventory().getItemInOffHand();
+                    if (offhandItem != null && offhandItem.getType() != Material.AIR) {
+                        // Update the sign with the item data
+                        pdc.set(keyItemB64(), PersistentDataType.STRING, encodeItem(offhandItem));
+                        sign.update(true);
+                        
+                        // Update sign display with item name
+                        String itemName = formatItemName(offhandItem);
+                        String amountDisplay = ecoAmtRaw + " " + itemName;
+                        SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
+                        if (rent) {
+                            front.line(2, Component.text(amountDisplay + "/" + perClick, NamedTextColor.BLACK));
+                        } else {
+                            front.line(2, Component.text(amountDisplay, NamedTextColor.BLACK));
+                        }
+                        sign.update(true);
+                        
+                        player.sendMessage(Component.text("Sign updated with payment item: " + itemName, NamedTextColor.GREEN));
+                        return;
+                    } else {
+                        player.sendMessage(Component.text("Hold the payment item in your offhand and right-click to set it.", NamedTextColor.YELLOW));
+                        return;
+                    }
+                } else {
+                    // Non-owner trying to use incomplete sign
+                    player.sendMessage(Component.text("This sign is not yet configured. The claim owner needs to set the payment item.", NamedTextColor.RED));
+                    return;
+                }
+            }
+        }
+        
         // Check if player is the owner of the claim (prevent self-rental)
         Optional<Object> claimOpt = gp.findClaimById(claimId);
         if (claimOpt.isPresent()) {
@@ -783,6 +878,23 @@ public class SignListener implements Listener {
             if (alreadyRented && !player.getUniqueId().equals(existingRenter)) {
                 player.sendMessage(Component.text("This claim is already rented.", NamedTextColor.RED));
                 return;
+            }
+            
+            // Check if too close to max time - require at least 1 renewal period to have passed
+            if (alreadyRented && player.getUniqueId().equals(existingRenter)) {
+                long perClickMs = parseDurationToMillis(perClick);
+                long maxCapMs = parseDurationToMillis(maxCap);
+                long cap = now + maxCapMs;
+                long remainingToMax = cap - existingExpiry;
+                
+                // If remaining time to max is less than one perClick, block renewal
+                if (remainingToMax < perClickMs) {
+                    // Calculate time until they can renew
+                    long timeUntilCanRenew = perClickMs - remainingToMax;
+                    String formattedTime = formatDurationForMessage(timeUntilCanRenew);
+                    plugin.getMessages().send(player, "sign-interaction.rent-too-close-to-max", "{time}", formattedTime);
+                    return;
+                }
             }
         }
 
@@ -1058,20 +1170,33 @@ public class SignListener implements Listener {
         }
     }
 
-    // Money formatting: keep only a currency symbol, strip names. Fallback to '$' if provider returns none.
+    // Money formatting: keep only a currency symbol, strip names. Respects prefix/suffix from Vault provider.
     private String sanitizeMoney(String providerFormatted, double amount) {
         String numeric = String.format(java.util.Locale.US, "%,.2f", amount);
-        if (providerFormatted == null || providerFormatted.isEmpty()) return "${numeric}".replace("${numeric}", numeric);
+        if (providerFormatted == null || providerFormatted.isEmpty()) return "$" + numeric;
         String s = providerFormatted.trim();
+        if (s.isEmpty()) return "$" + numeric;
+        
         char lead = s.charAt(0);
         char trail = s.charAt(s.length() - 1);
+        
+        // Check if symbol is at the end (suffix) - return as suffix
+        if (isCurrencySymbol(trail)) return numeric + trail;
+        
+        // Check if symbol is at the start (prefix) - return as prefix
         if (isCurrencySymbol(lead)) return lead + numeric;
-        if (isCurrencySymbol(trail)) return trail + numeric;
+        
         // If provider included a short symbol near start like "$ 1,000.00" or "€1,000.00"
         for (int i = 0; i < Math.min(3, s.length()); i++) {
             if (isCurrencySymbol(s.charAt(i))) return s.charAt(i) + numeric;
         }
-        // As a last resort, just use '$'
+        
+        // Check near end for suffix symbols like "1,000.00 €"
+        for (int i = s.length() - 1; i >= Math.max(0, s.length() - 3); i--) {
+            if (isCurrencySymbol(s.charAt(i))) return numeric + s.charAt(i);
+        }
+        
+        // As a last resort, just use '$' as prefix
         return "$" + numeric;
     }
 

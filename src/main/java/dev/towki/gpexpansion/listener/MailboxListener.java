@@ -29,7 +29,6 @@ import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.io.BukkitObjectInputStream;
 import java.io.ByteArrayInputStream;
-import java.util.Base64;
 import java.util.*;
 
 public class MailboxListener implements Listener {

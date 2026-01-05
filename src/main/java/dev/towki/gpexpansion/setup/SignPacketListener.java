@@ -84,7 +84,7 @@ public class SignPacketListener extends PacketListenerAbstract {
         String[] lines = data.getSignLines();
         
         // Schedule on main thread since PacketEvents may be async
-        Bukkit.getScheduler().runTask(plugin, () -> {
+        runOnPlayer(player, () -> {
             // Get the sign block on main thread
             Block block = player.getWorld().getBlockAt(pos.getX(), pos.getY(), pos.getZ());
             if (!(block.getState() instanceof Sign sign)) {
@@ -114,7 +114,7 @@ public class SignPacketListener extends PacketListenerAbstract {
             processingSign.add(playerId);
             
             // Delay opening the editor to give client time to receive sign content
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            runOnPlayerLater(player, () -> {
                 // Re-open the sign editor with updated content
                 player.openSign(sign, Side.FRONT);
                 
@@ -138,5 +138,13 @@ public class SignPacketListener extends PacketListenerAbstract {
      */
     public void unregister() {
         PacketEvents.getAPI().getEventManager().unregisterListener(this);
+    }
+    
+    private void runOnPlayer(Player player, Runnable task) {
+        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runOnEntity(plugin, player, task, null);
+    }
+    
+    private void runOnPlayerLater(Player player, Runnable task, long delayTicks) {
+        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runOnEntityLater(plugin, player, task, null, delayTicks);
     }
 }

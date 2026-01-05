@@ -1,0 +1,417 @@
+# Claim Flags GUI Configuration (GPFlags Integration)
+# Shows all available GPFlags for a claim with toggle functionality
+
+title: "&b&lClaim Flags"
+size: 54
+
+# Slot positions
+slots:
+  info: 4
+  back: 49
+  prev-page: 45
+  next-page: 53
+
+# Item configurations
+items:
+  info:
+    material: BOOK
+    name: "&b&lClaim Flags"
+    lore:
+      - "&7Managing flags for this claim"
+      - ""
+      - "&7Click flags to toggle them"
+      - "&7on or off for this claim."
+
+  back:
+    material: ARROW
+    name: "&c&lBack"
+    lore:
+      - "&7Return to claim settings"
+
+  prev-page:
+    material: ARROW
+    name: "&e&l« Previous Page"
+    lore:
+      - "&7Page {current}/{total}"
+
+  next-page:
+    material: ARROW
+    name: "&e&lNext Page »"
+    lore:
+      - "&7Page {current}/{total}"
+
+  filler:
+    material: GRAY_STAINED_GLASS_PANE
+    name: " "
+
+# Flag-specific configurations
+# Each flag can have a custom material and description
+# Format: flags.<flagname>.material and flags.<flagname>.description
+flags:
+  allowblockexplosions:
+    material: TNT
+    description: "Allows block explosions in the claim. Similar to GP's /claimexplosions but persists through restarts."
+  
+  allowinfest:
+    material: INFESTED_STONE
+    description: "Allows silverfish to infest blocks in the claim."
+  
+  allowpvp:
+    material: DIAMOND_SWORD
+    description: "Enables PvP combat in the claim when PvP is disabled world-wide."
+  
+  allowvillagertrading:
+    material: EMERALD
+    description: "Lets players trade with villagers without requiring trust."
+  
+  allowwitherdamage:
+    material: WITHER_SKELETON_SKULL
+    description: "Allows withers to deal damage in the claim."
+  
+  buyaccesstrust:
+    material: GOLD_INGOT
+    description: "Allows players to buy access trust using /buyaccesstrust."
+  
+  buycontainertrust:
+    material: GOLD_BLOCK
+    description: "Allows players to buy container trust using /buycontainertrust."
+  
+  buybuildtrust:
+    material: DIAMOND
+    description: "Allows players to buy build trust using /buybuildtrust."
+  
+  buysubclaim:
+    material: EMERALD_BLOCK
+    description: "Allows players to buy the subclaim."
+  
+  changebiome:
+    material: GRASS_BLOCK
+    description: "Changes the biome of the claim. Can cause lag with large claims."
+  
+  commandblacklist:
+    material: BARRIER
+    description: "Blacklist specific commands in the claim."
+  
+  commandwhitelist:
+    material: COMMAND_BLOCK
+    description: "Whitelist specific commands in the claim (blocks all others)."
+  
+  enteractionbar:
+    material: OAK_SIGN
+    description: "Shows an actionbar message when entering the claim."
+  
+  entercommand:
+    material: COMMAND_BLOCK
+    description: "Runs console commands when a player enters the claim."
+  
+  entercommand-owner:
+    material: COMMAND_BLOCK
+    description: "Runs console commands when the owner enters the claim."
+  
+  entercommand-members:
+    material: COMMAND_BLOCK
+    description: "Runs console commands when a member enters the claim."
+  
+  enterplayercommand:
+    material: PLAYER_HEAD
+    description: "Runs player commands when entering the claim."
+  
+  entermessage:
+    material: PAPER
+    description: "Sends a chat message when entering the claim."
+  
+  exitactionbar:
+    material: OAK_SIGN
+    description: "Shows an actionbar message when exiting the claim."
+  
+  exitcommand:
+    material: COMMAND_BLOCK
+    description: "Runs console commands when a player exits the claim."
+  
+  exitcommand-owner:
+    material: COMMAND_BLOCK
+    description: "Runs console commands when the owner exits the claim."
+  
+  exitcommand-members:
+    material: COMMAND_BLOCK
+    description: "Runs console commands when a member exits the claim."
+  
+  exitplayercommand:
+    material: PLAYER_HEAD
+    description: "Runs player commands when exiting the claim."
+  
+  exitmessage:
+    material: PAPER
+    description: "Sends a chat message when exiting the claim."
+  
+  healthregen:
+    material: GOLDEN_APPLE
+    description: "Regenerates health for players in the claim."
+  
+  infinitearrows:
+    material: ARROW
+    description: "Arrows are returned to players after impact."
+  
+  keepinventory:
+    material: CHEST
+    description: "Players keep their inventory on death in the claim."
+  
+  keeplevel:
+    material: EXPERIENCE_BOTTLE
+    description: "Players keep their XP on death in the claim."
+  
+  keeploaded:
+    material: ENDER_EYE
+    description: "Keeps the claim chunks loaded."
+  
+  netherportalconsolecommand:
+    material: OBSIDIAN
+    description: "Runs console commands when using a nether portal."
+  
+  netherportalplayercommand:
+    material: OBSIDIAN
+    description: "Runs player commands when using a nether portal."
+  
+  noanvildamage:
+    material: ANVIL
+    description: "Prevents anvils from being damaged when used."
+  
+  noblockfade:
+    material: ICE
+    description: "Prevents blocks from fading, melting, or disappearing."
+  
+  noblockform:
+    material: SNOW_BLOCK
+    description: "Prevents blocks from forming (snow, ice, cobble from water/lava)."
+  
+  noblockgravity:
+    material: SAND
+    description: "Prevents blocks like sand and gravel from falling."
+  
+  nochorusfruit:
+    material: CHORUS_FRUIT
+    description: "Prevents teleportation from eating chorus fruit."
+  
+  nocombatloot:
+    material: ROTTEN_FLESH
+    description: "Clears drops when mobs die (not players)."
+  
+  nocoraldecay:
+    material: BRAIN_CORAL
+    description: "Prevents corals from decaying."
+  
+  nocroptrampling:
+    material: FARMLAND
+    description: "Prevents crops from being trampled."
+  
+  noelytra:
+    material: ELYTRA
+    description: "Prevents players from using elytra in the claim."
+  
+  noenderpearl:
+    material: ENDER_PEARL
+    description: "Prevents teleportation from ender pearls."
+  
+  noenter:
+    material: IRON_DOOR
+    description: "Prevents all players from entering the claim."
+  
+  noenterplayer:
+    material: IRON_DOOR
+    description: "Blocks specific players from entering the claim."
+  
+  noexpiration:
+    material: CLOCK
+    description: "Disables claim expiration."
+  
+  noexplosiondamage:
+    material: TNT
+    description: "Disables explosion damage to players."
+  
+  nofalldamage:
+    material: FEATHER
+    description: "Prevents fall damage in the claim."
+  
+  nofiredamage:
+    material: FLINT_AND_STEEL
+    description: "Prevents fire from damaging blocks."
+  
+  nofirespread:
+    material: CAMPFIRE
+    description: "Prevents fire from spreading."
+  
+  noflight:
+    material: FEATHER
+    description: "Prevents players from flying in the claim."
+  
+  nofluidflow:
+    material: WATER_BUCKET
+    description: "Prevents fluids from flowing in the claim."
+  
+  nogrowth:
+    material: WHEAT_SEEDS
+    description: "Stops natural block growth (crops, etc)."
+  
+  nohunger:
+    material: COOKED_BEEF
+    description: "Prevents hunger loss in the claim."
+  
+  noiceform:
+    material: ICE
+    description: "Stops ice from forming in the claim."
+  
+  noitemdamage:
+    material: DIAMOND_CHESTPLATE
+    description: "Prevents item durability loss."
+  
+  noitemdrop:
+    material: DROPPER
+    description: "Prevents players from dropping items."
+  
+  noitempickup:
+    material: HOPPER
+    description: "Prevents players from picking up items."
+  
+  noleafdecay:
+    material: OAK_LEAVES
+    description: "Prevents leaves from decaying."
+  
+  nolootprotection:
+    material: GOLD_NUGGET
+    description: "Disables death loot protection."
+  
+  nomapmaking:
+    material: MAP
+    description: "Prevents creating maps in the claim."
+  
+  nomcmmodeathpenalty:
+    material: DIAMOND_PICKAXE
+    description: "Disables mcMMO death penalty."
+  
+  nomcmmoskills:
+    material: DIAMOND_AXE
+    description: "Prevents mcMMO skill usage."
+  
+  nomcmmoxpgain:
+    material: EXPERIENCE_BOTTLE
+    description: "Disables mcMMO XP gain."
+  
+  nomobdamage:
+    material: SHIELD
+    description: "Prevents mob damage (not player damage)."
+  
+  nomobspawns:
+    material: SPAWNER
+    description: "Prevents ALL mob spawns in the claim."
+  
+  nomobspawnstype:
+    material: ZOMBIE_HEAD
+    description: "Prevents specific mob types from spawning."
+  
+  nomonsters:
+    material: ZOMBIE_HEAD
+    description: "Prevents hostile mobs and removes existing ones."
+  
+  nomonsterspawns:
+    material: SKELETON_SKULL
+    description: "Prevents hostile mob spawns only."
+  
+  noopendoors:
+    material: OAK_DOOR
+    description: "Prevents opening doors/gates/trapdoors."
+  
+  nopetdamage:
+    material: BONE
+    description: "Prevents damage to pets in the claim."
+  
+  noplayercroptrampling:
+    material: WHEAT
+    description: "Prevents players from trampling crops."
+  
+  noplayerdamage:
+    material: SHIELD
+    description: "Prevents all player damage in the claim."
+  
+  noplayerdamagebymonster:
+    material: IRON_CHESTPLATE
+    description: "Prevents monster damage to players."
+  
+  nosnowform:
+    material: SNOW
+    description: "Prevents snow from forming."
+  
+  novehicle:
+    material: MINECART
+    description: "Stops vehicle placement and use."
+  
+  novinegrowth:
+    material: VINE
+    description: "Stops vines from growing."
+  
+  noweatherchange:
+    material: SUNFLOWER
+    description: "Disables weather changes in the world."
+  
+  notifyenter:
+    material: BELL
+    description: "Notifies claim owner when players enter."
+  
+  notifyexit:
+    material: BELL
+    description: "Notifies claim owner when players exit."
+  
+  ownerfly:
+    material: ELYTRA
+    description: "Allows the claim owner to fly."
+  
+  ownermemberfly:
+    material: ELYTRA
+    description: "Allows owner and trusted members to fly."
+  
+  permissionfly:
+    material: FEATHER
+    description: "Allows players with specific permission to fly."
+  
+  playertime:
+    material: CLOCK
+    description: "Sets player time in the claim (day/noon/night/midnight)."
+  
+  playerweather:
+    material: SUNFLOWER
+    description: "Sets player weather in the claim (sun/rain)."
+  
+  protectnamedmobs:
+    material: NAME_TAG
+    description: "Protects named mobs from damage."
+  
+  raidmemberonly:
+    material: CROSSBOW
+    description: "Only members can trigger raids."
+  
+  readlecterns:
+    material: LECTERN
+    description: "Allows reading lectern books without trust."
+  
+  respawnlocation:
+    material: RED_BED
+    description: "Sets respawn location for the claim."
+  
+  restoregrazedgrass:
+    material: GRASS_BLOCK
+    description: "Instantly regrows grass eaten by sheep."
+  
+  spawnreasonwhitelist:
+    material: SPAWNER
+    description: "Only allows whitelisted spawn reasons."
+  
+  spleefarena:
+    material: SNOW_BLOCK
+    description: "Creates an automated spleef arena."
+  
+  trappeddestination:
+    material: COMPASS
+    description: "Sets /trapped destination in admin claims."
+  
+  viewcontainers:
+    material: BARREL
+    description: "Allows viewing containers without trust."

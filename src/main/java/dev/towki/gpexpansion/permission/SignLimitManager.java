@@ -18,10 +18,12 @@ public class SignLimitManager {
     private final Map<UUID, Integer> sellLimits = new ConcurrentHashMap<>();
     private final Map<UUID, Integer> rentLimits = new ConcurrentHashMap<>();
     private final Map<UUID, Integer> mailboxLimits = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> globalClaimLimits = new ConcurrentHashMap<>();
     private final Map<UUID, Boolean> permissionOverride = new ConcurrentHashMap<>();
     private int defaultSellLimit;
     private int defaultRentLimit;
     private int defaultMailboxLimit;
+    private int defaultGlobalClaimLimit;
     
     public SignLimitManager(GPExpansionPlugin plugin) {
         this.plugin = plugin;
@@ -37,6 +39,7 @@ public class SignLimitManager {
         defaultSellLimit = config.getInt("defaults.max-sell-signs", 5);
         defaultRentLimit = config.getInt("defaults.max-rent-signs", 5);
         defaultMailboxLimit = config.getInt("defaults.max-mailbox-signs", 5);
+        defaultGlobalClaimLimit = config.getInt("defaults.max-global-claims", 5);
     }
     
     /**
@@ -48,6 +51,7 @@ public class SignLimitManager {
         sellLimits.clear();
         rentLimits.clear();
         mailboxLimits.clear();
+        globalClaimLimits.clear();
     }
     
     /**
@@ -274,6 +278,105 @@ public class SignLimitManager {
     }
     
     /**
+     * Get the maximum number of global claims a player can have
+     */
+    public int getGlobalClaimLimit(Player player) {
+        UUID uuid = player.getUniqueId();
+        
+        // Check if we have a cached value and no permission override
+        if (globalClaimLimits.containsKey(uuid) && !permissionOverride.getOrDefault(uuid, false)) {
+            return globalClaimLimits.get(uuid);
+        }
+        
+        // Check permissions for specific limits
+        int limit = defaultGlobalClaimLimit;
+        List<String> foundPerms = new ArrayList<>();
+        
+        // Check for numbered permissions (griefprevention.claim.toggleglobal.<amount>)
+        for (PermissionAttachmentInfo info : player.getEffectivePermissions()) {
+            String perm = info.getPermission();
+            if (perm.startsWith("griefprevention.claim.toggleglobal.") && info.getValue()) {
+                try {
+                    int amount = Integer.parseInt(perm.substring(perm.lastIndexOf('.') + 1));
+                    if (amount > limit) {
+                        limit = amount;
+                    }
+                    foundPerms.add(perm);
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        
+        // Check for permission desync - multiple permissions found
+        if (foundPerms.size() > 1) {
+            plugin.getLogger().warning("Permission desync detected for player " + player.getName() + 
+                ": Found multiple global claim permissions: " + String.join(", ", foundPerms));
+            // Mark as needing cleanup
+            permissionOverride.put(uuid, true);
+        }
+        
+        // Cache the result
+        globalClaimLimits.put(uuid, limit);
+        return limit;
+    }
+    
+    /**
+     * Set a player's global claim limit directly (used for admin commands)
+     */
+    public void setGlobalClaimLimit(Player player, int limit) {
+        UUID uuid = player.getUniqueId();
+        
+        // Check for permission desync and clean up if needed
+        if (permissionOverride.getOrDefault(uuid, false)) {
+            cleanupGlobalClaimPermissions(player, limit);
+            permissionOverride.put(uuid, false);
+        }
+        
+        globalClaimLimits.put(uuid, Math.max(0, limit));
+    }
+    
+    /**
+     * Add to a player's global claim limit
+     */
+    public void addGlobalClaimLimit(Player player, int amount) {
+        int current = getGlobalClaimLimit(player);
+        setGlobalClaimLimit(player, current + amount);
+    }
+    
+    /**
+     * Take from a player's global claim limit
+     */
+    public void takeGlobalClaimLimit(Player player, int amount) {
+        int current = getGlobalClaimLimit(player);
+        setGlobalClaimLimit(player, Math.max(0, current - amount));
+    }
+    
+    /**
+     * Get the current number of global claims a player has
+     */
+    public int getCurrentGlobalClaims(Player player) {
+        return plugin.getClaimDataStore().countGlobalClaimsForPlayer(player.getUniqueId());
+    }
+    
+    /**
+     * Check if a player can make more claims global
+     */
+    public boolean canMakeClaimGlobal(Player player) {
+        return getCurrentGlobalClaims(player) < getGlobalClaimLimit(player);
+    }
+    
+    /**
+     * Clean up global claim permissions
+     */
+    private void cleanupGlobalClaimPermissions(Player player, int newLimit) {
+        if (permissionManager.cleanupGlobalClaimPermissions(player, newLimit)) {
+            plugin.getLogger().info("Successfully cleaned up global claim permissions for " + player.getName());
+        } else {
+            plugin.getLogger().warning("Could not clean up global claim permissions for " + player.getName() + 
+                " - no supported permission plugin found");
+        }
+    }
+    
+    /**
      * Clear cached limits for a player (call when permissions change)
      */
     public void clearCache(Player player) {
@@ -281,6 +384,7 @@ public class SignLimitManager {
         sellLimits.remove(uuid);
         rentLimits.remove(uuid);
         mailboxLimits.remove(uuid);
+        globalClaimLimits.remove(uuid);
         permissionOverride.remove(uuid);
     }
     
@@ -291,6 +395,7 @@ public class SignLimitManager {
         sellLimits.clear();
         rentLimits.clear();
         mailboxLimits.clear();
+        globalClaimLimits.clear();
         permissionOverride.clear();
     }
     

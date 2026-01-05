@@ -110,4 +110,14 @@ public class RentalStore {
     }
 
     public Map<String, Entry> all() { return rentals; }
+    
+    public boolean isRented(String claimId) {
+        Entry entry = rentals.get(claimId);
+        if (entry == null) return false;
+        return entry.expiry > System.currentTimeMillis();
+    }
+    
+    public Entry get(String claimId) {
+        return rentals.get(claimId);
+    }
 }

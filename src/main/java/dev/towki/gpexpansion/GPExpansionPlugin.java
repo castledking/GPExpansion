@@ -16,6 +16,7 @@ import dev.towki.gpexpansion.listener.SignListener;
 import dev.towki.gpexpansion.listener.MailboxListener;
 import dev.towki.gpexpansion.listener.BanEnforcementListener;
 import dev.towki.gpexpansion.storage.BanStore;
+import dev.towki.gpexpansion.storage.IconStore;
 import dev.towki.gpexpansion.storage.NameStore;
 import dev.towki.gpexpansion.storage.EvictionStore;
 import dev.towki.gpexpansion.storage.PendingRentStore;
@@ -53,10 +54,19 @@ public final class GPExpansionPlugin extends JavaPlugin {
     private RentalStore rentalStore;
     private EvictionStore evictionStore;
     private MailboxStore mailboxStore;
+    private dev.towki.gpexpansion.storage.SpawnStore spawnStore;
+    private dev.towki.gpexpansion.storage.ClaimDataStore claimDataStore;
+    private IconStore iconStore;
+    private dev.towki.gpexpansion.gui.GUIManager guiManager;
     private SignLimitManager signLimitManager;
     private MailboxListener mailboxListener;
     private SetupWizardManager setupWizardManager;
     private Messages messages;
+    private dev.towki.gpexpansion.util.Config configManager;
+    
+    // Tax settings
+    private double taxPercent = 5.0;
+    private String taxAccountName = "Tax";
 
     @Override
     public void onLoad() {
@@ -65,17 +75,21 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        // Save default config if it doesn't exist
-        saveDefaultConfig();
+        // Initialize config manager (handles defaults automatically)
+        configManager = new dev.towki.gpexpansion.util.Config(this);
+        configManager.load();
         
         // Initialize messages/lang system
         messages = new Messages(this);
         
         // Enable debug mode if configured
-        if (getConfig().getBoolean("debug.enabled", false)) {
+        if (configManager.isDebugEnabled()) {
             GPBridge.setDebug(true);
             getLogger().info("Debug mode enabled for GPBridge");
         }
+        
+        // Load tax settings
+        loadTaxSettings();
 
         // Setup economy if Vault present
         setupEconomy();
@@ -90,6 +104,14 @@ public final class GPExpansionPlugin extends JavaPlugin {
         evictionStore = new EvictionStore(this);
         evictionStore.load();
         mailboxStore = new MailboxStore(this);
+        spawnStore = new dev.towki.gpexpansion.storage.SpawnStore(this);
+        spawnStore.load();
+        claimDataStore = new dev.towki.gpexpansion.storage.ClaimDataStore(this);
+        claimDataStore.load();
+        iconStore = new IconStore(this);
+        
+        // Initialize GUI manager
+        guiManager = new dev.towki.gpexpansion.gui.GUIManager(this);
         
         // Initialize sign limit manager
         signLimitManager = new dev.towki.gpexpansion.permission.SignLimitManager(this);
@@ -150,7 +172,23 @@ public final class GPExpansionPlugin extends JavaPlugin {
                     claimCommand,
                     claimCommand
             );
-            // Prefer Paper's JavaPlugin#registerCommand when available; otherwise fallback to CommandMap
+            // Get CommandMap for registering commands
+            CommandMap map = null;
+            try {
+                Object mapObj = getServer().getClass().getMethod("getCommandMap").invoke(getServer());
+                if (mapObj instanceof CommandMap) {
+                    map = (CommandMap) mapObj;
+                }
+            } catch (ReflectiveOperationException e) {
+                getLogger().severe("Failed to get CommandMap: " + e.getMessage());
+            }
+            
+            if (map == null) {
+                getLogger().severe("Could not obtain CommandMap to register commands");
+                return;
+            }
+            
+            // Register core commands - try Paper's registerCommand first, fallback to CommandMap
             try {
                 java.lang.reflect.Method reg = JavaPlugin.class.getMethod("registerCommand", Command.class);
                 reg.invoke(this, wrapper);
@@ -158,142 +196,157 @@ public final class GPExpansionPlugin extends JavaPlugin {
                 reg.invoke(this, adminClaimListWrapper);
                 reg.invoke(this, claimsListWrapper);
             } catch (NoSuchMethodException missing) {
-                try {
-                    Object mapObj = getServer().getClass().getMethod("getCommandMap").invoke(getServer());
-                    if (mapObj instanceof CommandMap) {
-                        CommandMap map = (CommandMap) mapObj;
-                        map.register("gpexpansion", wrapper);
-                        map.register("gpexpansion", trustlistWrapper);
-                        map.register("gpexpansion", adminClaimListWrapper);
-                        map.register("gpexpansion", claimsListWrapper);
-                        // Register /gpxconfirm command as well
-                        dev.towki.gpexpansion.command.ConfirmCommand confirm = new dev.towki.gpexpansion.command.ConfirmCommand(this);
-                        Command wrapper2 = new PaperCommandWrapper(
-                                this, // Pass plugin instance
-                                "gpxconfirm",
-                                "Confirm GPExpansion actions",
-                                "/gpxconfirm <token> <accept|cancel>",
-                                Collections.emptyList(),
-                                confirm,
-                                confirm
-                        );
-                        map.register("gpexpansion", wrapper2);
-                        
-                        // Register /gpx command
-                        GPXCommand gpxCommand = new GPXCommand(this);
-                        Command gpxWrapper = new PaperCommandWrapper(
-                                this,
-                                "gpx",
-                                "GPExpansion admin commands",
-                                "/gpx <subcommand>",
-                                Collections.emptyList(),
-                                gpxCommand,
-                                gpxCommand
-                        );
-                        map.register("gpexpansion", gpxWrapper);
-                        
-                        // Register /mailbox command
-                        MailboxCommand mailboxCommand = new MailboxCommand(this);
-                        Command mailboxWrapper = new PaperCommandWrapper(
-                                this,
-                                "mailbox",
-                                "Mailbox management command",
-                                "/mailbox <subcommand>",
-                                Collections.emptyList(),
-                                mailboxCommand,
-                                mailboxCommand
-                        );
-                        map.register("gpexpansion", mailboxWrapper);
-                        
-                        // Initialize setup wizard manager
-                        setupWizardManager = new SetupWizardManager(this);
-                        
-                        // Register chat listener for wizard (must be done here after wizard manager is created)
-                        Bukkit.getPluginManager().registerEvents(new SetupChatListener(GPExpansionPlugin.this, setupWizardManager), GPExpansionPlugin.this);
-                        getLogger().info("- Registered SetupChatListener for wizard commands");
-                        
-                        // Wire wizard manager to mailbox command
-                        mailboxCommand.setWizardManager(setupWizardManager);
-                        
-                        // Register /rentclaim command
-                        RentClaimCommand rentClaimCommand = new RentClaimCommand(this, setupWizardManager);
-                        Command rentClaimWrapper = new PaperCommandWrapper(
-                                this,
-                                "rentclaim",
-                                "Start rental sign setup wizard",
-                                "/rentclaim [claimId]",
-                                Collections.emptyList(),
-                                rentClaimCommand,
-                                rentClaimCommand
-                        );
-                        map.register("gpexpansion", rentClaimWrapper);
-                        
-                        // Register /sellclaim command
-                        SellClaimCommand sellClaimCommand = new SellClaimCommand(this, setupWizardManager);
-                        Command sellClaimWrapper = new PaperCommandWrapper(
-                                this,
-                                "sellclaim",
-                                "Start sell sign setup wizard",
-                                "/sellclaim [claimId]",
-                                Collections.emptyList(),
-                                sellClaimCommand,
-                                sellClaimCommand
-                        );
-                        map.register("gpexpansion", sellClaimWrapper);
-                        
-                        // Register /claiminfo command
-                        ClaimInfoCommand claimInfoCommand = new ClaimInfoCommand(this);
-                        Command claimInfoWrapper = new PaperCommandWrapper(
-                                this,
-                                "claiminfo",
-                                "Show detailed claim information",
-                                "/claiminfo [claimId]",
-                                Collections.emptyList(),
-                                claimInfoCommand,
-                                claimInfoCommand
-                        );
-                        map.register("gpexpansion", claimInfoWrapper);
-                        
-                        // Register /cancelsetup command
-                        CancelSetupCommand cancelSetupCommand = new CancelSetupCommand(setupWizardManager);
-                        Command cancelSetupWrapper = new PaperCommandWrapper(
-                                this,
-                                "cancelsetup",
-                                "Cancel setup wizard or auto-paste mode",
-                                "/cancelsetup",
-                                Collections.emptyList(),
-                                cancelSetupCommand,
-                                cancelSetupCommand
-                        );
-                        map.register("gpexpansion", cancelSetupWrapper);
-                        
-                        // Register sign auto-paste listener (fallback for SignChangeEvent injection)
-                        SignAutoPasteListener autoPasteListener = new SignAutoPasteListener(GPExpansionPlugin.this, setupWizardManager);
-                        Bukkit.getPluginManager().registerEvents(autoPasteListener, GPExpansionPlugin.this);
-                        getLogger().info("- Registered SignAutoPasteListener for auto-paste mode");
-                        
-                        // Try to register PacketEvents listener for better sign GUI experience
-                        if (isPacketEventsAvailable()) {
-                            try {
-                                SignPacketListener packetListener = new SignPacketListener(GPExpansionPlugin.this, setupWizardManager);
-                                packetListener.register();
-                                // Tell autoPasteListener that PacketEvents is handling sign pre-fill
-                                autoPasteListener.setPacketEventsAvailable(true);
-                            } catch (Exception e) {
-                                getLogger().warning("Failed to register PacketEvents listener: " + e.getMessage());
-                                getLogger().info("Falling back to GUI bypass mode");
-                            }
-                        } else {
-                            getLogger().info("PacketEvents not found - sign wizard will use fallback mode (GUI bypass)");
-                        }
-                    } else {
-                        getLogger().severe("Could not obtain CommandMap to register /claim");
-                    }
-                } catch (ReflectiveOperationException e) {
-                    getLogger().severe("Failed to register /claim command via CommandMap: " + e.getMessage());
-                }
+                // Paper registerCommand not available, use CommandMap
+                map.register("gpexpansion", wrapper);
+                map.register("gpexpansion", trustlistWrapper);
+                map.register("gpexpansion", adminClaimListWrapper);
+                map.register("gpexpansion", claimsListWrapper);
             } catch (ReflectiveOperationException e) {
-                getLogger().severe("Failed to register /claim command: " + e.getMessage());
+                getLogger().severe("Failed to register core commands: " + e.getMessage());
+            }
+            
+            // Register all additional commands via CommandMap (always needed)
+            // Register /gpxconfirm command
+            dev.towki.gpexpansion.command.ConfirmCommand confirm = new dev.towki.gpexpansion.command.ConfirmCommand(this);
+            Command confirmWrapper = new PaperCommandWrapper(
+                    this,
+                    "gpxconfirm",
+                    "Confirm GPExpansion actions",
+                    "/gpxconfirm <token> <accept|cancel>",
+                    Collections.emptyList(),
+                    confirm,
+                    confirm
+            );
+            map.register("gpexpansion", confirmWrapper);
+            
+            // Register /gpx command
+            GPXCommand gpxCommand = new GPXCommand(this);
+            Command gpxWrapper = new PaperCommandWrapper(
+                    this,
+                    "gpx",
+                    "GPExpansion admin commands",
+                    "/gpx <subcommand>",
+                    Collections.emptyList(),
+                    gpxCommand,
+                    gpxCommand
+            );
+            map.register("gpexpansion", gpxWrapper);
+            
+            // Initialize setup wizard manager
+            setupWizardManager = new SetupWizardManager(this);
+            
+            // Register chat listener for wizard
+            Bukkit.getPluginManager().registerEvents(new SetupChatListener(GPExpansionPlugin.this, setupWizardManager), GPExpansionPlugin.this);
+            getLogger().info("- Registered SetupChatListener for wizard commands");
+            
+            // Register /mailbox command
+            MailboxCommand mailboxCommand = new MailboxCommand(this);
+            mailboxCommand.setWizardManager(setupWizardManager);
+            Command mailboxWrapper = new PaperCommandWrapper(
+                    this,
+                    "mailbox",
+                    "Mailbox management command",
+                    "/mailbox <subcommand>",
+                    Collections.emptyList(),
+                    mailboxCommand,
+                    mailboxCommand
+            );
+            map.register("gpexpansion", mailboxWrapper);
+            
+            // Register /rentclaim command
+            RentClaimCommand rentClaimCommand = new RentClaimCommand(this, setupWizardManager);
+            Command rentClaimWrapper = new PaperCommandWrapper(
+                    this,
+                    "rentclaim",
+                    "Start rental sign setup wizard",
+                    "/rentclaim [claimId]",
+                    Collections.emptyList(),
+                    rentClaimCommand,
+                    rentClaimCommand
+            );
+            map.register("gpexpansion", rentClaimWrapper);
+            
+            // Register /sellclaim command
+            SellClaimCommand sellClaimCommand = new SellClaimCommand(this, setupWizardManager);
+            Command sellClaimWrapper = new PaperCommandWrapper(
+                    this,
+                    "sellclaim",
+                    "Start sell sign setup wizard",
+                    "/sellclaim [claimId]",
+                    Collections.emptyList(),
+                    sellClaimCommand,
+                    sellClaimCommand
+            );
+            map.register("gpexpansion", sellClaimWrapper);
+            
+            // Register /claiminfo command
+            ClaimInfoCommand claimInfoCommand = new ClaimInfoCommand(this);
+            Command claimInfoWrapper = new PaperCommandWrapper(
+                    this,
+                    "claiminfo",
+                    "Show detailed claim information",
+                    "/claiminfo [claimId]",
+                    Collections.emptyList(),
+                    claimInfoCommand,
+                    claimInfoCommand
+            );
+            map.register("gpexpansion", claimInfoWrapper);
+            
+            // Register /cancelsetup command
+            CancelSetupCommand cancelSetupCommand = new CancelSetupCommand(setupWizardManager);
+            Command cancelSetupWrapper = new PaperCommandWrapper(
+                    this,
+                    "cancelsetup",
+                    "Cancel setup wizard or auto-paste mode",
+                    "/cancelsetup",
+                    Collections.emptyList(),
+                    cancelSetupCommand,
+                    cancelSetupCommand
+            );
+            map.register("gpexpansion", cancelSetupWrapper);
+            
+            // Register /claimtp command
+            Command claimTpWrapper = new PaperCommandWrapper(
+                    this,
+                    "claimtp",
+                    "Teleport to a claim",
+                    "/claimtp <claimId> [player]",
+                    Collections.emptyList(),
+                    claimCommand,
+                    claimCommand
+            );
+            map.register("gpexpansion", claimTpWrapper);
+            
+            // Register /setclaimspawn command
+            Command setClaimSpawnWrapper = new PaperCommandWrapper(
+                    this,
+                    "setclaimspawn",
+                    "Set the teleport spawn point for a claim",
+                    "/setclaimspawn",
+                    Collections.emptyList(),
+                    claimCommand,
+                    claimCommand
+            );
+            map.register("gpexpansion", setClaimSpawnWrapper);
+            
+            // Register sign auto-paste listener (fallback for SignChangeEvent injection)
+            SignAutoPasteListener autoPasteListener = new SignAutoPasteListener(GPExpansionPlugin.this, setupWizardManager);
+            Bukkit.getPluginManager().registerEvents(autoPasteListener, GPExpansionPlugin.this);
+            getLogger().info("- Registered SignAutoPasteListener for auto-paste mode");
+            
+            // Try to register PacketEvents listener for better sign GUI experience
+            if (isPacketEventsAvailable()) {
+                try {
+                    SignPacketListener packetListener = new SignPacketListener(GPExpansionPlugin.this, setupWizardManager);
+                    packetListener.register();
+                    // Tell autoPasteListener that PacketEvents is handling sign pre-fill
+                    autoPasteListener.setPacketEventsAvailable(true);
+                } catch (Exception e) {
+                    getLogger().warning("Failed to register PacketEvents listener: " + e.getMessage());
+                    getLogger().info("Falling back to GUI bypass mode");
+                }
+            } else {
+                getLogger().info("PacketEvents not found - sign wizard will use fallback mode (GUI bypass)");
             }
             getLogger().info("Registered /claim, /trustlist, /adminclaimlist, /gpx, /rentclaim, /sellclaim, /cancelsetup commands under GPExpansion");
         });
@@ -509,8 +562,14 @@ public final class GPExpansionPlugin extends JavaPlugin {
         reloadConfig();
         messages.loadLanguageFile();
         
+        // Reload config (adds any missing defaults)
+        configManager.reload();
+        
         // Re-apply debug setting
-        GPBridge.setDebug(getConfig().getBoolean("debug.enabled", false));
+        GPBridge.setDebug(configManager.isDebugEnabled());
+        
+        // Reload tax settings
+        loadTaxSettings();
     }
 
     // Economy bridge methods to support both legacy Vault and Vault 2 without a hard compile dependency on v2
@@ -613,6 +672,22 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
     public EvictionStore getEvictionStore() {
         return evictionStore;
+    }
+    
+    public dev.towki.gpexpansion.storage.SpawnStore getSpawnStore() {
+        return spawnStore;
+    }
+    
+    public dev.towki.gpexpansion.gui.GUIManager getGUIManager() {
+        return guiManager;
+    }
+    
+    public dev.towki.gpexpansion.storage.ClaimDataStore getClaimDataStore() {
+        return claimDataStore;
+    }
+    
+    public IconStore getIconStore() {
+        return iconStore;
     }
     
     public SignLimitManager getSignLimitManager() {
@@ -797,5 +872,81 @@ public final class GPExpansionPlugin extends JavaPlugin {
             return true;
         }
         return false;
+    }
+    
+    /**
+     * Load tax settings from config.
+     */
+    private void loadTaxSettings() {
+        taxPercent = configManager.getTaxPercent();
+        taxAccountName = configManager.getTaxAccountName();
+        if (taxPercent > 0) {
+            getLogger().info("Tax enabled: " + taxPercent + "% to account '" + taxAccountName + "'");
+        }
+    }
+    
+    /**
+     * Get the config manager.
+     */
+    public dev.towki.gpexpansion.util.Config getConfigManager() {
+        return configManager;
+    }
+    
+    /**
+     * Get the configured tax percentage (0 = disabled).
+     */
+    public double getTaxPercent() {
+        return taxPercent;
+    }
+    
+    /**
+     * Get the configured tax account name.
+     */
+    public String getTaxAccountName() {
+        return taxAccountName;
+    }
+    
+    /**
+     * Check if tax is enabled (percent > 0 and economy available).
+     */
+    public boolean isTaxEnabled() {
+        return taxPercent > 0 && isEconomyAvailable();
+    }
+    
+    /**
+     * Deposit money to an NPC/fake account (for tax collection).
+     * Uses Vault's depositPlayer with an OfflinePlayer created from the account name.
+     */
+    public boolean depositToAccount(String accountName, double amount) {
+        if (!isEconomyAvailable() || amount <= 0) return false;
+        try {
+            if (economy != null) {
+                // Create a fake OfflinePlayer for the NPC account
+                // Most economy plugins support this for NPC/server accounts
+                @SuppressWarnings("deprecation")
+                OfflinePlayer fakePlayer = Bukkit.getOfflinePlayer(accountName);
+                
+                // Some economy plugins have createPlayerAccount - try to ensure account exists
+                if (!economy.hasAccount(fakePlayer)) {
+                    economy.createPlayerAccount(fakePlayer);
+                }
+                
+                net.milkbowl.vault.economy.EconomyResponse resp = economy.depositPlayer(fakePlayer, amount);
+                return resp != null && resp.transactionSuccess();
+            }
+        } catch (Throwable e) {
+            getLogger().warning("Failed to deposit " + amount + " to tax account '" + accountName + "': " + e.getMessage());
+        }
+        return false;
+    }
+    
+    /**
+     * Calculate tax amount from a payment.
+     * @param amount The full payment amount
+     * @return The tax amount to deduct
+     */
+    public double calculateTax(double amount) {
+        if (taxPercent <= 0) return 0;
+        return amount * (taxPercent / 100.0);
     }
 }

@@ -1,0 +1,58 @@
+# Main Menu GUI Configuration
+# This menu is shown when a player runs /claim with GUI mode enabled
+
+title: "&6&lClaim Menu"
+size: 27
+
+# Filler item for empty slots
+filler:
+  material: GRAY_STAINED_GLASS_PANE
+
+# Slot positions for non-admin view (3 items centered)
+slots:
+  owned-claims: 11
+  trusted-claims: 13
+  global-list: 15
+
+# Slot positions for admin view (4 items centered)
+# Admins see all options: My Claims, Trusted Claims, Global List, Admin Menu
+slots-admin:
+  admin-owned-claims: 10
+  admin-trusted-claims: 12
+  admin-global-list: 14
+  admin-menu: 16
+
+# Menu items
+items:
+  owned-claims:
+    material: DIAMOND
+    name: "&b&lMy Claims"
+    lore:
+      - "&7View all claims you own"
+      - ""
+      - "&eClick to view your claims"
+  
+  trusted-claims:
+    material: EMERALD
+    name: "&a&lTrusted Claims"
+    lore:
+      - "&7View claims you are trusted in"
+      - ""
+      - "&eClick to view trusted claims"
+  
+  global-list:
+    material: ENDER_EYE
+    name: "&d&lGlobal Claim List"
+    lore:
+      - "&7Browse publicly listed claims"
+      - "&7from all players on the server."
+      - ""
+      - "&eClick to view global claim list"
+  
+  admin-menu:
+    material: COMMAND_BLOCK
+    name: "&c&lAdmin Menu"
+    lore:
+      - "&7Access admin claim management"
+      - ""
+      - "&eClick to open admin menu"

@@ -74,7 +74,7 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         }
         
         if (args.length < 5) {
-            sender.sendMessage(Component.text("Usage: /gpx max <sell|rent|mailbox> <add|take|set> <player> <amount>", NamedTextColor.RED));
+            sender.sendMessage(Component.text("Usage: /gpx max <sell|rent|mailbox|globals> <add|take|set> <player> <amount>", NamedTextColor.RED));
             return true;
         }
         
@@ -82,8 +82,8 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         String action = args[2].toLowerCase();
         String playerName = args[3];
         
-        if (!type.equals("sell") && !type.equals("rent") && !type.equals("mailbox")) {
-            sender.sendMessage(Component.text("Invalid type. Use 'sell', 'rent', or 'mailbox'.", NamedTextColor.RED));
+        if (!type.equals("sell") && !type.equals("rent") && !type.equals("mailbox") && !type.equals("globals")) {
+            sender.sendMessage(Component.text("Invalid type. Use 'sell', 'rent', 'mailbox', or 'globals'.", NamedTextColor.RED));
             return true;
         }
         
@@ -116,12 +116,13 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         
-        // Determine sign type
+        // Determine type
         boolean sell = type.equals("sell");
         boolean rent = type.equals("rent");
+        boolean globals = type.equals("globals");
         
         // Process the command
-        String signType = sell ? "sell" : (rent ? "rent" : "mailbox");
+        String limitType = sell ? "sell sign" : (rent ? "rent sign" : (globals ? "global claim" : "mailbox sign"));
         
         switch (action) {
             case "add":
@@ -129,11 +130,13 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                     signLimitManager.addSellLimit(target, amount);
                 } else if (rent) {
                     signLimitManager.addRentLimit(target, amount);
+                } else if (globals) {
+                    signLimitManager.addGlobalClaimLimit(target, amount);
                 } else {
                     signLimitManager.addMailboxLimit(target, amount);
                 }
-                sender.sendMessage(Component.text("Added " + amount + " to " + target.getName() + "'s " + signType + " sign limit.", NamedTextColor.GREEN));
-                target.sendMessage(Component.text("Your " + signType + " sign limit has been increased by " + amount + ".", NamedTextColor.YELLOW));
+                sender.sendMessage(Component.text("Added " + amount + " to " + target.getName() + "'s " + limitType + " limit.", NamedTextColor.GREEN));
+                target.sendMessage(Component.text("Your " + limitType + " limit has been increased by " + amount + ".", NamedTextColor.YELLOW));
                 break;
                 
             case "take":
@@ -141,11 +144,13 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                     signLimitManager.takeSellLimit(target, amount);
                 } else if (rent) {
                     signLimitManager.takeRentLimit(target, amount);
+                } else if (globals) {
+                    signLimitManager.takeGlobalClaimLimit(target, amount);
                 } else {
                     signLimitManager.takeMailboxLimit(target, amount);
                 }
-                sender.sendMessage(Component.text("Removed " + amount + " from " + target.getName() + "'s " + signType + " sign limit.", NamedTextColor.GREEN));
-                target.sendMessage(Component.text("Your " + signType + " sign limit has been decreased by " + amount + ".", NamedTextColor.YELLOW));
+                sender.sendMessage(Component.text("Removed " + amount + " from " + target.getName() + "'s " + limitType + " limit.", NamedTextColor.GREEN));
+                target.sendMessage(Component.text("Your " + limitType + " limit has been decreased by " + amount + ".", NamedTextColor.YELLOW));
                 break;
                 
             case "set":
@@ -153,11 +158,13 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                     signLimitManager.setSellLimit(target, amount);
                 } else if (rent) {
                     signLimitManager.setRentLimit(target, amount);
+                } else if (globals) {
+                    signLimitManager.setGlobalClaimLimit(target, amount);
                 } else {
                     signLimitManager.setMailboxLimit(target, amount);
                 }
-                sender.sendMessage(Component.text("Set " + target.getName() + "'s " + signType + " sign limit to " + amount + ".", NamedTextColor.GREEN));
-                target.sendMessage(Component.text("Your " + signType + " sign limit has been set to " + amount + ".", NamedTextColor.YELLOW));
+                sender.sendMessage(Component.text("Set " + target.getName() + "'s " + limitType + " limit to " + amount + ".", NamedTextColor.GREEN));
+                target.sendMessage(Component.text("Your " + limitType + " limit has been set to " + amount + ".", NamedTextColor.YELLOW));
                 break;
         }
         
@@ -165,10 +172,12 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         int currentSell = signLimitManager.getSellLimit(target);
         int currentRent = signLimitManager.getRentLimit(target);
         int currentMailbox = signLimitManager.getMailboxLimit(target);
+        int currentGlobals = signLimitManager.getGlobalClaimLimit(target);
         sender.sendMessage(Component.text(target.getName() + "'s current limits:", NamedTextColor.AQUA));
         sender.sendMessage(Component.text("  Sell signs: " + currentSell, NamedTextColor.AQUA));
         sender.sendMessage(Component.text("  Rent signs: " + currentRent, NamedTextColor.AQUA));
         sender.sendMessage(Component.text("  Mailbox signs: " + currentMailbox, NamedTextColor.AQUA));
+        sender.sendMessage(Component.text("  Global claims: " + currentGlobals, NamedTextColor.AQUA));
         
         // Check for permission desync and notify
         if (signLimitManager.hasPermissionDesync(target)) {
@@ -190,8 +199,8 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(plugin.getMessages().get("admin.gpx-help-header"));
         sender.sendMessage(plugin.getMessages().get("admin.gpx-reload"));
         sender.sendMessage(plugin.getMessages().get("admin.gpx-debug"));
-        sender.sendMessage(Component.text("/gpx max <sell|rent|mailbox> <add|take|set> <player> <amount>", NamedTextColor.YELLOW)
-            .append(Component.text(" - Manage sign limits", NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/gpx max <sell|rent|mailbox|globals> <add|take|set> <player> <amount>", NamedTextColor.YELLOW)
+            .append(Component.text(" - Manage limits", NamedTextColor.GRAY)));
     }
     
     @Override
@@ -211,8 +220,8 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                 }
             }
         } else if (args.length == 2 && args[0].equalsIgnoreCase("max")) {
-            // Second argument: "sell", "rent", or "mailbox"
-            for (String type : Arrays.asList("sell", "rent", "mailbox")) {
+            // Second argument: "sell", "rent", "mailbox", or "globals"
+            for (String type : Arrays.asList("sell", "rent", "mailbox", "globals")) {
                 if (type.startsWith(args[1].toLowerCase())) {
                     completions.add(type);
                 }

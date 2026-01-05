@@ -1,0 +1,41 @@
+# Setup Wizards GUI Configuration
+# Start rent/sell sign setup wizards
+
+title: "&d&lSetup Wizards - #{id}"
+size: 27
+
+filler:
+  material: GRAY_STAINED_GLASS_PANE
+
+items:
+  rent-wizard:
+    material: CLOCK
+    name: "&6&lRent Sign Wizard"
+    lore:
+      - "&7Create a rent sign for this claim"
+      - ""
+      - "&7Players will be able to rent your"
+      - "&7claim for a set duration and price."
+  
+  sell-wizard:
+    material: EMERALD
+    name: "&a&lSell Sign Wizard"
+    lore:
+      - "&7Create a sell sign for this claim"
+      - ""
+      - "&7Players will be able to purchase"
+      - "&7your claim permanently."
+  
+  back:
+    material: ARROW
+    name: "&c&lBack"
+    lore:
+      - "&7Return to claim options"
+
+permissions:
+  rent-allowed: "&a✓ You can create rent signs"
+  rent-denied: "&c✗ No permission to create rent signs"
+  rent-denied-detail: "&8Missing: griefprevention.sign.create.rent"
+  sell-allowed: "&a✓ You can create sell signs"
+  sell-denied: "&c✗ No permission to create sell signs"
+  sell-denied-detail: "&8Missing: griefprevention.sign.create.sell"

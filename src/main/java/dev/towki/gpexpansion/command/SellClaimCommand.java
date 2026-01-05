@@ -4,9 +4,7 @@ import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
 import dev.towki.gpexpansion.setup.SetupSession.SetupType;
 import dev.towki.gpexpansion.setup.SetupWizardManager;
-
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
+import dev.towki.gpexpansion.util.Messages;
 
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -27,10 +25,12 @@ import java.util.stream.Collectors;
  */
 public class SellClaimCommand implements CommandExecutor, TabCompleter {
     
+    private final GPExpansionPlugin plugin;
     private final SetupWizardManager wizardManager;
     private final GPBridge gp;
     
     public SellClaimCommand(GPExpansionPlugin plugin, SetupWizardManager wizardManager) {
+        this.plugin = plugin;
         this.wizardManager = wizardManager;
         this.gp = new GPBridge();
     }
@@ -38,13 +38,15 @@ public class SellClaimCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage(Component.text("This command can only be used by players.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().getRaw("general.player-only"));
             return true;
         }
         
         // Check permission
         if (!player.hasPermission("griefprevention.sign.create.buy")) {
-            player.sendMessage(Component.text("You don't have permission to create sell signs.", NamedTextColor.RED));
+            Messages messages = plugin.getMessages();
+            messages.send(player, "permissions.create-sign-denied", "signtype", "sell");
+            messages.send(player, "permissions.create-sign-denied-detail", "permission", "griefprevention.sign.create.buy");
             return true;
         }
         

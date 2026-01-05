@@ -55,13 +55,24 @@ Protect your rental and mailbox signs from unauthorized modification.
 - Automatic cleanup on sign removal
 
 ### 📋 Claim Management
-- `/claim name` - Set claim name
-- `/claim ban` - Ban players from your claims
-- `/claim unban` - Unban players from your claims
-- `/claim info` - View detailed claim information
+- `/claim name <name>` - Set claim name (supports color codes with permissions)
+- `/claim desc <description>` - Set claim description (uses same color permissions as name)
+- `/claim icon <material>` - Set claim icon for GUI display
+- `/claim spawn` - Set the teleport spawn point for your claim
+- `/claim tp [claimId]` - Teleport to a claim's spawn point
+- `/claim ban <player>` - Ban players from your claims
+- `/claim unban <player>` - Unban players from your claims
+- `/claim info [claimId]` - View detailed claim information
 - `/mailbox` - Manage your mailboxes
 - `/gpx reload` - Reload configuration and language files
 - `/gpx max` - Manage player sign creation limits
+
+### 💰 Configurable Tax System
+Optional tax system for claim maintenance:
+- Configurable tax rates per claim block
+- Multiple payment methods (money, claim blocks, experience)
+- Grace periods before claim deletion
+- Tax exemptions via permissions
 
 ---
 
@@ -220,6 +231,124 @@ Use `/gpx reload` to reload both configuration files without restarting.
 
 ---
 
+## GUI Configuration
+
+All GUIs are fully configurable via YAML files in `plugins/GPExpansion/gui/`. Each GUI supports:
+- Custom titles, sizes, and layouts
+- PlaceholderAPI placeholders for dynamic content
+- Custom items with materials, names, lore, and custom model data
+- Textured player heads (base64 textures or player names)
+
+### Items from Custom Resource Pack
+
+Use PlaceholderAPI placeholders in item names/GUI title/lore for **ItemsAdder**. **Oraxen**, and **Nexo** using <glyph:my_image>.
+
+**ItemsAdder Example:**
+```yaml
+items:
+  my-item:
+    material: PAPER
+    name: "%img_custom_icon% &aMy Custom Item"
+    lore:
+      - "%img_arrow% &7Click to continue"
+    custom-model-data: 10001
+```
+
+**Oraxen Example:**
+```yaml
+items:
+  my-item:
+    material: PAPER
+    name: "<glyph:my_icon> &bOraxen Item"
+    lore:
+      - "<glyph:bullet> &7Some description"
+    custom-model-data: 20001
+```
+
+**Nexo Example:**
+```yaml
+items:
+  my-item:
+    material: PAPER
+    name: "<glyph:my_image> &dNexo Item"
+    custom-model-data: 30001
+```
+
+### Textured Player Heads
+
+Use custom skull textures from sites like [minecraft-heads.com](https://minecraft-heads.com):
+
+**Base64 Texture (Custom Head):**
+```yaml
+items:
+  settings-icon:
+    material: PLAYER_HEAD
+    skull-texture: "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvYjc..."
+    name: "&e⚙ Settings"
+    lore:
+      - "&7Click to open settings"
+```
+
+**Direct Texture URL:**
+```yaml
+items:
+  custom-icon:
+    material: PLAYER_HEAD
+    skull-texture: "http://textures.minecraft.net/texture/b7d153..."
+    name: "&aCustom Icon"
+```
+
+**Player Head (Dynamic):**
+```yaml
+items:
+  player-info:
+    material: PLAYER_HEAD
+    skull-owner: "{player}"  # Current player's head
+    name: "&a{player_name}'s Profile"
+```
+
+**Specific Player Head:**
+```yaml
+items:
+  owner-head:
+    material: PLAYER_HEAD
+    skull-owner: "Notch"  # Or UUID: "069a79f4-44e9-4726-a5be-fca90e38aaf5"
+    name: "&6Owner: Notch"
+```
+
+### Example GUI Config (claim-menu.yml)
+
+```yaml
+title: "&8&l✦ &6Claim Menu &8&l✦"
+size: 54
+
+items:
+  info-button:
+    slot: 13
+    material: PLAYER_HEAD
+    skull-owner: "{player}"
+    name: "&a&l{claim_name}"
+    lore:
+      - ""
+      - "&7Owner: &f{owner}"
+      - "&7Size: &f{area} blocks"
+      - ""
+      - "%img_left_click% &eLeft-click for details"
+  
+  settings-button:
+    slot: 31
+    material: PLAYER_HEAD
+    skull-texture: "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6..."
+    name: "&e⚙ Claim Settings"
+    lore:
+      - "&7Manage your claim"
+
+filler:
+  material: GRAY_STAINED_GLASS_PANE
+```
+
+---
+
 ## Permissions
 
 ### Sign Creation
@@ -238,13 +367,21 @@ Use `/gpx reload` to reload both configuration files without restarting.
 | `griefprevention.sign.use.sell` | Use sell signs |
 | `griefprevention.sign.use.mailbox` | Use mailbox signs |
 
-### Economy Types
+### Economy Types (per sign type)
 | Permission | Description |
 |------------|-------------|
-| `griefprevention.sign.eco.money` | Create signs with money payments |
-| `griefprevention.sign.eco.exp` | Create signs with experience payments |
-| `griefprevention.sign.eco.claimblocks` | Create signs with claim block payments |
-| `griefprevention.sign.eco.item` | Create signs with item payments |
+| `griefprevention.sign.rent.money` | Use money economy for rent signs |
+| `griefprevention.sign.rent.exp` | Use experience economy for rent signs |
+| `griefprevention.sign.rent.claimblocks` | Use claim blocks economy for rent signs |
+| `griefprevention.sign.rent.item` | Use item economy for rent signs |
+| `griefprevention.sign.sell.money` | Use money economy for sell signs |
+| `griefprevention.sign.sell.exp` | Use experience economy for sell signs |
+| `griefprevention.sign.sell.claimblocks` | Use claim blocks economy for sell signs |
+| `griefprevention.sign.sell.item` | Use item economy for sell signs |
+| `griefprevention.sign.mailbox.money` | Use money economy for mailbox signs |
+| `griefprevention.sign.mailbox.exp` | Use experience economy for mailbox signs |
+| `griefprevention.sign.mailbox.claimblocks` | Use claim blocks economy for mailbox signs |
+| `griefprevention.sign.mailbox.item` | Use item economy for mailbox signs |
 
 ### Sign Limits
 | Permission | Description |
@@ -257,10 +394,47 @@ Use `/gpx reload` to reload both configuration files without restarting.
 | Permission | Description |
 |------------|-------------|
 | `griefprevention.claim.name` | Set claim names with `/claim name` |
+| `griefprevention.claim.description` | Set claim descriptions with `/claim desc` |
+| `griefprevention.claim.icon` | Set claim icons with `/claim icon` |
+| `griefprevention.claim.spawn` | Set claim spawn point with `/claim spawn` |
+| `griefprevention.claim.teleport` | Teleport to claims with `/claim tp` |
 | `griefprevention.claim.ban` | Ban players from claims with `/claim ban` |
 | `griefprevention.claim.unban` | Unban players from claims with `/claim unban` |
 | `griefprevention.claim.transfer` | Transfer claim ownership with `/claim transfer` |
 | `griefprevention.claim.info` | View claim info with `/claim info` |
+
+### Color & Formatting Permissions (Name & Description)
+
+These permissions control which color and formatting codes players can use in both `/claim name` and `/claim desc`:
+
+| Permission | Description | Codes |
+|------------|-------------|-------|
+| `griefprevention.claim.color.black` | Use black color | `&0` |
+| `griefprevention.claim.color.dark_blue` | Use dark blue color | `&1` |
+| `griefprevention.claim.color.dark_green` | Use dark green color | `&2` |
+| `griefprevention.claim.color.dark_aqua` | Use dark aqua color | `&3` |
+| `griefprevention.claim.color.dark_red` | Use dark red color | `&4` |
+| `griefprevention.claim.color.dark_purple` | Use dark purple color | `&5` |
+| `griefprevention.claim.color.gold` | Use gold color | `&6` |
+| `griefprevention.claim.color.gray` | Use gray color | `&7` |
+| `griefprevention.claim.color.dark_gray` | Use dark gray color | `&8` |
+| `griefprevention.claim.color.blue` | Use blue color | `&9` |
+| `griefprevention.claim.color.green` | Use green color | `&a` |
+| `griefprevention.claim.color.aqua` | Use aqua color | `&b` |
+| `griefprevention.claim.color.red` | Use red color | `&c` |
+| `griefprevention.claim.color.light_purple` | Use light purple/pink color | `&d` |
+| `griefprevention.claim.color.yellow` | Use yellow color | `&e` |
+| `griefprevention.claim.color.white` | Use white color | `&f` |
+| `griefprevention.claim.format.obfuscated` | Use obfuscated/magic text | `&k` |
+| `griefprevention.claim.format.bold` | Use bold text | `&l` |
+| `griefprevention.claim.format.strikethrough` | Use strikethrough text | `&m` |
+| `griefprevention.claim.format.underline` | Use underlined text | `&n` |
+| `griefprevention.claim.format.italic` | Use italic text | `&o` |
+| `griefprevention.claim.format.reset` | Use reset formatting | `&r` |
+| `griefprevention.claim.color.*` | All color codes | `&0-&f` |
+| `griefprevention.claim.format.*` | All format codes | `&k-&r` |
+
+> **Note:** The same permissions apply to both `/claim name` and `/claim desc`. If a player uses a color code they don't have permission for, that code will be stripped from the text.
 
 ### Admin
 | Permission | Description |
