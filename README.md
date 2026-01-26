@@ -49,6 +49,13 @@ Allow claim owners to sell their claims to other players using signs.
 - Supports Vault economy, experience, claim blocks, and item-based payments
 - Interactive setup wizard with `/sellclaim` command
 
+### 🌍 Global Claims
+Allow claims to be listed in a global claim list, viewable to all.
+- Set global settings like icon, description, name, spawn point, and more.
+- Allows users to teleport to global claims via GUI by default.
+- Allows [global] claim signs to instantly set spawn and list as global.
+- Simple /claim global <true|false> command to manage global listing status.
+
 ### 🔒 Sign Protection
 Protect your rental and mailbox signs from unauthorized modification.
 - Admin-only sign breaking for active rentals
@@ -83,17 +90,46 @@ All sign types support flexible formatting where `<ecoType>` is optional and def
 ### Rental Signs
 
 **Short Format** (place sign inside claim):
+
+*Format A* - Space separated:
 ```
 [rent]
 <renewTime>
+<ecoAmt>
+```
+OR with max time:
+```
+[rent]
+<renewTime> <maxTime>
 <ecoAmt>
 ```
 OR with explicit eco type:
 ```
 [rent]
-<renewTime>
+<renewTime> <maxTime>
 <ecoType>
 <ecoAmt>
+```
+
+*Format B* - Semicolon delimited (NEW!):
+```
+[rent]
+<renewTime>;<ecoAmt>
+```
+OR with max time:
+```
+[rent]
+<renewTime>;<ecoAmt>;<maxTime>
+```
+OR with amount first:
+```
+[rent]
+<ecoAmt>;<renewTime>
+```
+OR with max time:
+```
+[rent]
+<ecoAmt>;<renewTime>;<maxTime>
 ```
 
 **Condensed Format** (outside claim):
@@ -106,11 +142,22 @@ OR with max time:
 [rent]
 <id>;<ecoAmt>;<renewTime>;<maxTime>
 ```
+OR with explicit eco type:
+```
+[rent]
+<id>;<ecoType>;<ecoAmt>;<renewTime>
+```
+OR with max time:
+```
+[rent]
+<id>;<ecoType>;<ecoAmt>;<renewTime>;<maxTime>
+```
 
 - `<id>` - Do `/claimlist` to get this (not needed for short format)
 - `<ecoType>` - Accepts `money`, `claimblocks`, `exp` or `item` (optional, defaults to `money`)
+  - Also accepts aliases: `$` (money), `xp`/`experience` (exp), `blocks`/`cb` (claimblocks)
 - `<ecoAmt>` - The cost per renewal period
-- `<renewTime>` - Duration of each rental period (e.g., `1w`, `7d`, `24h`)
+- `<renewTime>` - Duration of each rental period (e.g., `1w`, `7d`, `24h`, `30m`, `45s`)
 - `<maxTime>` - Maximum total rental duration (optional, defaults to `<renewTime>`)
 
 > **Note:** Hold the item you wish to set in your offhand while creating an item-based sign.
@@ -122,7 +169,7 @@ OR with max time:
 [sell]
 <ecoAmt>
 ```
-OR
+OR with explicit eco type:
 ```
 [sell]
 <ecoType>
@@ -142,6 +189,7 @@ OR with explicit eco type:
 
 - `<id>` - Do `/claimlist` to get this (not needed for short format)
 - `<ecoType>` - Accepts `money`, `claimblocks`, `exp` or `item` (optional, defaults to `money`)
+  - Also accepts aliases: `$` (money), `xp`/`experience` (exp), `blocks`/`cb` (claimblocks)
 - `<ecoAmt>` - The sale price
 
 > **Note:** Hold the item you wish to set in your offhand while creating an item-based sign.
@@ -159,11 +207,24 @@ OR with explicit eco type:
 <id>;<ecoType>;<ecoAmt>
 ```
 
+### Global Signs
+**Player** (inside claim):
+```
+[global]
+```
+
+**Admin** (outside claim):
+```
+[global]
+<id>
+```
+
 - `<id>` - Do `/claimlist` to get this
 - `<ecoType>` - Accepts `money`, `claimblocks`, `exp` or `item` (optional, defaults to `money`)
+  - Also accepts aliases: `$` (money), `xp`/`experience` (exp), `blocks`/`cb` (claimblocks)
 - `<ecoAmt>` - The mailbox purchase price
 
-> **Note:** You need to create a 1x1x1 3D subdivision in your claim with a supported container type (barrel, hopper, chest, etc.).
+> **Note:** You need to create a 1x1x1 3D subdivision in your claim with a supported container type (barrel, hopper, chest, etc.). Requires [GriefPrevention3D](https://github.com/castledking/GriefPrevention3D) fork. The sign can be placed anywhere - it doesn't need to be in the mailbox claim.
 
 ### Setup Wizards
 
@@ -358,13 +419,16 @@ filler:
 | `griefprevention.sign.create.rent.anywhere` | Create rental signs outside the target claim |
 | `griefprevention.sign.create.sell` | Create sell signs |
 | `griefprevention.sign.create.sell.anywhere` | Create sell signs outside the target claim |
+| `griefprevention.sign.create.buy` | Create buy signs (alias for sell) |
+| `griefprevention.sign.create.buy.anywhere` | Create buy signs outside the target claim |
 | `griefprevention.sign.create.mailbox` | Create mailbox signs |
+| `griefprevention.sign.create.mailbox.anywhere` | Create mailbox signs outside the target claim |
 
 ### Sign Usage
 | Permission | Description |
 |------------|-------------|
 | `griefprevention.sign.use.rent` | Use rental signs |
-| `griefprevention.sign.use.sell` | Use sell signs |
+| `griefprevention.sign.use.buy` | Use sell signs |
 | `griefprevention.sign.use.mailbox` | Use mailbox signs |
 
 ### Economy Types (per sign type)
@@ -374,10 +438,10 @@ filler:
 | `griefprevention.sign.rent.exp` | Use experience economy for rent signs |
 | `griefprevention.sign.rent.claimblocks` | Use claim blocks economy for rent signs |
 | `griefprevention.sign.rent.item` | Use item economy for rent signs |
-| `griefprevention.sign.sell.money` | Use money economy for sell signs |
-| `griefprevention.sign.sell.exp` | Use experience economy for sell signs |
-| `griefprevention.sign.sell.claimblocks` | Use claim blocks economy for sell signs |
-| `griefprevention.sign.sell.item` | Use item economy for sell signs |
+| `griefprevention.sign.buy.money` | Use money economy for sell signs |
+| `griefprevention.sign.buy.exp` | Use experience economy for sell signs |
+| `griefprevention.sign.buy.claimblocks` | Use claim blocks economy for sell signs |
+| `griefprevention.sign.buy.item` | Use item economy for sell signs |
 | `griefprevention.sign.mailbox.money` | Use money economy for mailbox signs |
 | `griefprevention.sign.mailbox.exp` | Use experience economy for mailbox signs |
 | `griefprevention.sign.mailbox.claimblocks` | Use claim blocks economy for mailbox signs |
@@ -387,21 +451,35 @@ filler:
 | Permission | Description |
 |------------|-------------|
 | `griefprevention.sign.limit.rent.<number>` | Limit to <number> rental signs |
-| `griefprevention.sign.limit.sell.<number>` | Limit to <number> sell signs |
+| `griefprevention.sign.limit.buy.<number>` | Limit to <number> sell signs |
 | `griefprevention.sign.limit.mailbox.<number>` | Limit to <number> mailbox signs |
 
 ### Claim Management
 | Permission | Description |
 |------------|-------------|
 | `griefprevention.claim.name` | Set claim names with `/claim name` |
+| `griefprevention.claim.name.anywhere` | Use `/claim name` outside own claims |
+| `griefprevention.claim.name.other` | Use `/claim name` on other claims |
 | `griefprevention.claim.description` | Set claim descriptions with `/claim desc` |
+| `griefprevention.claim.description.anywhere` | Use `/claim desc` outside own claims |
+| `griefprevention.claim.description.other` | Use `/claim desc` on other claims |
 | `griefprevention.claim.icon` | Set claim icons with `/claim icon` |
-| `griefprevention.claim.spawn` | Set claim spawn point with `/claim spawn` |
+| `griefprevention.claim.icon.other` | Use `/claim icon` on other claims |
+| `griefprevention.claim.setspawn` | Set claim spawn point with `/claim spawn` |
+| `griefprevention.claim.setspawn.other` | Set spawn point on other claims |
 | `griefprevention.claim.teleport` | Teleport to claims with `/claim tp` |
+| `griefprevention.claim.teleport.other` | Teleport other players to claims |
 | `griefprevention.claim.ban` | Ban players from claims with `/claim ban` |
+| `griefprevention.claim.ban.anywhere` | Ban outside own claims |
+| `griefprevention.claim.ban.other` | Ban players from other claims |
 | `griefprevention.claim.unban` | Unban players from claims with `/claim unban` |
-| `griefprevention.claim.transfer` | Transfer claim ownership with `/claim transfer` |
-| `griefprevention.claim.info` | View claim info with `/claim info` |
+| `griefprevention.claim.unban.anywhere` | Unban outside own claims |
+| `griefprevention.claim.unban.other` | Unban players from other claims |
+| `griefprevention.transferclaim` | Transfer claim ownership with `/claim transfer` |
+| `griefprevention.claiminfo` | View claim info with `/claim info` |
+| `griefprevention.claiminfo.other` | View claim info for others' claims |
+| `griefprevention.claim.toggleglobal` | Toggle global listing for own claims |
+| `griefprevention.claim.toggleglobal.other` | Toggle global listing for other claims |
 
 ### Color & Formatting Permissions (Name & Description)
 
@@ -440,9 +518,29 @@ These permissions control which color and formatting codes players can use in bo
 | Permission | Description |
 |------------|-------------|
 | `griefprevention.admin` | Admin commands and sign management |
+| `gpx.admin` | View migration notices |
+| `griefprevention.adminclaimslist` | View admin claims list |
+| `griefprevention.sign.admin` | Admin sign management |
 | `gpexpansion.admin.reload` | Use `/gpx reload` command |
 | `gpexpansion.admin.max` | Use `/gpx max` command |
 | `gpexpansion.admin.debug` | Use `/gpx debug` command |
+
+### GUI & GPFlags
+| Permission | Description |
+|------------|-------------|
+| `griefprevention.claim.gui.globallist` | Open global claim list GUI |
+| `griefprevention.claim.gui.return` | Use `/claim !` to return to last GUI |
+| `griefprevention.claim.gui.setclaimflag.own` | Open claim flags GUI for own claims |
+| `griefprevention.claim.gui.setclaimflag.anywhere` | Open claim flags GUI for other claims |
+| `gpflags.command.setclaimflag` | Use GPFlags claim flag commands |
+| `gpflags.flag.*` | Toggle any GPFlags flag |
+
+### Moderation
+| Permission | Description |
+|------------|-------------|
+| `griefprevention.evict` | Evict renters |
+| `griefprevention.evict.other` | Evict renters from other claims |
+| `griefprevention.eviction.bypass` | Bypass eviction protections |
 
 ---
 

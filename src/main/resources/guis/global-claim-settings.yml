@@ -1,0 +1,90 @@
+title: "&6&lGlobal Settings - #{id}"
+size: 9
+
+items:
+  name:
+    material: NAME_TAG
+    name: "&b&lName"
+    lore:
+      - "&7Rename this claim"
+      - "&7Current: &f{name}"
+      - ""
+      - "{has_permission_rename}"
+      - "{permission_rename}"
+      - ""
+      - "&eClick to rename"
+    slot: 0
+    
+  icon:
+    material: ITEM_FRAME
+    name: "&6&lIcon"
+    lore:
+      - "&7Set a custom icon for this claim"
+      - "&7in menus and global list."
+      - ""
+      - "&7Current: {icon}"
+      - ""
+      - "&eClick to select icon"
+    slot: 1
+    
+  description:
+    material: PAPER
+    name: "&e&lDescription"
+    lore:
+      - "&7Set a short description (max 32 chars)"
+      - "&7shown in global claim list."
+      - ""
+      - "&7Current: {description}"
+      - ""
+      - "&eClick to set description"
+    slot: 2
+    
+  global-toggle:
+    material: ENDER_PEARL
+    name: "&d&lPublic Listing"
+    lore:
+      - "&7Toggle this claim's global listing"
+      - "&7so other players can see and visit it."
+      - ""
+      - "&7Status: {listing_status}"
+      - ""
+      - "&eClick to {listing_action}"
+    slot: 3
+    
+  spawn-point:
+    material: CONDUIT
+    name: "&b&lSpawn Point"
+    lore:
+      - "&7Set the teleport spawn point"
+      - "&7for this global claim."
+      - ""
+      - "&7Status: {spawn_status}"
+      - ""
+      - "{has_permission_spawn}"
+      - "{permission_spawn}"
+      - ""
+      - "&eClick to set spawn at your location"
+    slot: 4
+    
+  global-list:
+    material: COMPASS
+    name: "&a&lGlobal Claims"
+    lore:
+      - "&7Browse all publicly listed claims"
+      - "&7from all players on the server."
+      - ""
+      - "&7Visit and explore other players'"
+      - "&7creative builds and creations!"
+      - ""
+      - "&eClick to browse global claims"
+    slot: 5
+    
+  back:
+    material: ARROW
+    name: "&c&lBack"
+    lore:
+      - "&7Return to claim options"
+    slot: 8
+    
+filler:
+  material: GRAY_STAINED_GLASS_PANE

@@ -2,7 +2,7 @@ package dev.towki.gpexpansion.listener;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
-import dev.towki.gpexpansion.storage.MailboxStore;
+import dev.towki.gpexpansion.storage.ClaimDataStore;
 import dev.towki.gpexpansion.util.EcoKind;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -23,10 +23,8 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
-import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.io.BukkitObjectInputStream;
 import java.io.ByteArrayInputStream;
 import java.util.*;
@@ -34,7 +32,7 @@ import java.util.*;
 public class MailboxListener implements Listener {
     private final GPExpansionPlugin plugin;
     private final GPBridge gp;
-    private final MailboxStore mailboxStore;
+    private final ClaimDataStore claimDataStore;
     private final Map<UUID, Location> viewingChests = new HashMap<>();
     
     // PDC keys
@@ -49,7 +47,7 @@ public class MailboxListener implements Listener {
     public MailboxListener(GPExpansionPlugin plugin) {
         this.plugin = plugin;
         this.gp = new GPBridge();
-        this.mailboxStore = plugin.getMailboxStore();
+        this.claimDataStore = plugin.getClaimDataStore();
         
         // Note: GP3D detection is delayed until needed
         // We'll check when creating mailbox signs instead
@@ -81,13 +79,13 @@ public class MailboxListener implements Listener {
             String claimId = pdc.get(keyClaim(), PersistentDataType.STRING);
             
             if (claimId == null) {
-                player.sendMessage(Component.text("Invalid mailbox sign.", NamedTextColor.RED));
+                plugin.getMessages().send(player, "mailbox.invalid-sign");
                 return;
             }
 
             // Check if mailbox is already owned
-            if (mailboxStore.isMailbox(claimId)) {
-                UUID owner = mailboxStore.getOwner(claimId);
+            if (claimDataStore.isMailbox(claimId)) {
+                UUID owner = claimDataStore.getMailboxOwner(claimId).orElse(null);
                 if (owner != null && owner.equals(player.getUniqueId())) {
                     // Owner opening - show full chest access
                     openMailboxChest(player, claimId, true);
@@ -107,7 +105,7 @@ public class MailboxListener implements Listener {
             Player player = event.getPlayer();
             
             // Check all claims to find if this container is in a mailbox claim
-            for (String claimId : mailboxStore.all().keySet()) {
+            for (String claimId : claimDataStore.getAllMailboxes().keySet()) {
                 Object claim = gp.findClaimById(claimId).orElse(null);
                 if (claim != null) {
                     GPBridge.ClaimCorners corners = gp.getClaimCorners(claim).orElse(null);
@@ -122,8 +120,8 @@ public class MailboxListener implements Listener {
                             event.setCancelled(true);
                             player.setCooldown(event.getMaterial(), 5);
                             
-                            if (mailboxStore.isMailbox(claimId)) {
-                                UUID owner = mailboxStore.getOwner(claimId);
+                            if (claimDataStore.isMailbox(claimId)) {
+                                UUID owner = claimDataStore.getMailboxOwner(claimId).orElse(null);
                                 if (owner != null && owner.equals(player.getUniqueId())) {
                                     openMailboxChest(player, claimId, true);
                                 } else {
@@ -133,7 +131,7 @@ public class MailboxListener implements Listener {
                                 // Find the mailbox sign for this claim
                                 PersistentDataContainer signPdc = getMailboxSignPDC(claimId);
                                 if (signPdc != null) {
-                                    Location signLoc = mailboxStore.getSignLocation(claimId);
+                                    Location signLoc = claimDataStore.getMailboxSignLocation(claimId).orElse(null);
                                     showPurchaseConfirmation(player, claimId, signPdc, signLoc);
                                 }
                             }
@@ -210,12 +208,12 @@ public class MailboxListener implements Listener {
         // Find the container in the 1x1x1 claim
         Object claim = gp.findClaimById(claimId).orElse(null);
         if (claim == null) {
-            player.sendMessage(Component.text("Claim not found.", NamedTextColor.RED));
+            plugin.getMessages().send(player, "mailbox.claim-not-found");
             return;
         }
         Block containerBlock = findContainerInClaim(claim);
         if (containerBlock == null) {
-            player.sendMessage(Component.text("No container found in mailbox claim.", NamedTextColor.RED));
+            plugin.getMessages().send(player, "mailbox.no-container");
             return;
         }
         
@@ -266,7 +264,7 @@ public class MailboxListener implements Listener {
 
     private void createMailboxView(Player player, Block containerBlock, String claimId, boolean isOwner) {
         if (!(containerBlock.getState() instanceof Container container)) {
-            player.sendMessage(Component.text("Invalid container.", NamedTextColor.RED));
+            plugin.getMessages().send(player, "mailbox.invalid-container");
             return;
         }
         
@@ -382,7 +380,7 @@ public class MailboxListener implements Listener {
                     action == InventoryAction.COLLECT_TO_CURSOR || action == InventoryAction.SWAP_WITH_CURSOR) {
                     
                     event.setCancelled(true);
-                    player.sendMessage(Component.text("You can only deposit items, not take them!", NamedTextColor.RED));
+                    plugin.getMessages().send(player, "mailbox.deposit-only");
                     return;
                 }
             }
@@ -459,59 +457,78 @@ public class MailboxListener implements Listener {
         }
         
         if (emptySlots == 0) {
-            player.sendMessage(Component.text("WARNING: This mailbox is completely full!", NamedTextColor.RED));
+            plugin.getMessages().send(player, "mailbox.full-warning");
         } else if (emptySlots <= 2) {
-            player.sendMessage(Component.text("WARNING: This mailbox is almost full (" + emptySlots + " slots left)!", NamedTextColor.YELLOW));
+            plugin.getMessages().send(player, "mailbox.almost-full-warning",
+                "{slots}", String.valueOf(emptySlots));
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        // Check owned mailboxes for storage warnings
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                checkAllMailboxStorage(player);
-            }
-        }.runTaskLater(plugin, 100L); // Check after 5 seconds
+        // Check owned mailboxes for storage warnings (use Folia-compatible scheduler)
+        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runLaterEntity(
+            plugin, player, () -> checkAllMailboxStorage(player), 100L);
     }
 
     private void checkAllMailboxStorage(Player player) {
-        for (Map.Entry<String, UUID> entry : mailboxStore.all().entrySet()) {
+        for (Map.Entry<String, UUID> entry : claimDataStore.getAllMailboxes().entrySet()) {
             if (entry.getValue().equals(player.getUniqueId())) {
                 String claimId = entry.getKey();
                 Object claim = gp.findClaimById(claimId).orElse(null);
                 if (claim != null) {
-                    Block chestBlock = findContainerInClaim(claim);
-                    if (chestBlock != null && chestBlock.getState() instanceof Container container) {
-                        Inventory chestInv = container.getInventory();
-                        int emptySlots = 0;
-                        for (ItemStack item : chestInv.getContents()) {
-                            if (item == null || item.getType() == Material.AIR) {
-                                emptySlots++;
-                            }
-                        }
-                        
-                        if (emptySlots == 0) {
-                            player.sendMessage(Component.text("WARNING: Your mailbox at " + 
-                                chestBlock.getX() + "," + chestBlock.getY() + "," + chestBlock.getZ() + 
-                                " is completely full!", NamedTextColor.RED));
-                        } else if (emptySlots <= 9) {
-                            player.sendMessage(Component.text("WARNING: Your mailbox at " + 
-                                chestBlock.getX() + "," + chestBlock.getY() + "," + chestBlock.getZ() + 
-                                " is almost full (" + emptySlots + " slots left)!", NamedTextColor.YELLOW));
-                        }
+                    // Get claim location to run block access on correct thread (Folia)
+                    Location claimLoc = getClaimLocation(claim);
+                    if (claimLoc != null) {
+                        // Run block access on the location's region thread
+                        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runAtLocation(
+                            plugin, claimLoc, () -> checkMailboxStorageAt(player, claim));
                     }
                 }
+            }
+        }
+    }
+    
+    private Location getClaimLocation(Object claim) {
+        try {
+            Object lesser = claim.getClass().getMethod("getLesserBoundaryCorner").invoke(claim);
+            return (Location) lesser;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+    
+    private void checkMailboxStorageAt(Player player, Object claim) {
+        Block chestBlock = findContainerInClaim(claim);
+        if (chestBlock != null && chestBlock.getState() instanceof Container container) {
+            Inventory chestInv = container.getInventory();
+            int emptySlots = 0;
+            for (ItemStack item : chestInv.getContents()) {
+                if (item == null || item.getType() == Material.AIR) {
+                    emptySlots++;
+                }
+            }
+            
+            if (emptySlots == 0) {
+                plugin.getMessages().send(player, "mailbox.storage-full-warning",
+                    "{x}", String.valueOf(chestBlock.getX()),
+                    "{y}", String.valueOf(chestBlock.getY()),
+                    "{z}", String.valueOf(chestBlock.getZ()));
+            } else if (emptySlots <= 9) {
+                plugin.getMessages().send(player, "mailbox.storage-almost-full-warning",
+                    "{x}", String.valueOf(chestBlock.getX()),
+                    "{y}", String.valueOf(chestBlock.getY()),
+                    "{z}", String.valueOf(chestBlock.getZ()),
+                    "{slots}", String.valueOf(emptySlots));
             }
         }
     }
 
     public boolean handlePurchaseConfirmation(Player player, String claimId, Location signLocation) {
         // Check if still available
-        if (mailboxStore.isMailbox(claimId)) {
-            player.sendMessage(Component.text("This mailbox has already been purchased.", NamedTextColor.RED));
+        if (claimDataStore.isMailbox(claimId)) {
+            plugin.getMessages().send(player, "mailbox.already-purchased");
             return true;
         }
         
@@ -524,7 +541,7 @@ public class MailboxListener implements Listener {
             pdc = getMailboxSignPDC(claimId);
         }
         if (pdc == null) {
-            player.sendMessage(Component.text("Mailbox sign not found.", NamedTextColor.RED));
+            plugin.getMessages().send(player, "mailbox.sign-not-found");
             return true;
         }
         
@@ -533,15 +550,16 @@ public class MailboxListener implements Listener {
         EcoKind kind = EcoKind.valueOf(kindName);
         
         if (!processPayment(player, kind, ecoAmt)) {
-            player.sendMessage(Component.text("Payment failed.", NamedTextColor.RED));
+            plugin.getMessages().send(player, "mailbox.payment-failed");
             return true;
         }
         
         // Register ownership and store sign location
-        mailboxStore.setOwner(claimId, player.getUniqueId());
+        claimDataStore.setMailbox(claimId, player.getUniqueId());
         if (signLocation != null) {
-            mailboxStore.setSignLocation(claimId, signLocation);
+            claimDataStore.setMailboxSignLocation(claimId, signLocation);
         }
+        claimDataStore.save();
         
         // Grant container trust on the claim
         Object claim = gp.findClaimById(claimId).orElse(null);
@@ -552,13 +570,13 @@ public class MailboxListener implements Listener {
         // Update sign display
         updateMailboxSign(claimId, player.getName());
         
-        player.sendMessage(Component.text("You have successfully purchased this mailbox!", NamedTextColor.GREEN));
+        plugin.getMessages().send(player, "mailbox.purchase-success");
         return true;
     }
 
     public PersistentDataContainer getMailboxSignPDC(String claimId) {
         // First check stored sign location
-        Location storedLoc = mailboxStore.getSignLocation(claimId);
+        Location storedLoc = claimDataStore.getMailboxSignLocation(claimId).orElse(null);
         if (storedLoc != null) {
             Block block = storedLoc.getBlock();
             if (block.getState() instanceof Sign sign) {
@@ -614,11 +632,11 @@ public class MailboxListener implements Listener {
                         plugin.refreshEconomy();
                     }
                     if (!plugin.isEconomyAvailable()) {
-                        player.sendMessage(Component.text("Economy not available. Please ensure Vault and an economy provider are installed.", NamedTextColor.RED));
+                        plugin.getMessages().send(player, "mailbox.economy-not-available");
                         return false;
                     }
                     if (!plugin.hasMoney(player, amt)) {
-                        player.sendMessage(Component.text("You don't have enough money.", NamedTextColor.RED));
+                        plugin.getMessages().send(player, "mailbox.not-enough-money");
                         return false;
                     }
                     plugin.withdrawMoney(player, amt);
@@ -627,7 +645,7 @@ public class MailboxListener implements Listener {
                     int totalExp = getPlayerTotalExperience(player);
                     int cost = (int) amt;
                     if (totalExp < cost) {
-                        player.sendMessage(Component.text("You don't have enough experience.", NamedTextColor.RED));
+                        plugin.getMessages().send(player, "mailbox.not-enough-experience");
                         return false;
                     }
                     takeExperience(player, cost);
@@ -684,7 +702,7 @@ public class MailboxListener implements Listener {
 
     private void updateMailboxSign(String claimId, String ownerName) {
         // First check stored sign location
-        Location storedLoc = mailboxStore.getSignLocation(claimId);
+        Location storedLoc = claimDataStore.getMailboxSignLocation(claimId).orElse(null);
         if (storedLoc != null) {
             Block block = storedLoc.getBlock();
             if (block.getState() instanceof Sign sign) {
@@ -724,10 +742,10 @@ public class MailboxListener implements Listener {
                         String signType = signPdc.get(keyKind(), PersistentDataType.STRING);
                         String signClaimId = signPdc.get(keyClaim(), PersistentDataType.STRING);
                         if ("MAILBOX".equals(signType) && claimId.equals(signClaimId)) {
-                            sign.setLine(0, ChatColor.BLUE + "" + ChatColor.BOLD + "[Mailbox]");
-                            sign.setLine(1, ChatColor.GREEN + ownerName);
-                            sign.setLine(2, ChatColor.BLACK + "(Click to open)");
-                            sign.setLine(3, ChatColor.BLACK + "ID: " + ChatColor.GOLD + claimId);
+                            sign.line(0, Component.text(ChatColor.BLUE + "" + ChatColor.BOLD + "[Mailbox]"));
+                            sign.line(1, Component.text(ChatColor.GREEN + ownerName));
+                            sign.line(2, Component.text(ChatColor.BLACK + "(Click to open)"));
+                            sign.line(3, Component.text(ChatColor.BLACK + "ID: " + ChatColor.GOLD + claimId));
                             sign.update();
                             return;
                         }

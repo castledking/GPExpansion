@@ -83,7 +83,7 @@ public class MailboxCommand implements CommandExecutor, TabCompleter {
             messages.send(player, "commands.mailbox-help-step2");
             messages.send(player, "commands.mailbox-help-step3");
             messages.send(player, "commands.mailbox-help-step4");
-            player.sendMessage("");
+            player.sendMessage(messages.getRaw("general.empty-line"));
             messages.send(player, "commands.mailbox-commands-title");
             messages.send(player, "commands.mailbox-cmd-setup");
             messages.send(player, "commands.mailbox-cmd-help");
@@ -94,7 +94,7 @@ public class MailboxCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(messages.getRaw("commands.mailbox-help-step2"));
             sender.sendMessage(messages.getRaw("commands.mailbox-help-step3"));
             sender.sendMessage(messages.getRaw("commands.mailbox-help-step4"));
-            sender.sendMessage("");
+            sender.sendMessage(messages.getRaw("general.empty-line"));
             sender.sendMessage(messages.getRaw("commands.mailbox-commands-title"));
             sender.sendMessage(messages.getRaw("commands.mailbox-cmd-setup"));
             sender.sendMessage(messages.getRaw("commands.mailbox-cmd-help"));

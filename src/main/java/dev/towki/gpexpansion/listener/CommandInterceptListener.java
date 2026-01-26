@@ -2,7 +2,7 @@ package dev.towki.gpexpansion.listener;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
-import dev.towki.gpexpansion.storage.RentalStore;
+import dev.towki.gpexpansion.storage.ClaimDataStore;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
@@ -86,38 +86,33 @@ public class CommandInterceptListener implements Listener {
         if (targetUuid == null) return false; // Unknown player
 
         // Check if the target is renting any claims owned by this player
-        RentalStore rentalStore = plugin.getRentalStore();
-        if (rentalStore != null) {
-            for (String claimId : rentalStore.getRentedClaimIds()) {
-                Optional<RentalStore.Entry> rentalOpt = Optional.ofNullable(rentalStore.all().get(claimId));
-                if (rentalOpt.isPresent()) {
-                    RentalStore.Entry rental = rentalOpt.get();
-                    if (rental.renter.equals(targetUuid)) {
-                        // Check if this player owns the claim
-                        Optional<Object> claimOpt = gp.findClaimById(claimId);
-                        if (claimOpt.isPresent()) {
-                            Object claim = claimOpt.get();
-                            try {
-                                Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
-                                if (ownerId != null && ownerId.equals(player.getUniqueId())) {
-                                    // Player owns this claim and target is renting it
-                                    event.setCancelled(true);
-                                    OfflinePlayer renter = Bukkit.getOfflinePlayer(targetUuid);
-                                    String renterName = renter.getName() != null ? renter.getName() : targetName;
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
+        for (var entry : dataStore.getAllRentals().entrySet()) {
+            String claimId = entry.getKey();
+            ClaimDataStore.RentalData rental = entry.getValue();
+            if (rental != null && rental.renter.equals(targetUuid)) {
+                    // Check if this player owns the claim
+                    Optional<Object> claimOpt = gp.findClaimById(claimId);
+                    if (claimOpt.isPresent()) {
+                        Object claim = claimOpt.get();
+                        try {
+                            Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
+                            if (ownerId != null && ownerId.equals(player.getUniqueId())) {
+                                // Player owns this claim and target is renting it
+                                event.setCancelled(true);
+                                OfflinePlayer renter = Bukkit.getOfflinePlayer(targetUuid);
+                                String renterName = renter.getName() != null ? renter.getName() : targetName;
 
-                                    player.sendMessage(Component.text("You cannot untrust " + renterName + " while they are renting your claim.", NamedTextColor.RED));
-                                    player.sendMessage(Component.text("Use ", NamedTextColor.YELLOW)
-                                            .append(Component.text("/claim evict " + renterName, NamedTextColor.GOLD))
-                                            .append(Component.text(" instead.", NamedTextColor.YELLOW)));
-                                    return true;
-                                }
-                            } catch (Exception ignored) {}
-                        }
+                                plugin.getMessages().send(player, "claim.untrust-renter",
+                                        "{renter}", renterName);
+                                plugin.getMessages().send(player, "claim.untrust-renter-hint",
+                                        "{command}", "/claim evict " + renterName);
+                                return true;
+                            }
+                        } catch (Exception ignored) {}
                     }
                 }
             }
-        }
-
         return false; // Allow the command to proceed
     }
 }

@@ -708,6 +708,41 @@ public class GPBridge {
         }
     }
 
+    /**
+     * Get the claim center XZ coordinates without accessing chunk data.
+     * Returns a location with Y=0; caller must get the correct Y on the region thread.
+     */
+    public Optional<Location> getClaimCenterXZ(Object claim) {
+        if (claim == null) return Optional.empty();
+        try {
+            Location lesser = (Location) claim.getClass().getMethod("getLesserBoundaryCorner").invoke(claim);
+            Location greater = (Location) claim.getClass().getMethod("getGreaterBoundaryCorner").invoke(claim);
+            if (lesser == null || greater == null || lesser.getWorld() == null) return Optional.empty();
+            int minX = Math.min(lesser.getBlockX(), greater.getBlockX());
+            int maxX = Math.max(lesser.getBlockX(), greater.getBlockX());
+            int minZ = Math.min(lesser.getBlockZ(), greater.getBlockZ());
+            int maxZ = Math.max(lesser.getBlockZ(), greater.getBlockZ());
+            int cx = (minX + maxX) / 2;
+            int cz = (minZ + maxZ) / 2;
+            return Optional.of(new Location(lesser.getWorld(), cx + 0.5, 0, cz + 0.5));
+        } catch (ReflectiveOperationException e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Get GriefPrevention's safe teleport location for a claim.
+     */
+    public Optional<Location> getSafeTeleportLocation(Object claim) {
+        if (claim == null) return Optional.empty();
+        try {
+            Method m = claim.getClass().getMethod("getSafeTeleportLocation");
+            Object loc = m.invoke(claim);
+            if (loc instanceof Location) return Optional.of((Location) loc);
+        } catch (ReflectiveOperationException ignored) {}
+        return Optional.empty();
+    }
+
     public boolean trust(Player executor, String target, Object claim) {
         if (!isAvailable() || claim == null || target == null) return false;
 

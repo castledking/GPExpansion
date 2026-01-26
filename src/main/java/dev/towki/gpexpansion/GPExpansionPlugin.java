@@ -7,6 +7,7 @@ import dev.towki.gpexpansion.command.GPXCommand;
 import dev.towki.gpexpansion.command.MailboxCommand;
 import dev.towki.gpexpansion.command.RentClaimCommand;
 import dev.towki.gpexpansion.command.SellClaimCommand;
+import dev.towki.gpexpansion.config.VersionManager;
 import dev.towki.gpexpansion.setup.SetupWizardManager;
 import dev.towki.gpexpansion.setup.SetupChatListener;
 import dev.towki.gpexpansion.setup.SignAutoPasteListener;
@@ -15,15 +16,9 @@ import dev.towki.gpexpansion.gp.GPBridge;
 import dev.towki.gpexpansion.listener.SignListener;
 import dev.towki.gpexpansion.listener.MailboxListener;
 import dev.towki.gpexpansion.listener.BanEnforcementListener;
-import dev.towki.gpexpansion.storage.BanStore;
-import dev.towki.gpexpansion.storage.IconStore;
-import dev.towki.gpexpansion.storage.NameStore;
-import dev.towki.gpexpansion.storage.EvictionStore;
-import dev.towki.gpexpansion.storage.PendingRentStore;
-import dev.towki.gpexpansion.storage.RentalStore;
-import dev.towki.gpexpansion.storage.MailboxStore;
 import dev.towki.gpexpansion.command.PaperCommandWrapper;
 import dev.towki.gpexpansion.permission.SignLimitManager;
+import dev.towki.gpexpansion.scheduler.SchedulerAdapter;
 import dev.towki.gpexpansion.util.Messages;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.RegisteredServiceProvider;
@@ -36,7 +31,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.OfflinePlayer;
 
 import java.util.Collections;
-import java.util.Locale;
 
 public final class GPExpansionPlugin extends JavaPlugin {
 
@@ -46,23 +40,17 @@ public final class GPExpansionPlugin extends JavaPlugin {
     // Optional: modern Vault 2 provider (stored as raw Object to avoid compile dep)
     private Object economyV2; // net.milkbowl.vault2.economy.Economy
     private Class<?> economyV2Class; // cached class for reflection
-    private PendingRentStore pendingRentStore;
     private dev.towki.gpexpansion.reminder.RentalReminderService reminderService;
     private dev.towki.gpexpansion.confirm.ConfirmationService confirmationService;
-    private NameStore nameStore;
-    private BanStore banStore;
-    private RentalStore rentalStore;
-    private EvictionStore evictionStore;
-    private MailboxStore mailboxStore;
-    private dev.towki.gpexpansion.storage.SpawnStore spawnStore;
     private dev.towki.gpexpansion.storage.ClaimDataStore claimDataStore;
-    private IconStore iconStore;
     private dev.towki.gpexpansion.gui.GUIManager guiManager;
     private SignLimitManager signLimitManager;
     private MailboxListener mailboxListener;
     private SetupWizardManager setupWizardManager;
+    private dev.towki.gpexpansion.gui.DescriptionInputManager descriptionInputManager;
     private Messages messages;
     private dev.towki.gpexpansion.util.Config configManager;
+    private VersionManager versionManager;
     
     // Tax settings
     private double taxPercent = 5.0;
@@ -94,21 +82,13 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Setup economy if Vault present
         setupEconomy();
 
+        // Initialize version manager and check for migrations
+        versionManager = new VersionManager(this);
+        versionManager.checkAndMigrateConfiguration();
+
         // Load stores
-        nameStore = new NameStore(this);
-        nameStore.load();
-        banStore = new BanStore(this);
-        banStore.load();
-        rentalStore = new RentalStore(this);
-        rentalStore.load();
-        evictionStore = new EvictionStore(this);
-        evictionStore.load();
-        mailboxStore = new MailboxStore(this);
-        spawnStore = new dev.towki.gpexpansion.storage.SpawnStore(this);
-        spawnStore.load();
         claimDataStore = new dev.towki.gpexpansion.storage.ClaimDataStore(this);
         claimDataStore.load();
-        iconStore = new IconStore(this);
         
         // Initialize GUI manager
         guiManager = new dev.towki.gpexpansion.gui.GUIManager(this);
@@ -238,6 +218,11 @@ public final class GPExpansionPlugin extends JavaPlugin {
             // Register chat listener for wizard
             Bukkit.getPluginManager().registerEvents(new SetupChatListener(GPExpansionPlugin.this, setupWizardManager), GPExpansionPlugin.this);
             getLogger().info("- Registered SetupChatListener for wizard commands");
+            
+            // Initialize description input manager
+            descriptionInputManager = new dev.towki.gpexpansion.gui.DescriptionInputManager(this);
+            Bukkit.getPluginManager().registerEvents(new dev.towki.gpexpansion.gui.DescriptionChatListener(GPExpansionPlugin.this, descriptionInputManager), GPExpansionPlugin.this);
+            getLogger().info("- Registered DescriptionChatListener for claim descriptions");
             
             // Register /mailbox command
             MailboxCommand mailboxCommand = new MailboxCommand(this);
@@ -372,6 +357,8 @@ public final class GPExpansionPlugin extends JavaPlugin {
         getLogger().info("- Registered CommandInterceptListener: " + commandListener.getClass().getName());
         // Protect rent/buy signs and their supports from griefing and enforce deletion flow
         Bukkit.getPluginManager().registerEvents(new dev.towki.gpexpansion.listener.SignProtectionListener(this), this);
+        // Prevent claim abandonment during active rentals
+        Bukkit.getPluginManager().registerEvents(new dev.towki.gpexpansion.listener.ClaimAbandonListener(this), this);
         // Join reminders
         Bukkit.getPluginManager().registerEvents(new dev.towki.gpexpansion.listener.ReminderJoinListener(this), this);
         // Dynamic sign display ([Renew] and item scroll)
@@ -437,17 +424,8 @@ public final class GPExpansionPlugin extends JavaPlugin {
         if (reminderService != null) {
             reminderService.stop();
         }
-        if (nameStore != null) {
-            nameStore.save();
-        }
-        if (banStore != null) {
-            banStore.save();
-        }
-        if (rentalStore != null) {
-            rentalStore.save();
-        }
-        if (evictionStore != null) {
-            evictionStore.save();
+        if (claimDataStore != null) {
+            claimDataStore.save();
         }
         getLogger().info(() -> "GPExpansion disabled");
     }
@@ -565,6 +543,12 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Reload config (adds any missing defaults)
         configManager.reload();
         
+        // Reload consolidated claim data store
+        claimDataStore.reload();
+        
+        // Reload GUI configurations
+        guiManager.reload();
+        
         // Re-apply debug setting
         GPBridge.setDebug(configManager.isDebugEnabled());
         
@@ -650,44 +634,19 @@ public final class GPExpansionPlugin extends JavaPlugin {
         return false;
     }
 
-    public NameStore getNameStore() {
-        return nameStore;
-    }
-
-    public BanStore getBanStore() {
-        return banStore;
-    }
-
-    public RentalStore getRentalStore() {
-        return rentalStore;
-    }
-    
-    public MailboxStore getMailboxStore() {
-        return mailboxStore;
-    }
-    
-    public MailboxListener getMailboxListener() {
-        return mailboxListener;
-    }
-
-    public EvictionStore getEvictionStore() {
-        return evictionStore;
-    }
-    
-    public dev.towki.gpexpansion.storage.SpawnStore getSpawnStore() {
-        return spawnStore;
+    /**
+     * Get the consolidated claim data store
+     */
+    public dev.towki.gpexpansion.storage.ClaimDataStore getClaimDataStore() {
+        return claimDataStore;
     }
     
     public dev.towki.gpexpansion.gui.GUIManager getGUIManager() {
         return guiManager;
     }
-    
-    public dev.towki.gpexpansion.storage.ClaimDataStore getClaimDataStore() {
-        return claimDataStore;
-    }
-    
-    public IconStore getIconStore() {
-        return iconStore;
+
+    public dev.towki.gpexpansion.gui.DescriptionInputManager getDescriptionInputManager() {
+        return descriptionInputManager;
     }
     
     public SignLimitManager getSignLimitManager() {
@@ -704,81 +663,29 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
     // Folia/Paper compatible helpers
     public void runGlobal(Runnable task) {
-        try {
-            // Folia: use GlobalRegionScheduler
-            Object grs = getServer().getClass().getMethod("getGlobalRegionScheduler").invoke(getServer());
-            // run(Plugin, Consumer<ScheduledTask>) signature
-            java.lang.reflect.Method runMethod = grs.getClass().getMethod("run", org.bukkit.plugin.Plugin.class, java.util.function.Consumer.class);
-            runMethod.invoke(grs, this, (java.util.function.Consumer<Object>) scheduledTask -> task.run());
-        } catch (Throwable t) {
-            // Fallback to Bukkit scheduler on Paper/Spigot
-            Bukkit.getScheduler().runTask(this, task);
-        }
+        SchedulerAdapter.runGlobal(this, task);
     }
 
     public void runAtEntity(Player player, Runnable task) {
-        try {
-            // Check if this is Folia
-            try {
-                // Folia: Player has getScheduler()
-                Object scheduler = player.getClass().getMethod("getScheduler").invoke(player);
-                java.lang.reflect.Method execute = scheduler.getClass().getMethod(
-                        "execute",
-                        org.bukkit.plugin.Plugin.class,
-                        java.lang.Runnable.class,
-                        java.util.function.Consumer.class,
-                        long.class
-                );
-                // execute(plugin, runnable, null, 0L)
-                execute.invoke(scheduler, this, (Runnable) task, null, 0L);
-                return;
-            } catch (NoSuchMethodException ignored) {
-                // Not Folia, fall through to Bukkit scheduler
+        SchedulerAdapter.runEntity(this, player, () -> {
+            if (player.isValid()) {
+                task.run();
             }
-            // Fallback to Bukkit scheduler on non-Folia
-            Bukkit.getScheduler().runTask(this, () -> {
-                if (player.isValid()) {
-                    task.run();
-                }
-            });
-        } catch (Throwable t) {
-            // If Folia is present, do NOT fall back to Bukkit main-thread scheduler (it will throw UOE).
-            try {
-                Object grs = getServer().getClass().getMethod("getGlobalRegionScheduler").invoke(getServer());
-                // run(Plugin, Consumer<ScheduledTask>)
-                java.lang.reflect.Method runMethod = grs.getClass().getMethod(
-                        "run",
-                        org.bukkit.plugin.Plugin.class,
-                        java.util.function.Consumer.class
-                );
-                runMethod.invoke(grs, this, (java.util.function.Consumer<Object>) scheduledTask -> {
-                    try {
-                        Object scheduler = player.getClass().getMethod("getScheduler").invoke(player);
-                        java.lang.reflect.Method execute = scheduler.getClass().getMethod(
-                                "execute",
-                                org.bukkit.plugin.Plugin.class,
-                                java.lang.Runnable.class,
-                                java.util.function.Consumer.class,
-                                long.class
-                        );
-                        execute.invoke(scheduler, this, (Runnable) task, null, 0L);
-                    } catch (Throwable ignored) {
-                        // As a last resort (non-Folia), attempt Bukkit scheduler
-                        try { org.bukkit.Bukkit.getScheduler().runTask(this, task); } catch (Throwable ignored2) {}
-                    }
-                });
-                return;
-            } catch (Throwable ignoredFolia) {
-                // Non-Folia/Paper fallback
-                org.bukkit.Bukkit.getScheduler().runTask(this, task);
-            }
-        }
+        }, () -> {});
     }
 
     public void teleportEntity(Player player, Location to) {
-        runAtEntity(player, () -> {
-            try { player.teleport(to); } catch (Throwable ignored) {}
-        });
+        if (SchedulerAdapter.isFolia()) {
+            // On Folia, use teleportAsync for cross-region teleportation
+            try {
+                player.teleportAsync(to);
+            } catch (Throwable ignored) {}
+        } else {
+            // On Bukkit/Paper, use standard teleport
+            try {
+                player.teleport(to);
+            } catch (Throwable ignored) {}
+        }
     }
 
     /**
@@ -786,41 +693,11 @@ public final class GPExpansionPlugin extends JavaPlugin {
      * or on the main thread if Folia region scheduler is unavailable.
      */
     public void runAtLocation(org.bukkit.Location loc, Runnable task) {
-        try {
-            Object rs = getServer().getClass().getMethod("getRegionScheduler").invoke(getServer());
-            try {
-                // Try signature: run(Plugin, World, int chunkX, int chunkZ, Consumer<ScheduledTask>)
-                java.lang.reflect.Method run = rs.getClass().getMethod(
-                        "run",
-                        org.bukkit.plugin.Plugin.class,
-                        org.bukkit.World.class,
-                        int.class,
-                        int.class,
-                        java.util.function.Consumer.class
-                );
-                int cx = loc.getBlockX() >> 4;
-                int cz = loc.getBlockZ() >> 4;
-                run.invoke(rs, this, loc.getWorld(), cx, cz, (java.util.function.Consumer<Object>) st -> task.run());
-                return;
-            } catch (NoSuchMethodException ignored) {
-                // Fallback signature: run(Plugin, Location, Consumer<ScheduledTask>)
-                java.lang.reflect.Method run2 = rs.getClass().getMethod(
-                        "run",
-                        org.bukkit.plugin.Plugin.class,
-                        org.bukkit.Location.class,
-                        java.util.function.Consumer.class
-                );
-                run2.invoke(rs, this, loc, (java.util.function.Consumer<Object>) st -> task.run());
-                return;
-            }
-        } catch (Throwable t) {
-            // Fallback to Bukkit main thread
-            Bukkit.getScheduler().runTask(this, task);
-        }
+        SchedulerAdapter.runAtLocation(this, loc, task);
     }
 
-    public PendingRentStore getPendingRentStore() {
-        return pendingRentStore;
+    public MailboxListener getMailboxListener() {
+        return mailboxListener;
     }
 
     public boolean depositMoney(Player player, double amount) {

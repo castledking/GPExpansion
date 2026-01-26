@@ -1,0 +1,93 @@
+# Global Claim List GUI Configuration
+# Browse all publicly listed claims from all players
+
+title: "&6&lGlobal Claims - Page {page}"
+size: 54
+
+filler:
+  material: GRAY_STAINED_GLASS_PANE
+
+slots:
+  search: 4
+  filter: 49
+  prev-page: 45
+  next-page: 53
+  back: 48
+
+items:
+  search:
+    material: OAK_SIGN
+    name: "&e&lSearch Claims"
+    lore:
+      - "&7Search claims by name or owner"
+      - "&7Current: &f{query}"
+      - ""
+      - "&eClick to search"
+  
+  filter:
+    material: HOPPER
+    name: "&6&lFilter: {filter}"
+    lore:
+      - "&7Filter claims by type"
+      - ""
+      - "&eClick to cycle filters"
+  
+  prev-page:
+    material: ARROW
+    name: "&e&l« Previous Page"
+    lore:
+      - "&7Page {current}/{total}"
+      - ""
+      - "&eClick to go back"
+  
+  next-page:
+    material: ARROW
+    name: "&e&lNext Page »"
+    lore:
+      - "&7Page {current}/{total}"
+      - ""
+      - "&eClick to continue"
+  
+  back:
+    material: ARROW
+    name: "&c&lBack"
+    lore:
+      - "&7Return to previous menu"
+
+# Filter types
+filters:
+  all:
+    name: "All Claims"
+    material: GRASS_BLOCK
+  rented:
+    name: "Rented Claims"
+    material: GOLD_BLOCK
+  sold:
+    name: "Sold Claims"
+    material: DIAMOND_BLOCK
+  mailboxes:
+    name: "Mailboxes"
+    material: CHEST
+  regular:
+    name: "Regular Claims"
+    material: DIRT
+
+# Claim item templates
+claim-item:
+  name: "&e{owner}'s Claim"
+  lore:
+    - "&7ID: &f{id}"
+    - "&7World: &f{world}"
+    - "&7Location: &f{location}"
+    - "&7Size: &f{area} blocks"
+    - ""
+    - "&7Description: &f{description}"
+    - ""
+    - "&eLeft Click: &7Teleport"
+    - "&eRight Click: &7View Options"
+    - "&eShift+Left: &7View Children"
+
+messages:
+  no-claims: "&7No publicly listed claims found."
+  search-prompt: "&7Enter search terms:"
+  teleported: "&aTeleported to claim {id}."

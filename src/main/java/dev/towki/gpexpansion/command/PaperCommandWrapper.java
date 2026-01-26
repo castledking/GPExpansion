@@ -1,6 +1,6 @@
 package dev.towki.gpexpansion.command;
 
-import org.bukkit.Bukkit;
+import dev.towki.gpexpansion.scheduler.SchedulerAdapter;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -35,12 +35,12 @@ public class PaperCommandWrapper extends Command {
         if (sender instanceof Player) {
             // For players, run on the correct region thread
             Player player = (Player) sender;
-            if (isFolia()) {
+            if (SchedulerAdapter.isFolia()) {
                 player.getScheduler().execute(plugin, () -> 
                     executor.onCommand(sender, this, label, args), null, 1L);
             } else {
                 // Non-Folia fallback
-                Bukkit.getScheduler().runTask(plugin, () -> 
+                SchedulerAdapter.runGlobal(plugin, () -> 
                     executor.onCommand(sender, this, label, args));
             }
         } else {
@@ -58,14 +58,5 @@ public class PaperCommandWrapper extends Command {
 
         List<String> res = completer.onTabComplete(sender, this, alias, args);
         return res != null ? res : super.tabComplete(sender, alias, args);
-    }
-    
-    private boolean isFolia() {
-        try {
-            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
-            return true;
-        } catch (ClassNotFoundException e) {
-            return false;
-        }
     }
 }

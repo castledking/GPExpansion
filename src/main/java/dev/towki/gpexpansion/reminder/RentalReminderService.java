@@ -1,17 +1,19 @@
 package dev.towki.gpexpansion.reminder;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
-import dev.towki.gpexpansion.storage.RentalStore;
+import dev.towki.gpexpansion.gp.GPBridge;
+import dev.towki.gpexpansion.storage.ClaimDataStore;
+import dev.towki.gpexpansion.scheduler.SchedulerAdapter;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
+import org.bukkit.Location;
 
 import java.util.*;
 
 public class RentalReminderService {
     private final GPExpansionPlugin plugin;
-    private final RentalStore store;
+    private final ClaimDataStore dataStore;
 
     // Per-claim session reminder mask (resets each restart)
     private final Map<String, Integer> claimMasks = new HashMap<>();
@@ -20,7 +22,7 @@ public class RentalReminderService {
     // Track if first-join after restart message has been shown for a player
     private final Set<UUID> firstJoinShown = new HashSet<>();
 
-    private int bukkitTaskId = -1;
+    private dev.towki.gpexpansion.scheduler.TaskHandle taskHandle = null; // SchedulerAdapter handle
     // Folia scheduled task handle (ScheduledTask), kept as Object to avoid compile dependency
     private volatile Object foliaTask = null;
 
@@ -62,7 +64,7 @@ public class RentalReminderService {
 
     public RentalReminderService(GPExpansionPlugin plugin) {
         this.plugin = plugin;
-        this.store = plugin.getRentalStore();
+        this.dataStore = plugin.getClaimDataStore();
     }
 
     public void start() {
@@ -93,7 +95,7 @@ public class RentalReminderService {
             // Not Folia, or API not present: fall through to Bukkit scheduler
         }
         // Spigot/Paper: Run every 1 second to catch sub-minute countdowns precisely
-        this.bukkitTaskId = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 20L, 20L).getTaskId();
+        this.taskHandle = SchedulerAdapter.runRepeatingGlobal(plugin, this::tick, 20L, 20L);
     }
 
     public void stop() {
@@ -105,10 +107,10 @@ public class RentalReminderService {
             } catch (Throwable ignored) {}
             foliaTask = null;
         }
-        // Cancel Bukkit task if present
-        if (bukkitTaskId != -1) {
-            try { Bukkit.getScheduler().cancelTask(bukkitTaskId); } catch (Throwable ignored) {}
-            bukkitTaskId = -1;
+        // Cancel SchedulerAdapter task if present
+        if (taskHandle != null) {
+            taskHandle.cancel();
+            taskHandle = null;
         }
         claimMasks.clear();
         joinPctMask.clear();
@@ -116,13 +118,13 @@ public class RentalReminderService {
     }
 
     private void tick() {
-        if (store == null) return;
+        if (dataStore == null) return;
         long now = System.currentTimeMillis();
-        for (Map.Entry<String, RentalStore.Entry> e : new ArrayList<>(store.all().entrySet())) {
+        for (Map.Entry<String, ClaimDataStore.RentalData> e : new ArrayList<>(dataStore.getAllRentals().entrySet())) {
             String claimId = e.getKey();
-            RentalStore.Entry entry = e.getValue();
+            ClaimDataStore.RentalData entry = e.getValue();
             // Skip reminders for evicted rentals
-            if (entry.beingEvicted) {
+            if (entry.paymentFailed) {
                 continue;
             }
             long start = entry.start > 0 ? entry.start : now; // fallback
@@ -139,12 +141,11 @@ public class RentalReminderService {
                 // expired
                 if ((mask & (1 << BIT_EXPIRED)) == 0) {
                     if (online) {
-                        renter.sendMessage(color("&6Your rented claim has expired."));
+                        renter.sendMessage(plugin.getMessages().getRaw("eviction.rental-expired"));
                     } else {
                         // flag a pending notice
-                        entry.pendingExpiryNotice = true;
-                        store.update(claimId, entry);
-                        store.save();
+                        entry.pendingPayment = true;
+                        dataStore.save();
                     }
                     mask |= (1 << BIT_EXPIRED);
                     claimMasks.put(claimId, mask);
@@ -156,49 +157,49 @@ public class RentalReminderService {
             double elapsedFrac = Math.max(0d, Math.min(1d, (now - start) / (double) duration));
             if (online) {
                 if (elapsedFrac >= 0.25 && (mask & (1 << BIT_PCT25)) == 0) {
-                    sendRemain(renter, remaining);
+                    sendRemain(renter, remaining, claimId);
                     mask |= (1 << BIT_PCT25);
                 }
                 if (elapsedFrac >= 0.50 && (mask & (1 << BIT_PCT50)) == 0) {
-                    sendRemain(renter, remaining);
+                    sendRemain(renter, remaining, claimId);
                     mask |= (1 << BIT_PCT50);
                 }
                 if (elapsedFrac >= 0.75 && (mask & (1 << BIT_PCT75)) == 0) {
-                    sendRemain(renter, remaining);
+                    sendRemain(renter, remaining, claimId);
                     mask |= (1 << BIT_PCT75);
                 }
             }
 
             // Time-based thresholds
             // 24h in 2h steps down to 6h, then 1h steps to 1h, then 30m/10m/5m/1m, then 10s..1s
-            mask = checkThreshold(online, renter, remaining, mask, 24 * H, BIT_24H);
-            mask = checkThreshold(online, renter, remaining, mask, 22 * H, BIT_22H);
-            mask = checkThreshold(online, renter, remaining, mask, 20 * H, BIT_20H);
-            mask = checkThreshold(online, renter, remaining, mask, 18 * H, BIT_18H);
-            mask = checkThreshold(online, renter, remaining, mask, 16 * H, BIT_16H);
-            mask = checkThreshold(online, renter, remaining, mask, 14 * H, BIT_14H);
-            mask = checkThreshold(online, renter, remaining, mask, 12 * H, BIT_12H);
-            mask = checkThreshold(online, renter, remaining, mask, 10 * H, BIT_10H);
-            mask = checkThreshold(online, renter, remaining, mask, 8 * H, BIT_8H);
-            mask = checkThreshold(online, renter, remaining, mask, 6 * H, BIT_6H);
+            mask = checkThreshold(online, renter, remaining, mask, 24 * H, BIT_24H, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 22 * H, BIT_22H, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 20 * H, BIT_20H, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 18 * H, BIT_18H, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 16 * H, BIT_16H, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 14 * H, BIT_14H, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 12 * H, BIT_12H, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 10 * H, BIT_10H, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 8 * H, BIT_8H, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 6 * H, BIT_6H, claimId);
 
-            mask = checkThreshold(online, renter, remaining, mask, 5 * H, BIT_5H);
-            mask = checkThreshold(online, renter, remaining, mask, 4 * H, BIT_4H);
-            mask = checkThreshold(online, renter, remaining, mask, 3 * H, BIT_3H);
-            mask = checkThreshold(online, renter, remaining, mask, 2 * H, BIT_2H);
-            mask = checkThreshold(online, renter, remaining, mask, 1 * H, BIT_1H);
+            mask = checkThreshold(online, renter, remaining, mask, 5 * H, BIT_5H, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 4 * H, BIT_4H, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 3 * H, BIT_3H, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 2 * H, BIT_2H, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 1 * H, BIT_1H, claimId);
 
-            mask = checkThreshold(online, renter, remaining, mask, 30 * M, BIT_30M);
-            mask = checkThreshold(online, renter, remaining, mask, 10 * M, BIT_10M);
-            mask = checkThreshold(online, renter, remaining, mask, 5 * M, BIT_5M);
-            mask = checkThreshold(online, renter, remaining, mask, 1 * M, BIT_1M);
+            mask = checkThreshold(online, renter, remaining, mask, 30 * M, BIT_30M, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 10 * M, BIT_10M, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 5 * M, BIT_5M, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 1 * M, BIT_1M, claimId);
 
-            mask = checkThreshold(online, renter, remaining, mask, 10 * S, BIT_10S);
-            mask = checkThreshold(online, renter, remaining, mask, 5 * S, BIT_5S);
-            mask = checkThreshold(online, renter, remaining, mask, 4 * S, BIT_4S);
-            mask = checkThreshold(online, renter, remaining, mask, 3 * S, BIT_3S);
-            mask = checkThreshold(online, renter, remaining, mask, 2 * S, BIT_2S);
-            mask = checkThreshold(online, renter, remaining, mask, 1 * S, BIT_1S);
+            mask = checkThreshold(online, renter, remaining, mask, 10 * S, BIT_10S, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 5 * S, BIT_5S, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 4 * S, BIT_4S, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 3 * S, BIT_3S, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 2 * S, BIT_2S, claimId);
+            mask = checkThreshold(online, renter, remaining, mask, 1 * S, BIT_1S, claimId);
 
             claimMasks.put(claimId, mask);
         }
@@ -208,21 +209,44 @@ public class RentalReminderService {
     private static final long M = 60 * S;
     private static final long H = 60 * M;
 
-    private int checkThreshold(boolean online, Player renter, long remaining, int mask, long threshold, int bit) {
+    private int checkThreshold(boolean online, Player renter, long remaining, int mask, long threshold, int bit, String claimId) {
         if ((mask & (1 << bit)) != 0) return mask;
         if (remaining <= threshold) {
-            if (online && renter != null) sendRemain(renter, remaining);
+            if (online && renter != null) sendRemain(renter, remaining, claimId);
             return mask | (1 << bit);
         }
         return mask;
     }
 
-    private void sendRemain(Player player, long remainingMs) {
-        player.sendMessage(color("&6Your rented claim will expire in: &e" + formatDuration(remainingMs)));
+    private void sendRemain(Player player, long remainingMs, String claimId) {
+        String coords = getClaimCoordinates(claimId);
+        String message = plugin.getMessages().getRaw("eviction.rental-expired", "{coords}", coords);
+        // Replace the default message with our custom one that includes time
+        message = message.replace("&6Your rented claim has expired. &7(Location: " + coords + ")", 
+                               "&6Your rented claim will expire in: &e" + formatDuration(remainingMs) + " &7(Location: " + coords + ")");
+        player.sendMessage(color(message));
     }
 
     private String color(String amp) {
         return ChatColor.translateAlternateColorCodes('&', amp);
+    }
+
+    private String getClaimCoordinates(String claimId) {
+        try {
+            GPBridge gp = new GPBridge();
+            var claimOpt = gp.findClaimById(claimId);
+            if (claimOpt.isPresent()) {
+                Object claim = claimOpt.get();
+                var locationOpt = gp.getClaimCenter(claim);
+                if (locationOpt.isPresent()) {
+                    Location loc = locationOpt.get();
+                    return String.format("x%d,z%d", loc.getBlockX(), loc.getBlockZ());
+                }
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("Error getting coordinates for claim " + claimId + ": " + e.getMessage());
+        }
+        return "unknown";
     }
 
     private String formatDuration(long ms) {
@@ -246,16 +270,15 @@ public class RentalReminderService {
         if (first) firstJoinShown.add(u);
 
         long now = System.currentTimeMillis();
-        for (Map.Entry<String, RentalStore.Entry> e : store.all().entrySet()) {
-            RentalStore.Entry entry = e.getValue();
+        for (Map.Entry<String, ClaimDataStore.RentalData> e : dataStore.getAllRentals().entrySet()) {
+            ClaimDataStore.RentalData entry = e.getValue();
             if (entry == null || entry.renter == null || !entry.renter.equals(u)) continue;
 
             // Expired while offline?
-            if (entry.expiry <= now && entry.pendingExpiryNotice) {
+            if (entry.expiry <= now && entry.pendingPayment) {
                 player.sendMessage(color("&6Your rented claim has expired."));
-                entry.pendingExpiryNotice = false; // clear flag after shown
-                store.update(e.getKey(), entry);
-                store.save();
+                entry.pendingPayment = false; // clear flag after shown
+                dataStore.save();
                 continue;
             }
 
@@ -264,7 +287,7 @@ public class RentalReminderService {
             // First join after restart: always show
             if (first) {
                 long remaining = entry.expiry - now;
-                sendRemain(player, remaining);
+                sendRemain(player, remaining, e.getKey());
             }
 
             // Join-after-percentage thresholds (once per restart)
@@ -273,15 +296,15 @@ public class RentalReminderService {
             double frac = Math.max(0d, Math.min(1d, (now - start) / (double) dur));
             int mask = joinPctMask.getOrDefault(u, 0);
             if (frac >= 0.25 && (mask & (1 << BIT_PCT25)) == 0) {
-                sendRemain(player, entry.expiry - now);
+                sendRemain(player, entry.expiry - now, e.getKey());
                 mask |= (1 << BIT_PCT25);
             }
             if (frac >= 0.50 && (mask & (1 << BIT_PCT50)) == 0) {
-                sendRemain(player, entry.expiry - now);
+                sendRemain(player, entry.expiry - now, e.getKey());
                 mask |= (1 << BIT_PCT50);
             }
             if (frac >= 0.75 && (mask & (1 << BIT_PCT75)) == 0) {
-                sendRemain(player, entry.expiry - now);
+                sendRemain(player, entry.expiry - now, e.getKey());
                 mask |= (1 << BIT_PCT75);
             }
             joinPctMask.put(u, mask);

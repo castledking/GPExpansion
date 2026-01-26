@@ -2,8 +2,8 @@ package dev.towki.gpexpansion.listener;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
-import dev.towki.gpexpansion.storage.EvictionStore;
-import dev.towki.gpexpansion.storage.RentalStore;
+import dev.towki.gpexpansion.storage.ClaimDataStore;
+import dev.towki.gpexpansion.util.Messages;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -96,7 +96,7 @@ public class SignProtectionListener implements Listener {
     }
 
     private boolean canAdminister(Player p) {
-        return p.isOp() || p.hasPermission("griefprevention.admin") || p.hasPermission("gpexpansion.sign.admin");
+        return p.isOp() || p.hasPermission("griefprevention.admin") || p.hasPermission("griefprevention.sign.admin");
     }
 
     private String formatDuration(long milliseconds) {
@@ -184,33 +184,34 @@ public class SignProtectionListener implements Listener {
                 }
                 
                 if (!(owner || adminBypass)) {
-                    player.sendMessage(ChatColor.RED + "You cannot manage this sign.");
+                    plugin.getMessages().send(player, "eviction.cannot-manage-sign");
                     event.setCancelled(true);
                     return;
                 }
                 
                 // Check eviction status before allowing deletion (unless player has bypass permission)
-                boolean evictionBypass = player.hasPermission("gpexpansion.eviction.bypass");
+                boolean evictionBypass = player.hasPermission("griefprevention.eviction.bypass");
                 if (!evictionBypass && renterStr != null && !renterStr.isEmpty() && claimId != null && !claimId.isEmpty()) {
-                    RentalStore rentalStore = plugin.getRentalStore();
-                    RentalStore.Entry rental = rentalStore != null ? rentalStore.all().get(claimId) : null;
+                    ClaimDataStore dataStore = plugin.getClaimDataStore();
+                    ClaimDataStore.RentalData rental = dataStore.getRental(claimId).orElse(null);
                     boolean hasActiveRental = (rental != null && rental.expiry > System.currentTimeMillis()) || (rental == null);
                     
                     if (hasActiveRental) {
-                        EvictionStore evictionStore = plugin.getEvictionStore();
-                        if (evictionStore == null || !evictionStore.hasPendingEviction(claimId)) {
-                            player.sendMessage(ChatColor.RED + "This claim has an active renter.");
-                            player.sendMessage(ChatColor.YELLOW + "Use " + ChatColor.GOLD + "/claim evict " + claimId + ChatColor.YELLOW + " to start a 14-day eviction notice.");
+                        ClaimDataStore.EvictionData eviction = dataStore.getEviction(claimId).orElse(null);
+                        if (eviction == null) {
+                            plugin.getMessages().send(player, "eviction.active-renter");
+                            plugin.getMessages().send(player, "eviction.start-eviction-notice", 
+                                "{command}", ChatColor.GOLD + "/claim evict " + claimId + ChatColor.YELLOW,
+                                "{days}", String.valueOf(plugin.getConfig().getInt("eviction.notice-period-days", 14)));
                             event.setCancelled(true);
                             return;
                         }
                         
-                        EvictionStore.EvictionEntry eviction = evictionStore.getEviction(claimId);
-                        if (!eviction.isEffective() && !adminBypass) {
-                            long remaining = eviction.getRemainingTime();
+                        if (System.currentTimeMillis() < eviction.effectiveAt && !adminBypass) {
+                            long remaining = eviction.effectiveAt - System.currentTimeMillis();
                             String timeRemaining = formatDuration(remaining);
-                            player.sendMessage(ChatColor.RED + "Eviction notice is still pending.");
-                            player.sendMessage(ChatColor.YELLOW + timeRemaining + " remaining before you can remove the renter.");
+                            plugin.getMessages().send(player, "eviction.notice-pending");
+                            plugin.getMessages().send(player, "eviction.time-remaining", "{time}", timeRemaining);
                             event.setCancelled(true);
                             return;
                         }
@@ -226,7 +227,7 @@ public class SignProtectionListener implements Listener {
                     // Execute confirmation - clear rental and remove sign
                     confirmMap.remove(key);
                     performDelete(block);
-                    player.sendMessage(ChatColor.GREEN + "Rental sign removed and rental cleared.");
+                    player.sendMessage(ChatColor.GREEN + plugin.getMessages().getRaw("eviction.rental-sign-removed"));
                     event.setCancelled(true);
                     return;
                 }
@@ -273,12 +274,12 @@ public class SignProtectionListener implements Listener {
             } catch (ReflectiveOperationException ignored) {}
         }
         if (!(owner || adminBypass)) {
-            p.sendMessage(ChatColor.RED + "You cannot break this sign.");
+            p.sendMessage(ChatColor.RED + plugin.getMessages().getRaw("eviction.cannot-break-sign"));
             return false;
         }
         
         // Check if this rental sign has an active renter - require eviction process (unless player has bypass permission)
-        boolean evictionBypass = p.hasPermission("gpexpansion.eviction.bypass");
+        boolean evictionBypass = p.hasPermission("griefprevention.eviction.bypass");
         String renterStr = sign.getPersistentDataContainer().get(keyRenter, PersistentDataType.STRING);
         
         // DEBUG: Log eviction check conditions
@@ -288,25 +289,28 @@ public class SignProtectionListener implements Listener {
             // Sign has a renter in PDC - always require eviction to protect the renter
             // This applies regardless of RentalStore state (could be expired, missing, or data mismatch)
             {
-                EvictionStore evictionStore = plugin.getEvictionStore();
+                ClaimDataStore dataStore = plugin.getClaimDataStore();
                 
                 // If no eviction process started, or eviction is not yet effective, block the break
-                if (!evictionStore.hasPendingEviction(claimId)) {
+                ClaimDataStore.EvictionData eviction = dataStore.getEviction(claimId).orElse(null);
+                if (eviction == null) {
                     // No eviction started - tell owner to use /claim evict
-                    p.sendMessage(ChatColor.RED + "This claim has an active renter.");
-                    p.sendMessage(ChatColor.YELLOW + "Use " + ChatColor.GOLD + "/claim evict " + claimId + ChatColor.YELLOW + " to start a 14-day eviction notice.");
-                    p.sendMessage(ChatColor.GRAY + "You cannot break this sign or remove the renter until the eviction period has passed.");
+                    plugin.getMessages().send(p, "eviction.active-renter");
+                    plugin.getMessages().send(p, "eviction.start-eviction-notice", 
+                        "{command}", ChatColor.GOLD + "/claim evict " + claimId + ChatColor.YELLOW,
+                        "{days}", String.valueOf(plugin.getConfig().getInt("eviction.notice-period-days", 14)));
+                    plugin.getMessages().send(p, "eviction.cannot-remove-renter");
                     return false;
                 }
                 
-                EvictionStore.EvictionEntry eviction = evictionStore.getEviction(claimId);
-                if (!eviction.isEffective() && !adminBypass) {
+                if (System.currentTimeMillis() < eviction.effectiveAt && !adminBypass) {
                     // Eviction started but 14 days haven't passed yet
-                    long remaining = eviction.getRemainingTime();
+                    long remaining = eviction.effectiveAt - System.currentTimeMillis();
                     String timeRemaining = formatDuration(remaining);
-                    p.sendMessage(ChatColor.RED + "Eviction notice is still pending.");
-                    p.sendMessage(ChatColor.YELLOW + timeRemaining + " remaining before you can remove the renter.");
-                    p.sendMessage(ChatColor.GRAY + "Use " + ChatColor.GOLD + "/claim evict status " + claimId + ChatColor.GRAY + " to check status.");
+                    plugin.getMessages().send(p, "eviction.notice-pending");
+                    plugin.getMessages().send(p, "eviction.time-remaining", "{time}", timeRemaining);
+                    plugin.getMessages().send(p, "eviction.check-status-hint", 
+                        "{command}", ChatColor.GOLD + "/claim evict status " + claimId + ChatColor.GRAY);
                     return false;
                 }
                 // Eviction is effective - allow proceeding with confirmation
@@ -343,17 +347,17 @@ public class SignProtectionListener implements Listener {
                     p.sendMessage(message);
                 } catch (IllegalArgumentException ignored) {
                     // Fallback to regular message if UUID parsing fails
-                    Component base = Component.text(ChatColor.YELLOW + "Click here to delete the rental or break the sign again while sneaking.")
+                    Component base = Component.text(ChatColor.YELLOW + plugin.getMessages().getRaw("eviction.confirm-deletion-click"))
                             .clickEvent(ClickEvent.clickEvent(ClickEvent.Action.RUN_COMMAND, "/gpexpansion:rentalsignconfirm "+signBlock.getWorld().getName()+" "+signBlock.getX()+" "+signBlock.getY()+" "+signBlock.getZ()))
-                            .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, Component.text("Confirm deletion")));
+                            .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, Component.text(plugin.getMessages().getRaw("eviction.confirm-deletion"))));
                     p.sendMessage(base);
-                    p.sendMessage(ChatColor.GRAY + "You can also confirm by " + ChatColor.GOLD + "sneak + right clicking " + ChatColor.GRAY + "the sign.");
+                    plugin.getMessages().send(p, "eviction.confirm-deletion-alt");
                 }
             } else {
                 // Not currently rented - use regular confirmation
-                Component base = Component.text(ChatColor.YELLOW + "Click here to delete the rental or break the sign again while sneaking.")
+                Component base = Component.text(ChatColor.YELLOW + plugin.getMessages().getRaw("eviction.confirm-deletion-click"))
                         .clickEvent(ClickEvent.clickEvent(ClickEvent.Action.RUN_COMMAND, "/gpexpansion:rentalsignconfirm "+signBlock.getWorld().getName()+" "+signBlock.getX()+" "+signBlock.getY()+" "+signBlock.getZ()))
-                        .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, Component.text("Confirm deletion")));
+                        .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, Component.text(plugin.getMessages().getRaw("eviction.confirm-deletion"))));
                 p.sendMessage(base);
                 p.sendMessage(ChatColor.GRAY + "You can also confirm by " + ChatColor.GOLD + "sneak + right clicking " + ChatColor.GRAY + "the sign.");
             }
@@ -380,10 +384,10 @@ public class SignProtectionListener implements Listener {
             String claimId = sign.getPersistentDataContainer().get(keyClaim, PersistentDataType.STRING);
             String renterStr = sign.getPersistentDataContainer().get(keyRenter, PersistentDataType.STRING);
             // Clear store
-            RentalStore store = plugin.getRentalStore();
-            if (store != null && claimId != null) {
-                store.clear(claimId);
-                store.save();
+            if (claimId != null) {
+                ClaimDataStore dataStore = plugin.getClaimDataStore();
+                dataStore.clearRental(claimId);
+                dataStore.save();
             }
             // Revoke trust if any
             if (claimId != null && renterStr != null) {

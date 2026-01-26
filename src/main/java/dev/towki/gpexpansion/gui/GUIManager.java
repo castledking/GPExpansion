@@ -59,7 +59,10 @@ public class GUIManager implements Listener {
             "admin-menu.yml",
             "admin-claims.yml",
             "all-player-claims.yml",
-            "claim-flags.yml"
+            "claim-flags.yml",
+            "global-claim-list.yml",
+            "global-claim-settings.yml",
+            "icon-selection.yml"
         };
         
         for (String fileName : guiFiles) {
@@ -188,7 +191,7 @@ public class GUIManager implements Listener {
     
     // Open owned claims menu
     public void openOwnedClaims(Player player) {
-        openGUI(player, new OwnedClaimsGUI(this, player));
+        OwnedClaimsGUI.openAsync(this, player, null);
     }
     
     // Open trusted claims menu
@@ -198,7 +201,7 @@ public class GUIManager implements Listener {
     
     // Open claim options menu (hopper style)
     public void openClaimOptions(Player player, Object claim, String claimId) {
-        openGUI(player, new ClaimOptionsGUI(this, player, claim, claimId));
+        openGUI(player, new ClaimSettingsGUI(this, player, claim, claimId));
     }
     
     // Open children claims menu
@@ -218,7 +221,7 @@ public class GUIManager implements Listener {
     
     // Open global claim list
     public void openGlobalClaimList(Player player) {
-        openGUI(player, new GlobalClaimListGUI(this, player));
+        GlobalClaimListGUI.openAsync(this, player, null);
     }
     
     // Open banned players menu
@@ -233,16 +236,26 @@ public class GUIManager implements Listener {
     
     // Open admin claims menu
     public void openAdminClaims(Player player) {
-        openGUI(player, new AdminClaimsGUI(this, player));
+        AdminClaimsGUI.openAsync(this, player, null);
     }
     
     // Open all player claims menu (admin view)
     public void openAllPlayerClaims(Player player) {
-        openGUI(player, new AllPlayerClaimsGUI(this, player));
+        AllPlayerClaimsGUI.openAsync(this, player, null);
     }
     
     // Open claim flags menu (GPFlags integration)
     public void openClaimFlags(Player player, Object claim, String claimId) {
         openGUI(player, new ClaimFlagsGUI(this, player, claim, claimId));
+    }
+    
+    // Open global claim settings menu (consolidated)
+    public void openGlobalClaimSettings(Player player, Object claim, String claimId) {
+        openGUI(player, new GlobalClaimSettingsGUI(this, player, claim, claimId));
+    }
+    
+    // Open global claim settings menu with fromSign flag
+    public void openGlobalClaimSettings(Player player, Object claim, String claimId, boolean fromSign) {
+        openGUI(player, new GlobalClaimSettingsGUI(this, player, claim, claimId, fromSign));
     }
 }

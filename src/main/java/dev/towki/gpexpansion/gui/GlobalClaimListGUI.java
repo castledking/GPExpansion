@@ -10,6 +10,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -25,16 +26,48 @@ public class GlobalClaimListGUI extends BaseGUI {
     private List<ClaimInfo> publicClaims = new ArrayList<>();
     private String searchQuery = null;
     
-    private static final int SEARCH_SLOT = 47;
-    private static final int PREV_PAGE_SLOT = 45;
-    private static final int NEXT_PAGE_SLOT = 53;
-    private static final int BACK_SLOT = 49;
-    private static final int[] CLAIM_SLOTS = {
+    // Slot positions from config
+    private int searchSlot = 4;
+    private int filterSlot = 49;
+    private int prevPageSlot = 45;
+    private int nextPageSlot = 53;
+    private int backSlot = 48;
+    private int[] claimSlots = {
         10, 11, 12, 13, 14, 15, 16,
         19, 20, 21, 22, 23, 24, 25,
         28, 29, 30, 31, 32, 33, 34,
         37, 38, 39, 40, 41, 42, 43
     };
+    
+    // Filter types
+    public enum FilterType {
+        ALL("All Claims", "all", Material.GRASS_BLOCK),
+        RENTED("Rented Claims", "rented", Material.GOLD_BLOCK),
+        SOLD("Sold Claims", "sold", Material.DIAMOND_BLOCK),
+        MAILBOXES("Mailboxes", "mailboxes", Material.CHEST),
+        REGULAR("Regular Claims", "regular", Material.DIRT);
+        
+        private final String displayName;
+        private final String configKey;
+        private final Material defaultMaterial;
+        
+        FilterType(String displayName, String configKey, Material defaultMaterial) {
+            this.displayName = displayName;
+            this.configKey = configKey;
+            this.defaultMaterial = defaultMaterial;
+        }
+        
+        public String getDisplayName() { return displayName; }
+        public String getConfigKey() { return configKey; }
+        public Material getDefaultMaterial() { return defaultMaterial; }
+        
+        public FilterType next() {
+            FilterType[] values = values();
+            return values[(ordinal() + 1) % values.length];
+        }
+    }
+    
+    private FilterType currentFilter = FilterType.ALL;
     
     public GlobalClaimListGUI(GUIManager manager, Player player) {
         this(manager, player, null);
@@ -44,7 +77,46 @@ public class GlobalClaimListGUI extends BaseGUI {
         super(manager, player, "global-claim-list");
         this.gp = new GPBridge();
         this.searchQuery = searchQuery;
-        loadPublicClaims();
+        
+        // Load slot positions from config
+        if (config != null) {
+            searchSlot = config.getInt("slots.search", 4);
+            filterSlot = config.getInt("slots.filter", 49);
+            prevPageSlot = config.getInt("slots.prev-page", 45);
+            nextPageSlot = config.getInt("slots.next-page", 53);
+            backSlot = config.getInt("slots.back", 48);
+            
+            // Load claim slots from config
+            List<Integer> slots = config.getIntegerList("slots.claim-slots");
+            if (!slots.isEmpty()) {
+                claimSlots = slots.stream().mapToInt(i -> i).toArray();
+            }
+        }
+    }
+    
+    /**
+     * Open GUI with async claim loading to prevent server hang.
+     */
+    public static void openAsync(GUIManager manager, Player player, String searchQuery) {
+        openAsyncWithState(manager, player, searchQuery, null, 0);
+    }
+    
+    /**
+     * Open GUI with async claim loading and restore previous state (filter, page).
+     */
+    public static void openAsyncWithState(GUIManager manager, Player player, String searchQuery, String filterType, int page) {
+        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runAsyncNow(manager.getPlugin(), () -> {
+            GlobalClaimListGUI gui = new GlobalClaimListGUI(manager, player, searchQuery);
+            gui.currentPage = page;
+            
+            gui.loadPublicClaims();
+            dev.towki.gpexpansion.scheduler.SchedulerAdapter.runEntity(manager.getPlugin(), player, () -> {
+                // Save state for /claim ! command
+                GUIStateTracker.saveState(player, GUIStateTracker.GUIType.GLOBAL_CLAIM_LIST, 
+                    gui.searchQuery, null, gui.currentPage);
+                manager.openGUI(player, gui);
+            }, null);
+        });
     }
     
     private void loadPublicClaims() {
@@ -66,7 +138,7 @@ public class GlobalClaimListGUI extends BaseGUI {
             info.description = data.description;
             
             // Get claim name
-            info.name = plugin.getNameStore().get(claimId).orElse("Claim #" + claimId);
+            info.name = plugin.getClaimDataStore().getCustomName(claimId).orElse("Claim #" + claimId);
             
             // Get owner name
             info.ownerName = getOwnerName(claim);
@@ -78,7 +150,8 @@ public class GlobalClaimListGUI extends BaseGUI {
             // Apply search filter if present
             if (searchQuery != null && !searchQuery.isEmpty()) {
                 String query = searchQuery.toLowerCase();
-                if (!info.name.toLowerCase().contains(query) && 
+                if (!(info.claimId != null && info.claimId.equalsIgnoreCase(searchQuery)) &&
+                    !info.name.toLowerCase().contains(query) && 
                     !info.ownerName.toLowerCase().contains(query) &&
                     (info.description == null || !info.description.toLowerCase().contains(query))) {
                     continue;
@@ -129,7 +202,7 @@ public class GlobalClaimListGUI extends BaseGUI {
         String title = searchQuery != null && !searchQuery.isEmpty() 
             ? getString("title-search", "&e&lGlobal Claims - \"{query}\"").replace("{query}", searchQuery)
             : getString("title", "&e&lGlobal Claim List");
-        inventory = createBaseInventory(title, 54);
+        inventory = createBaseInventoryWithTitle(title, 54);
         populateInventory();
         return inventory;
     }
@@ -139,26 +212,29 @@ public class GlobalClaimListGUI extends BaseGUI {
         fillBorder(createFiller());
         
         // Search button
-        inventory.setItem(SEARCH_SLOT, createSearchItem());
+        inventory.setItem(searchSlot, createSearchItem());
+        
+        // Filter button
+        inventory.setItem(filterSlot, createFilterItem());
         
         // Back button
-        inventory.setItem(BACK_SLOT, createBackItem());
+        inventory.setItem(backSlot, createBackItem());
         
         // Navigation
         if (currentPage > 0) {
-            inventory.setItem(PREV_PAGE_SLOT, createPrevPageItem());
+            inventory.setItem(prevPageSlot, createPrevPageItem());
         }
         
-        int maxPage = Math.max(0, (publicClaims.size() - 1) / CLAIM_SLOTS.length);
+        int maxPage = Math.max(0, (publicClaims.size() - 1) / claimSlots.length);
         if (currentPage < maxPage) {
-            inventory.setItem(NEXT_PAGE_SLOT, createNextPageItem());
+            inventory.setItem(nextPageSlot, createNextPageItem());
         }
         
         // Claim items
-        int startIndex = currentPage * CLAIM_SLOTS.length;
-        for (int i = 0; i < CLAIM_SLOTS.length && startIndex + i < publicClaims.size(); i++) {
+        int startIndex = currentPage * claimSlots.length;
+        for (int i = 0; i < claimSlots.length && startIndex + i < publicClaims.size(); i++) {
             ClaimInfo info = publicClaims.get(startIndex + i);
-            inventory.setItem(CLAIM_SLOTS[i], createClaimItem(info));
+            inventory.setItem(claimSlots[i], createClaimItem(info));
         }
     }
     
@@ -176,13 +252,27 @@ public class GlobalClaimListGUI extends BaseGUI {
         return createItem(Material.ARROW, "&c&lBack", List.of("&7Return to main menu"));
     }
     
+    private ItemStack createFilterItem() {
+        String materialName = getString("filters." + currentFilter.getConfigKey() + ".material", currentFilter.getDefaultMaterial().name());
+        Material material;
+        try {
+            material = Material.valueOf(materialName.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            material = currentFilter.getDefaultMaterial();
+        }
+        
+        String name = getString("filters." + currentFilter.getConfigKey() + ".name", currentFilter.getDisplayName());
+        
+        return createItem(material, "&6&lFilter: " + name, Arrays.asList("&eClick to cycle filters"));
+    }
+    
     private ItemStack createPrevPageItem() {
-        int maxPage = Math.max(1, (publicClaims.size() - 1) / CLAIM_SLOTS.length + 1);
-        return createItem(Material.ARROW, "&e&l« Previous Page", List.of("&7Page " + currentPage + "/" + maxPage));
+        int maxPage = Math.max(1, (publicClaims.size() - 1) / claimSlots.length + 1);
+        return createItem(Material.ARROW, "&e&l« Previous Page", List.of("&7Page " + (currentPage + 1) + "/" + maxPage));
     }
     
     private ItemStack createNextPageItem() {
-        int maxPage = Math.max(1, (publicClaims.size() - 1) / CLAIM_SLOTS.length + 1);
+        int maxPage = Math.max(1, (publicClaims.size() - 1) / claimSlots.length + 1);
         return createItem(Material.ARROW, "&e&lNext Page »", List.of("&7Page " + (currentPage + 2) + "/" + maxPage));
     }
     
@@ -208,65 +298,38 @@ public class GlobalClaimListGUI extends BaseGUI {
         int slot = event.getRawSlot();
         playClickSound();
         
-        if (slot == SEARCH_SLOT) {
+        if (slot == searchSlot) {
             // Open sign editor for search
             player.closeInventory();
             SignInputGUI.openSearch(plugin, player, 
                 query -> {
-                    // Search for matching claim by ID or name
-                    String searchLower = query.toLowerCase();
-                    ClaimInfo match = null;
-                    
-                    // First try exact ID match
-                    for (ClaimInfo info : publicClaims) {
-                        if (info.claimId.equals(query)) {
-                            match = info;
-                            break;
-                        }
-                    }
-                    
-                    // Then try name/owner/description contains match
-                    if (match == null) {
-                        for (ClaimInfo info : publicClaims) {
-                            if (info.name.toLowerCase().contains(searchLower) ||
-                                info.ownerName.toLowerCase().contains(searchLower) ||
-                                (info.description != null && info.description.toLowerCase().contains(searchLower))) {
-                                match = info;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    if (match != null) {
-                        // Teleport to matched claim if player has permission
-                        if (player.hasPermission("griefprevention.claim.teleport")) {
-                            player.performCommand("claim tp " + match.claimId);
-                        } else {
-                            plugin.getMessages().send(player, "gui.search-found", "{name}", match.name, "{id}", match.claimId);
-                            manager.openGUI(player, new GlobalClaimListGUI(manager, player, query));
-                        }
-                    } else {
-                        plugin.getMessages().send(player, "gui.search-no-results", "{query}", query);
-                        manager.openGUI(player, new GlobalClaimListGUI(manager, player));
-                    }
+                    GlobalClaimListGUI.openAsync(manager, player, query);
                 },
-                () -> manager.openGUI(player, new GlobalClaimListGUI(manager, player)));
+                () -> GlobalClaimListGUI.openAsync(manager, player, null));
             return;
         }
         
-        if (slot == BACK_SLOT) {
+        if (slot == filterSlot) {
+            // Cycle through filters
+            currentFilter = currentFilter.next();
+            loadPublicClaims();
+            populateInventory();
+            return;
+        }
+        
+        if (slot == backSlot) {
             manager.openMainMenu(player);
             return;
         }
         
-        if (slot == PREV_PAGE_SLOT && currentPage > 0) {
+        if (slot == prevPageSlot && currentPage > 0) {
             currentPage--;
             populateInventory();
             return;
         }
         
-        if (slot == NEXT_PAGE_SLOT) {
-            int maxPage = Math.max(0, (publicClaims.size() - 1) / CLAIM_SLOTS.length);
+        if (slot == nextPageSlot) {
+            int maxPage = Math.max(0, (publicClaims.size() - 1) / claimSlots.length);
             if (currentPage < maxPage) {
                 currentPage++;
                 populateInventory();
@@ -276,19 +339,19 @@ public class GlobalClaimListGUI extends BaseGUI {
         
         // Check if clicked on a claim
         int slotIndex = -1;
-        for (int i = 0; i < CLAIM_SLOTS.length; i++) {
-            if (CLAIM_SLOTS[i] == slot) {
+        for (int i = 0; i < claimSlots.length; i++) {
+            if (claimSlots[i] == slot) {
                 slotIndex = i;
                 break;
             }
         }
         
         if (slotIndex >= 0) {
-            int claimIndex = currentPage * CLAIM_SLOTS.length + slotIndex;
+            int claimIndex = currentPage * claimSlots.length + slotIndex;
             if (claimIndex < publicClaims.size()) {
                 ClaimInfo info = publicClaims.get(claimIndex);
                 if (player.hasPermission("griefprevention.claim.teleport")) {
-                    closeAndRun(() -> player.performCommand("claim tp " + info.claimId));
+                    closeAndRunOnMainThread("claim tp " + info.claimId);
                 } else {
                     plugin.getMessages().send(player, "general.no-permission");
                 }

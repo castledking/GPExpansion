@@ -84,9 +84,9 @@ public class SignDisplayListener implements Listener {
                     
                     // Check if this is a mailbox and handle display
                     if ("MAILBOX".equals(signType)) {
-                        dev.towki.gpexpansion.storage.MailboxStore mailboxStore = plugin.getMailboxStore();
-                        if (mailboxStore != null && mailboxStore.isMailbox(claimId)) {
-                            UUID owner = mailboxStore.getOwner(claimId);
+                        dev.towki.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
+                        if (dataStore.isMailbox(claimId)) {
+                            UUID owner = dataStore.getMailboxOwner(claimId).orElse(null);
                             if (owner != null) {
                                 String ownerName = Bukkit.getOfflinePlayer(owner).getName();
                                 if (ownerName == null) ownerName = "Unknown";
@@ -112,11 +112,11 @@ public class SignDisplayListener implements Listener {
                     boolean isEvicted = false;
                     long evictionRemaining = 0;
                     if (claimId != null && !claimId.isEmpty()) {
-                        dev.towki.gpexpansion.storage.EvictionStore evictionStore = plugin.getEvictionStore();
-                        if (evictionStore != null && evictionStore.hasPendingEviction(claimId)) {
+                        dev.towki.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
+                        dev.towki.gpexpansion.storage.ClaimDataStore.EvictionData eviction = dataStore.getEviction(claimId).orElse(null);
+                        if (eviction != null && System.currentTimeMillis() < eviction.effectiveAt) {
                             isEvicted = true;
-                            dev.towki.gpexpansion.storage.EvictionStore.EvictionEntry eviction = evictionStore.getEviction(claimId);
-                            evictionRemaining = eviction.getRemainingTime();
+                            evictionRemaining = eviction.effectiveAt - System.currentTimeMillis();
                         }
                     }
                     

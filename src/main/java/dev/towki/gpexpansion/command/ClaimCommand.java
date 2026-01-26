@@ -2,12 +2,8 @@ package dev.towki.gpexpansion.command;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
-import dev.towki.gpexpansion.storage.BanStore;
-import dev.towki.gpexpansion.storage.NameStore;
-import dev.towki.gpexpansion.storage.PendingRentStore;
-import dev.towki.gpexpansion.storage.RentalStore;
+import dev.towki.gpexpansion.storage.ClaimDataStore;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -96,7 +92,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBS = Arrays.asList(
             // Our features
-            "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc",
+            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -269,12 +265,16 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 plugin.getGUIManager().openMainMenu((Player) sender);
                 return true;
             }
-            sender.sendMessage(Component.text("/" + label + " <" + String.join("|", SUBS) + ">", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("commands.claim-usage",
+                "{label}", label,
+                "{subs}", String.join("|", SUBS)));
             return true;
         }
         String sub = args[0].toLowerCase(Locale.ROOT);
         String[] subArgs = Arrays.copyOfRange(args, 1, args.length);
         switch (sub) {
+            case "!":
+                return handleReturnToGUI(sender);
             case "trust":
                 return handleDispatch(sender, "trust", subArgs);
             case "untrust":
@@ -339,7 +339,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             case "description":
                 return handleDescription(sender, subArgs);
             default:
-                sender.sendMessage(Component.text("Unknown subcommand. Try: " + String.join(", ", SUBS), NamedTextColor.RED));
+                sender.sendMessage(plugin.getMessages().get("commands.unknown-subcommand",
+                    "{subs}", String.join(", ", SUBS)));
                 return true;
         }
     }
@@ -349,6 +350,34 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(plugin.getMessages().get("general.player-only"));
             return false;
         }
+        return true;
+    }
+    
+    /**
+     * Handle /claim ! - return to the last viewed GUI with preserved state.
+     */
+    private boolean handleReturnToGUI(CommandSender sender) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+        
+        // Check permission
+        if (!player.hasPermission("griefprevention.claim.gui.return")) {
+            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+        
+        // Check if GUI is enabled
+        if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
+            sender.sendMessage(plugin.getMessages().get("gui.not-enabled"));
+            return true;
+        }
+        
+        // Try to restore last GUI
+        if (!dev.towki.gpexpansion.gui.GUIStateTracker.restoreLastGUI(plugin.getGUIManager(), player)) {
+            sender.sendMessage(plugin.getMessages().get("gui.no-previous"));
+            return true;
+        }
+        
         return true;
     }
 
@@ -392,7 +421,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                     Object claim = claimOpt.get();
                     java.util.Optional<org.bukkit.Location> centerOpt = gp.getClaimCenter(claim);
                     if (!centerOpt.isPresent()) {
-                        sender.sendMessage(Component.text("Could not compute a safe location in claim " + possibleId + ".", NamedTextColor.RED));
+                        sender.sendMessage(plugin.getMessages().get("claim.teleport-safe-location-fail", "{id}", possibleId));
                         return;
                     }
                     
@@ -409,7 +438,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                         
                         boolean ok = Bukkit.dispatchCommand(sender, cmd);
                         if (!ok) {
-                            sender.sendMessage(Component.text("Command failed to execute: /" + finalBaseCmd, NamedTextColor.RED));
+                            sender.sendMessage(plugin.getMessages().get("commands.exec-failed", "{command}", "/" + finalBaseCmd));
                         }
                         
                         // Teleport back
@@ -422,7 +451,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                         Bukkit.getScheduler().runTask(plugin, playerTask);
                     }
                 } catch (Exception e) {
-                    sender.sendMessage(Component.text("An error occurred while processing the command: " + e.getMessage(), NamedTextColor.RED));
+                    sender.sendMessage(plugin.getMessages().get("commands.exec-error", "{error}", e.getMessage()));
                     e.printStackTrace();
                 }
             };
@@ -438,10 +467,10 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         try {
             boolean ok = Bukkit.dispatchCommand(sender, finalCmd);
             if (!ok) {
-                sender.sendMessage(Component.text("Command failed to execute: /" + base, NamedTextColor.RED));
+                sender.sendMessage(plugin.getMessages().get("commands.exec-failed", "{command}", "/" + base));
             }
         } catch (Exception e) {
-            sender.sendMessage(Component.text("An error occurred while executing the command: " + e.getMessage(), NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("commands.exec-error", "{error}", e.getMessage()));
             e.printStackTrace();
         }
         return true;
@@ -453,10 +482,12 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         }
         Player player = (Player)sender;
         List<Object> claims = gp.getClaimsFor(player);
-        NameStore store = plugin.getNameStore();
+        dev.towki.gpexpansion.storage.ClaimDataStore store = plugin.getClaimDataStore();
         gp.getPlayerClaimStats(player).ifPresent(stats -> {
-            sender.sendMessage(Component.text(String.format("%d blocks from play + %d bonus = %d total.",
-                stats.accrued, stats.bonus, stats.total), NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.blocks-total",
+                "{accrued}", String.valueOf(stats.accrued),
+                "{bonus}", String.valueOf(stats.bonus),
+                "{total}", String.valueOf(stats.total)));
         });
 
         // Group claims by their parent claim, but only include subclaims that the player owns
@@ -479,12 +510,13 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             }
         }
 
-        sender.sendMessage(Component.text(String.format("Claims (%d):", grouped.size()), NamedTextColor.YELLOW));
+        sender.sendMessage(plugin.getMessages().get("claim.list-header",
+            "{count}", String.valueOf(grouped.size())));
 
         for (Map.Entry<Object, List<Object>> e : grouped.entrySet()) {
             Object parent = e.getKey();
             String id = gp.getClaimId(parent).orElse("?");
-            String parentName = store.get(id).orElse("unnamed");
+            String parentName = store.getCustomName(id).orElse("unnamed");
             String name = formatClaimLine(parent, id, parentName);
             sender.sendMessage(parseColorCodes(name));
 
@@ -502,7 +534,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
             for (Object sub : subs) {
                 String subId = gp.getClaimId(sub).orElse("");
-                String subName = store.get(subId).orElse("");
+                String subName = store.getCustomName(subId).orElse("");
                 String subLine = formatSubclaimLine(sub, id, subName);
                 // Parse color codes in the line
                 sender.sendMessage(parseColorCodes("    " + subLine));
@@ -515,11 +547,12 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             .collect(Collectors.toList());
 
         if (!trusted.isEmpty()) {
-            sender.sendMessage(Component.text(String.format("Trusted Claims (%d):", trusted.size()), NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.list-trusted-header",
+                "{count}", String.valueOf(trusted.size())));
             for (Object c : trusted) {
                 String id = gp.getClaimId(c).orElse("?");
                 String parentId = gp.getClaimId(toMainClaim(c)).orElse("?");
-                String name = store.get(id).orElse("");
+                String name = store.getCustomName(id).orElse("unnamed");
                 String line = formatTrustedClaimLine(c, id, name, parentId, player);
                 // Parse color codes in the line
                 sender.sendMessage(parseColorCodes(line));
@@ -529,7 +562,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 for (Object sub : trustedSubs) {
                     if (gp.getClaimsWhereTrusted(player.getUniqueId()).contains(sub)) {
                         String subId = gp.getClaimId(sub).orElse("");
-                        String subName = store.get(subId).orElse("");
+                        String subName = store.getCustomName(subId).orElse("");
                         String subLine = formatSubclaimLine(sub, id, subName);
                         sender.sendMessage(parseColorCodes("  " + subLine));
                     }
@@ -538,7 +571,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         }
 
         gp.getPlayerClaimStats(player).ifPresent(stats -> {
-            sender.sendMessage(Component.text(String.format("= %d blocks left to spend", stats.remaining), NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.blocks-remaining",
+                "{remaining}", String.valueOf(stats.remaining)));
         });
         return true;
     }
@@ -548,12 +582,13 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         Player player = (Player)sender;
-        if (!player.isOp() && !player.hasPermission("gpexpansion.adminclaimslist")) {
-            sender.sendMessage(Component.text("You lack permission: gpexpansion.adminclaimslist", NamedTextColor.RED));
+        if (!player.isOp() && !player.hasPermission("griefprevention.adminclaimslist")) {
+            sender.sendMessage(plugin.getMessages().get("permissions.missing",
+                "{permission}", "griefprevention.adminclaimslist"));
             return true;
         }
         
-        NameStore store = plugin.getNameStore();
+        dev.towki.gpexpansion.storage.ClaimDataStore store = plugin.getClaimDataStore();
         List<Object> all = gp.getAllClaims();
         List<Object> admins = new ArrayList<>();
         
@@ -564,21 +599,22 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         }
 
         if (admins.isEmpty()) {
-            sender.sendMessage(Component.text("No admin claims found.", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.list-no-admin"));
             return true;
         }
         
-        sender.sendMessage(Component.text(String.format("Admin Claims (%d):", admins.size()), NamedTextColor.YELLOW));
+        sender.sendMessage(plugin.getMessages().get("claim.list-admin-header",
+            "{count}", String.valueOf(admins.size())));
         
         for (Object c : admins) {
             String id = gp.getClaimId(c).orElse("?");
-            String name = store.get(id).orElse("unnamed");
+            String name = store.getCustomName(id).orElse("unnamed");
             String line = formatClaimLine(c, id, name);
             sender.sendMessage(parseColorCodes(line));
             
             for (Object sub : getSubclaims(c)) {
                 String subId = gp.getClaimId(sub).orElse("");
-                String subName = store.get(subId).orElse("");
+                String subName = store.getCustomName(subId).orElse("");
                 String subLine = formatSubclaimLine(sub, id, subName);
                 // Parse color codes in the line
                 sender.sendMessage(parseColorCodes("    " + subLine));
@@ -612,7 +648,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length < 2) {
-            sender.sendMessage(Component.text("Usage: /claim transfer <claimId> <player>", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.transfer-usage"));
             return true;
         }
 
@@ -665,16 +701,17 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     
     private boolean handleName(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
-        if (!sender.hasPermission("gpexpansion.claim.name")) {
-            sender.sendMessage(Component.text("You lack permission: gpexpansion.claim.name", NamedTextColor.RED));
+        if (!sender.hasPermission("griefprevention.claim.name")) {
+            sender.sendMessage(plugin.getMessages().get("claim.name-no-permission"));
             return true;
         }
 
         Player player = (Player) sender;
-        boolean allowOther = sender.hasPermission("gpexpansion.claim.name.other");
+        boolean allowOther = sender.hasPermission("griefprevention.claim.name.other");
+        boolean allowAnywhere = sender.hasPermission("griefprevention.claim.name.anywhere");
 
         if (args.length == 0) {
-            sender.sendMessage(Component.text("Usage: /claim name <newName> [claimId]", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.name-usage"));
             return true;
         }
 
@@ -694,19 +731,19 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
         String legacyName = String.join(" ", nameParts).trim();
         if (legacyName.isEmpty()) {
-            sender.sendMessage(Component.text("Usage: /claim name <newName> [claimId]", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.name-usage"));
             return true;
         }
 
         String enforced = enforceColorPermissions(sender, legacyName);
         String stored = toAmpersand(enforced);
 
-        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, "rename this claim");
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, allowAnywhere, "rename this claim");
         if (!ctxOpt.isPresent()) return true;
 
         ClaimContext ctx = ctxOpt.get();
-        NameStore store = plugin.getNameStore();
-        store.set(ctx.claimId, stored);
+        dev.towki.gpexpansion.storage.ClaimDataStore store = plugin.getClaimDataStore();
+        store.setCustomName(ctx.claimId, stored);
         store.save();
 
         String display = stored.isEmpty() ? "&7unnamed" : stored;
@@ -718,18 +755,18 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     // /claim icon [id] - Set claim icon using held item
     private boolean handleIcon(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
-        if (!sender.hasPermission("gpexpansion.claim.icon")) {
-            sender.sendMessage(Component.text("You lack permission: gpexpansion.claim.icon", NamedTextColor.RED));
+        if (!sender.hasPermission("griefprevention.claim.icon")) {
+            sender.sendMessage(plugin.getMessages().get("claim.icon-no-permission"));
             return true;
         }
 
         Player player = (Player) sender;
-        boolean allowOther = sender.hasPermission("gpexpansion.claim.icon.other") || sender.hasPermission("griefprevention.admin");
+        boolean allowOther = sender.hasPermission("griefprevention.claim.icon.other") || sender.hasPermission("griefprevention.admin");
 
         // Get the item in hand
         org.bukkit.inventory.ItemStack item = player.getInventory().getItemInMainHand();
         if (item == null || item.getType() == org.bukkit.Material.AIR) {
-            sender.sendMessage(Component.text("You must hold an item to set as the claim icon.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.icon-hold-item"));
             return true;
         }
 
@@ -745,35 +782,38 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 explicitClaim = looked;
                 explicitId = possibleId;
             } else {
-                sender.sendMessage(Component.text("Claim not found: " + possibleId, NamedTextColor.RED));
+                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", possibleId));
                 return true;
             }
         }
 
-        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, "set icon for this claim");
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, false, "set icon for this claim");
         if (!ctxOpt.isPresent()) return true;
 
         ClaimContext ctx = ctxOpt.get();
-        plugin.getIconStore().set(ctx.claimId, materialName);
-        plugin.getIconStore().save();
+        plugin.getClaimDataStore().setIcon(ctx.claimId, item.getType());
+        plugin.getClaimDataStore().save();
 
-        sender.sendMessage(Component.text("Claim " + ctx.claimId + " icon set to " + materialName, NamedTextColor.GREEN));
+        sender.sendMessage(plugin.getMessages().get("claim.icon-set",
+            "{id}", ctx.claimId,
+            "{icon}", materialName));
         return true;
     }
     
     // /claim desc <description...> [id] - Set claim description
     private boolean handleDescription(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
-        if (!sender.hasPermission("gpexpansion.claim.description")) {
-            sender.sendMessage(Component.text("You lack permission: gpexpansion.claim.description", NamedTextColor.RED));
+        if (!sender.hasPermission("griefprevention.claim.description")) {
+            sender.sendMessage(plugin.getMessages().get("claim.description-no-permission"));
             return true;
         }
 
         Player player = (Player) sender;
-        boolean allowOther = sender.hasPermission("gpexpansion.claim.description.other") || sender.hasPermission("griefprevention.admin");
+        boolean allowOther = sender.hasPermission("griefprevention.claim.description.other") || sender.hasPermission("griefprevention.admin");
+        boolean allowAnywhere = sender.hasPermission("griefprevention.claim.description.anywhere");
 
         if (args.length == 0) {
-            sender.sendMessage(Component.text("Usage: /claim desc <description...> [claimId]", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.description-usage"));
             return true;
         }
 
@@ -794,7 +834,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
         String description = String.join(" ", descParts).trim();
         if (description.isEmpty()) {
-            sender.sendMessage(Component.text("Usage: /claim desc <description...> [claimId]", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.description-usage"));
             return true;
         }
 
@@ -805,32 +845,35 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         // Limit description length
         if (description.length() > 64) {
             description = description.substring(0, 64);
-            sender.sendMessage(Component.text("Description truncated to 64 characters.", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.description-truncated", "{max}", "64"));
         }
 
-        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, "set description for this claim");
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, allowAnywhere, "set description for this claim");
         if (!ctxOpt.isPresent()) return true;
 
         ClaimContext ctx = ctxOpt.get();
         plugin.getClaimDataStore().setDescription(ctx.claimId, description);
         plugin.getClaimDataStore().save();
 
-        sender.sendMessage(Component.text("Claim " + ctx.claimId + " description set to: " + description, NamedTextColor.GREEN));
+        sender.sendMessage(plugin.getMessages().get("claim.description-set",
+            "{id}", ctx.claimId,
+            "{description}", description));
         return true;
     }
     
     private boolean handleBan(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         if (!sender.hasPermission("griefprevention.claim.ban")) {
-            sender.sendMessage(Component.text("You lack permission: griefprevention.claim.ban", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.ban-no-permission"));
             return true;
         }
 
         Player player = (Player) sender;
         boolean allowOther = sender.hasPermission("griefprevention.claim.ban.other");
+        boolean allowAnywhere = sender.hasPermission("griefprevention.claim.ban.anywhere");
 
         if (args.length == 0) {
-            sender.sendMessage(Component.text("Usage: /claim ban <player|public> [claimId]", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.ban-usage"));
             return true;
         }
 
@@ -842,7 +885,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             String possibleId = args[args.length - 1];
             Optional<Object> looked = gp.findClaimById(possibleId);
             if (!looked.isPresent()) {
-                sender.sendMessage(Component.text("Claim ID not found: " + possibleId, NamedTextColor.RED));
+                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", possibleId));
                 return true;
             }
             explicitClaim = looked;
@@ -851,44 +894,46 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         }
 
         if (workingArgs.length == 0) {
-            sender.sendMessage(Component.text("Usage: /claim ban <player|public> [claimId]", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.ban-usage"));
             return true;
         }
 
         String targetName = workingArgs[0];
-        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, "ban players here");
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, allowAnywhere, "ban players here");
         if (!ctxOpt.isPresent()) return true;
 
         ClaimContext ctx = ctxOpt.get();
-        BanStore banStore = plugin.getBanStore();
+        dev.towki.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
 
         if (targetName.equalsIgnoreCase("public")) {
-            if (banStore.isPublicBanned(ctx.mainClaimId)) {
-                sender.sendMessage(Component.text("Claim " + ctx.mainClaimId + " already has a public ban.", NamedTextColor.YELLOW));
+            if (dataStore.isPublicBanned(ctx.mainClaimId)) {
+                sender.sendMessage(plugin.getMessages().get("claim.ban-already", "{id}", ctx.mainClaimId));
                 return true;
             }
-            banStore.setPublic(ctx.mainClaimId, true);
-            banStore.save();
-            sender.sendMessage(Component.text("Claim " + ctx.mainClaimId + " is now public-banned.", NamedTextColor.GREEN));
+            dataStore.setPublicBanned(ctx.mainClaimId, true);
+            dataStore.save();
+            sender.sendMessage(plugin.getMessages().get("claim.ban-public", "{id}", ctx.mainClaimId));
             return true;
         }
 
         UUID targetUuid = resolvePlayerUuid(targetName);
 
         if (targetUuid == null) {
-            sender.sendMessage(Component.text("Unknown player: " + targetName, NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("general.unknown-player", "{player}", targetName));
             return true;
         }
 
         if (targetUuid.equals(player.getUniqueId())) {
-            sender.sendMessage(Component.text("You cannot ban yourself.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.ban-self"));
             return true;
         }
 
-        banStore.add(ctx.mainClaimId, targetUuid);
-        banStore.save();
+        dataStore.addBannedPlayer(ctx.mainClaimId, targetUuid);
+        dataStore.save();
 
-        sender.sendMessage(Component.text("Banned " + targetName + " from claim " + ctx.mainClaimId + ".", NamedTextColor.GREEN));
+        sender.sendMessage(plugin.getMessages().get("claim.ban-success",
+            "{player}", targetName,
+            "{id}", ctx.mainClaimId));
 
         Player target = Bukkit.getPlayer(targetUuid);
         if (target != null) {
@@ -912,15 +957,16 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     private boolean handleUnban(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         if (!sender.hasPermission("griefprevention.claim.unban")) {
-            sender.sendMessage(Component.text("You lack permission: griefprevention.claim.unban", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.unban-no-permission"));
             return true;
         }
 
         Player player = (Player) sender;
         boolean allowOther = sender.hasPermission("griefprevention.claim.unban.other");
+        boolean allowAnywhere = sender.hasPermission("griefprevention.claim.unban.anywhere");
 
         if (args.length == 0) {
-            sender.sendMessage(Component.text("Usage: /claim unban <player|public> [claimId]", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.unban-usage"));
             return true;
         }
 
@@ -939,25 +985,25 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         }
 
         if (workingArgs.length == 0) {
-            sender.sendMessage(Component.text("Usage: /claim unban <player|public> [claimId]", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.unban-usage"));
             return true;
         }
 
         String targetName = workingArgs[0];
-        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, "unban players here");
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, allowAnywhere, "unban players here");
         if (!ctxOpt.isPresent()) return true;
 
         ClaimContext ctx = ctxOpt.get();
-        BanStore banStore = plugin.getBanStore();
+        dev.towki.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
 
         if (targetName.equalsIgnoreCase("public")) {
-            if (!banStore.isPublicBanned(ctx.mainClaimId)) {
-                sender.sendMessage(Component.text("Claim " + ctx.mainClaimId + " is not public-banned.", NamedTextColor.YELLOW));
+            if (!dataStore.isPublicBanned(ctx.mainClaimId)) {
+                sender.sendMessage(plugin.getMessages().get("claim.unban-public-missing", "{id}", ctx.mainClaimId));
                 return true;
             }
-            banStore.setPublic(ctx.mainClaimId, false);
-            banStore.save();
-            sender.sendMessage(Component.text("Claim " + ctx.mainClaimId + " no longer has a public ban.", NamedTextColor.GREEN));
+            dataStore.setPublicBanned(ctx.mainClaimId, false);
+            dataStore.save();
+            sender.sendMessage(plugin.getMessages().get("claim.unban-public", "{id}", ctx.mainClaimId));
             return true;
         }
 
@@ -968,35 +1014,42 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                     .map(Player::getName)
                     .sorted(String.CASE_INSENSITIVE_ORDER)
                     .collect(Collectors.joining(", "));
-            Component message = Component.text("Unknown player: " + targetName + ".", NamedTextColor.RED);
             if (!onlineNames.isEmpty()) {
-                message = message.append(Component.text(" Online players: " + onlineNames, NamedTextColor.YELLOW));
+                sender.sendMessage(plugin.getMessages().get("general.unknown-player-online",
+                    "{player}", targetName,
+                    "{online}", onlineNames));
+            } else {
+                sender.sendMessage(plugin.getMessages().get("general.unknown-player", "{player}", targetName));
             }
-            sender.sendMessage(message);
             return true;
         }
 
-        if (!banStore.getPlayers(ctx.mainClaimId).contains(targetUuid)) {
-            sender.sendMessage(Component.text(targetName + " is not banned from claim " + ctx.mainClaimId + ".", NamedTextColor.YELLOW));
+        if (!dataStore.getBannedPlayers(ctx.mainClaimId).contains(targetUuid)) {
+            sender.sendMessage(plugin.getMessages().get("claim.unban-not-banned",
+                "{player}", targetName,
+                "{id}", ctx.mainClaimId));
             return true;
         }
 
-        banStore.remove(ctx.mainClaimId, targetUuid);
-        banStore.save();
+        dataStore.removeBannedPlayer(ctx.mainClaimId, targetUuid);
+        dataStore.save();
 
-        sender.sendMessage(Component.text("Unbanned " + targetName + " from claim " + ctx.mainClaimId + ".", NamedTextColor.GREEN));
+        sender.sendMessage(plugin.getMessages().get("claim.unban-success",
+            "{player}", targetName,
+            "{id}", ctx.mainClaimId));
         return true;
     }
     
     private boolean handleBanList(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         if (!sender.hasPermission("griefprevention.claim.ban")) {
-            sender.sendMessage(Component.text("You lack permission: griefprevention.claim.ban", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.ban-no-permission"));
             return true;
         }
 
         Player player = (Player) sender;
         boolean allowOther = sender.hasPermission("griefprevention.claim.ban.other");
+        boolean allowAnywhere = sender.hasPermission("griefprevention.claim.ban.anywhere");
 
         Optional<Object> explicitClaim = Optional.empty();
         String explicitId = null;
@@ -1005,35 +1058,35 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             String possibleId = args[args.length - 1];
             Optional<Object> looked = gp.findClaimById(possibleId);
             if (!looked.isPresent()) {
-                sender.sendMessage(Component.text("Claim ID not found: " + possibleId, NamedTextColor.RED));
+                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", possibleId));
                 return true;
             }
             explicitClaim = looked;
             explicitId = possibleId;
         }
 
-        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, "view the ban list for this claim");
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, allowAnywhere, "view the ban list for this claim");
         if (!ctxOpt.isPresent()) return true;
 
         ClaimContext ctx = ctxOpt.get();
-        BanStore banStore = plugin.getBanStore();
-        BanStore.BanEntry entry = banStore.get(ctx.mainClaimId);
+        dev.towki.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
+        dev.towki.gpexpansion.storage.ClaimDataStore.BanData entry = dataStore.getBans(ctx.mainClaimId);
 
-        sender.sendMessage(Component.text("Ban list for claim " + ctx.mainClaimId + ":", NamedTextColor.YELLOW));
+        sender.sendMessage(plugin.getMessages().get("claim.banlist-header", "{id}", ctx.mainClaimId));
 
-        if (entry.banPublic) {
-            sender.sendMessage(Component.text(" - Public banned", NamedTextColor.GOLD));
+        if (entry.publicBanned) {
+            sender.sendMessage(plugin.getMessages().get("claim.banlist-public"));
         }
 
-        if (entry.players.isEmpty()) {
-            sender.sendMessage(Component.text(" - No players banned", NamedTextColor.GRAY));
+        if (entry.bannedPlayers.isEmpty()) {
+            sender.sendMessage(plugin.getMessages().get("claim.banlist-empty"));
             return true;
         }
 
-        for (UUID uuid : entry.players) {
-            String name = entry.names.getOrDefault(uuid, Bukkit.getOfflinePlayer(uuid).getName());
+        for (UUID uuid : entry.bannedPlayers) {
+            String name = entry.playerNames.getOrDefault(uuid, Bukkit.getOfflinePlayer(uuid).getName());
             if (name == null) name = uuid.toString();
-            sender.sendMessage(Component.text(" - " + name, NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.banlist-entry", "{player}", name));
         }
         return true;
     }
@@ -1051,7 +1104,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     }
 
     private Optional<ClaimContext> resolveClaimContext(CommandSender sender, Player player, Optional<Object> explicitClaim,
-                                                       String explicitId, boolean allowOther, boolean requireOwnership,
+                                                       String explicitId, boolean allowOther, boolean requireOwnership, boolean allowAnywhere,
                                                        String actionDescription) {
         Object claim = explicitClaim.orElse(null);
         String claimId = explicitId;
@@ -1059,31 +1112,47 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         if (claim == null) {
             Optional<Object> claimOpt = gp.getClaimAt(player.getLocation(), player);
             if (!claimOpt.isPresent()) {
-                sender.sendMessage(Component.text("You are not standing in a claim." + (explicitId == null ? " Provide a claim ID." : ""), NamedTextColor.RED));
-                return Optional.empty();
+                // If player has anywhere permission and provided an explicit ID, they can rename without standing in the claim
+                if (allowAnywhere && explicitId != null) {
+                    Optional<Object> claimById = gp.findClaimById(explicitId);
+                    if (claimById.isPresent()) {
+                        claim = claimById.get();
+                        claimId = explicitId;
+                    } else {
+                        sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", explicitId));
+                        return Optional.empty();
+                    }
+                } else {
+                    sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+                    if (explicitId == null) {
+                        sender.sendMessage(plugin.getMessages().get("claim.provide-id"));
+                    }
+                    return Optional.empty();
+                }
+            } else {
+                claim = claimOpt.get();
             }
-            claim = claimOpt.get();
         }
 
         if (claimId == null) {
             claimId = gp.getClaimId(claim).orElse(null);
         }
         if (claimId == null) {
-            sender.sendMessage(Component.text("Could not determine claim ID for this action.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.id-missing"));
             return Optional.empty();
         }
 
         Object mainClaim = gp.getParentClaim(claim).orElse(claim);
         Optional<String> mainIdOpt = gp.getClaimId(mainClaim);
         if (!mainIdOpt.isPresent()) {
-            sender.sendMessage(Component.text("Could not determine main claim ID.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.main-id-missing"));
             return Optional.empty();
         }
         String mainClaimId = mainIdOpt.get();
 
         boolean isOwner = gp.isOwner(mainClaim, player.getUniqueId());
         if (requireOwnership && !isOwner && !allowOther) {
-            sender.sendMessage(Component.text("You must own this claim to " + actionDescription + ".", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.must-own-action", "{action}", actionDescription));
             return Optional.empty();
         }
 
@@ -1183,7 +1252,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     private boolean handleEvict(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         if (!sender.hasPermission("griefprevention.evict")) {
-            sender.sendMessage(Component.text("You lack permission: griefprevention.evict", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.evict-no-permission"));
             return true;
         }
 
@@ -1191,8 +1260,9 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         boolean allowOther = sender.hasPermission("griefprevention.evict.other");
 
         if (args.length == 0) {
-            sender.sendMessage(Component.text("Usage: /claim evict [claimId]", NamedTextColor.YELLOW));
-            sender.sendMessage(Component.text("Starts a 14-day eviction notice for the renter.", NamedTextColor.GRAY));
+            int noticeDays = plugin.getConfig().getInt("eviction.notice-period-days", 14);
+            sender.sendMessage(plugin.getMessages().get("claim.evict-usage"));
+            sender.sendMessage(plugin.getMessages().get("claim.evict-help", "{days}", String.valueOf(noticeDays)));
             return true;
         }
 
@@ -1217,56 +1287,61 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             explicitId = possibleId;
         }
 
-        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, "evict players from");
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, false, "evict players from");
         if (!ctxOpt.isPresent()) return true;
 
         ClaimContext ctx = ctxOpt.get();
 
         // Check if the claim is currently rented
-        RentalStore store = plugin.getRentalStore();
-        Optional<RentalStore.Entry> rentalOpt = Optional.ofNullable(store.all().get(ctx.mainClaimId));
-        if (!rentalOpt.isPresent()) {
-            sender.sendMessage(Component.text("This claim is not currently rented.", NamedTextColor.RED));
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
+        ClaimDataStore.RentalData rental = dataStore.getRental(ctx.mainClaimId).orElse(null);
+        if (rental == null) {
+            sender.sendMessage(plugin.getMessages().get("claim.not-rented"));
             return true;
         }
-
-        RentalStore.Entry rental = rentalOpt.get();
-        dev.towki.gpexpansion.storage.EvictionStore evictionStore = plugin.getEvictionStore();
-
-        // Check if there's already a pending eviction
-        if (evictionStore.hasPendingEviction(ctx.mainClaimId)) {
-            dev.towki.gpexpansion.storage.EvictionStore.EvictionEntry existing = evictionStore.getEviction(ctx.mainClaimId);
-            if (existing.isEffective()) {
-                sender.sendMessage(Component.text("The eviction notice period has passed. You can now remove the renter.", NamedTextColor.GREEN));
-                sender.sendMessage(Component.text("Use /claim evict cancel " + ctx.mainClaimId + " to cancel or break the rental sign.", NamedTextColor.GRAY));
+        
+        ClaimDataStore.EvictionData existing = dataStore.getEviction(ctx.mainClaimId).orElse(null);
+        long now = System.currentTimeMillis();
+        if (existing != null) {
+            if (now >= existing.effectiveAt) {
+                sender.sendMessage(plugin.getMessages().get("eviction.notice-passed"));
+                sender.sendMessage(plugin.getMessages().get("eviction.cancel-hint", "{id}", ctx.mainClaimId));
             } else {
-                String remaining = formatDuration(existing.getRemainingTime());
-                sender.sendMessage(Component.text("An eviction is already in progress. " + remaining + " remaining before you can remove the renter.", NamedTextColor.YELLOW));
+                String remaining = formatDuration(existing.effectiveAt - now);
+                sender.sendMessage(plugin.getMessages().get("eviction.notice-in-progress", "{time}", remaining));
             }
             return true;
         }
 
-        // Start the 14-day eviction notice
-        evictionStore.initiateEviction(ctx.mainClaimId, player.getUniqueId(), rental.renter);
+        int noticeDays = plugin.getConfig().getInt("eviction.notice-period-days", 14);
+        long noticeMs = noticeDays * 24L * 60L * 60L * 1000L;
+        long initiatedAt = now;
+        long effectiveAt = initiatedAt + noticeMs;
 
-        // Mark the rental as being evicted
-        rental.beingEvicted = true;
-        store.update(ctx.mainClaimId, rental);
-        store.save();
+        UUID ownerId = gp.getClaimOwner(ctx.mainClaim);
+        if (ownerId == null) {
+            sender.sendMessage(plugin.getMessages().get("claim.owner-unknown"));
+            return true;
+        }
+        
+        // Start the eviction notice
+        dataStore.setEviction(ctx.mainClaimId, ownerId, rental.renter, initiatedAt, effectiveAt);
+        rental.paymentFailed = true; // reuse as "being evicted"
+        dataStore.save();
 
         String renterName = Bukkit.getOfflinePlayer(rental.renter).getName();
         if (renterName == null) renterName = rental.renter.toString();
 
-        sender.sendMessage(Component.text("Eviction notice started for " + renterName + ".", NamedTextColor.GREEN));
-        sender.sendMessage(Component.text("They have 14 days before you can remove them from the claim or break the sign.", NamedTextColor.YELLOW));
-        sender.sendMessage(Component.text("During this time, the renter cannot extend their rental.", NamedTextColor.GRAY));
+        sender.sendMessage(plugin.getMessages().get("eviction.notice-started", "{renter}", renterName));
+        sender.sendMessage(plugin.getMessages().get("eviction.notice-duration", "{days}", String.valueOf(noticeDays)));
+        sender.sendMessage(plugin.getMessages().get("eviction.notice-no-extend"));
 
         // Notify the renter if they're online
         Player renter = Bukkit.getPlayer(rental.renter);
         if (renter != null) {
-            renter.sendMessage(Component.text("You have received an eviction notice for claim " + ctx.mainClaimId + ".", NamedTextColor.RED));
-            renter.sendMessage(Component.text("You have 14 days before you will be removed from this claim.", NamedTextColor.YELLOW));
-            renter.sendMessage(Component.text("You will not be able to extend your rental during this time.", NamedTextColor.GRAY));
+            renter.sendMessage(plugin.getMessages().get("eviction.notice-received", "{id}", ctx.mainClaimId));
+            renter.sendMessage(plugin.getMessages().get("eviction.notice-days", "{days}", String.valueOf(noticeDays)));
+            renter.sendMessage(plugin.getMessages().get("eviction.notice-no-extend"));
         }
 
         return true;
@@ -1289,36 +1364,34 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             }
         }
 
-        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, "cancel eviction for");
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, false, "cancel eviction for");
         if (!ctxOpt.isPresent()) return true;
 
         ClaimContext ctx = ctxOpt.get();
-        dev.towki.gpexpansion.storage.EvictionStore evictionStore = plugin.getEvictionStore();
-
-        if (!evictionStore.hasPendingEviction(ctx.mainClaimId)) {
-            sender.sendMessage(Component.text("There is no pending eviction for this claim.", NamedTextColor.RED));
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
+        ClaimDataStore.EvictionData eviction = dataStore.getEviction(ctx.mainClaimId).orElse(null);
+        if (eviction == null) {
+            sender.sendMessage(plugin.getMessages().get("eviction.no-pending"));
             return true;
         }
 
         // Cancel the eviction
-        evictionStore.cancelEviction(ctx.mainClaimId);
+        dataStore.clearEviction(ctx.mainClaimId);
 
         // Update rental store
-        RentalStore store = plugin.getRentalStore();
-        RentalStore.Entry rental = store.all().get(ctx.mainClaimId);
+        ClaimDataStore.RentalData rental = dataStore.getRental(ctx.mainClaimId).orElse(null);
         if (rental != null) {
-            rental.beingEvicted = false;
-            store.update(ctx.mainClaimId, rental);
-            store.save();
+            rental.paymentFailed = false; // reuse as "being evicted"
+            dataStore.save();
 
             // Notify the renter if online
             Player renter = Bukkit.getPlayer(rental.renter);
             if (renter != null) {
-                renter.sendMessage(Component.text("The eviction notice for claim " + ctx.mainClaimId + " has been cancelled.", NamedTextColor.GREEN));
+                renter.sendMessage(plugin.getMessages().get("eviction.cancelled-notify", "{id}", ctx.mainClaimId));
             }
         }
 
-        sender.sendMessage(Component.text("Eviction cancelled for claim " + ctx.mainClaimId + ".", NamedTextColor.GREEN));
+        sender.sendMessage(plugin.getMessages().get("eviction.cancelled", "{id}", ctx.mainClaimId));
         return true;
     }
 
@@ -1339,28 +1412,27 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             }
         }
 
-        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, false, "check eviction status for");
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, false, false, "check eviction status for");
         if (!ctxOpt.isPresent()) return true;
 
         ClaimContext ctx = ctxOpt.get();
-        dev.towki.gpexpansion.storage.EvictionStore evictionStore = plugin.getEvictionStore();
-
-        if (!evictionStore.hasPendingEviction(ctx.mainClaimId)) {
-            sender.sendMessage(Component.text("There is no pending eviction for this claim.", NamedTextColor.GRAY));
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
+        ClaimDataStore.EvictionData eviction = dataStore.getEviction(ctx.mainClaimId).orElse(null);
+        if (eviction == null) {
+            sender.sendMessage(plugin.getMessages().get("eviction.no-pending-info"));
             return true;
         }
 
-        dev.towki.gpexpansion.storage.EvictionStore.EvictionEntry eviction = evictionStore.getEviction(ctx.mainClaimId);
         String renterName = Bukkit.getOfflinePlayer(eviction.renterId).getName();
         if (renterName == null) renterName = eviction.renterId.toString();
 
-        if (eviction.isEffective()) {
-            sender.sendMessage(Component.text("Eviction for " + renterName + " is now effective.", NamedTextColor.GREEN));
-            sender.sendMessage(Component.text("You can now remove them from the claim or break the rental sign.", NamedTextColor.GRAY));
+        if (System.currentTimeMillis() >= eviction.effectiveAt) {
+            sender.sendMessage(plugin.getMessages().get("eviction.effective", "{renter}", renterName));
+            sender.sendMessage(plugin.getMessages().get("eviction.effective-hint"));
         } else {
-            String remaining = formatDuration(eviction.getRemainingTime());
-            sender.sendMessage(Component.text("Eviction notice for " + renterName + " is pending.", NamedTextColor.YELLOW));
-            sender.sendMessage(Component.text(remaining + " remaining before you can remove them.", NamedTextColor.GRAY));
+            String remaining = formatDuration(eviction.effectiveAt - System.currentTimeMillis());
+            sender.sendMessage(plugin.getMessages().get("eviction.pending", "{renter}", renterName));
+            sender.sendMessage(plugin.getMessages().get("eviction.time-remaining", "{time}", remaining));
         }
 
         return true;
@@ -1371,7 +1443,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         Player player = (Player) sender;
 
         if (args.length < 4) {
-            sender.sendMessage(Component.text("Usage: /claim rentalsignconfirm <world> <x> <y> <z>", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.rental-sign-confirm-usage"));
             return true;
         }
 
@@ -1383,19 +1455,19 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             y = Integer.parseInt(args[2]);
             z = Integer.parseInt(args[3]);
         } catch (NumberFormatException e) {
-            sender.sendMessage(Component.text("Coordinates must be integers.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.coords-must-be-int"));
             return true;
         }
 
         org.bukkit.World world = org.bukkit.Bukkit.getWorld(worldName);
         if (world == null) {
-            sender.sendMessage(Component.text("Unknown world: " + worldName, NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.world-unknown", "{world}", worldName));
             return true;
         }
 
         org.bukkit.block.Block b = world.getBlockAt(x, y, z);
         if (!(b.getState() instanceof org.bukkit.block.Sign)) {
-            sender.sendMessage(Component.text("No managed sign found at that location.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.sign-not-found"));
             return true;
         }
 
@@ -1405,7 +1477,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         org.bukkit.NamespacedKey keyRenter = new org.bukkit.NamespacedKey(plugin, "rent.renter");
 
         if (!sign.getPersistentDataContainer().has(keyKind, org.bukkit.persistence.PersistentDataType.STRING)) {
-            sender.sendMessage(Component.text("That sign is not managed by GPExpansion.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.sign-not-managed"));
             return true;
         }
 
@@ -1428,17 +1500,15 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         }
 
         if (!(owner || admin)) {
-            sender.sendMessage(Component.text("You don't have permission to use this sign.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("claim.sign-use-denied"));
             return true;
         }
 
         // Clear rental store
         if (claimId != null) {
-            dev.towki.gpexpansion.storage.RentalStore store = plugin.getRentalStore();
-            if (store != null) {
-                store.clear(claimId);
-                store.save();
-            }
+            ClaimDataStore dataStore = plugin.getClaimDataStore();
+            dataStore.clearRental(claimId);
+            dataStore.save();
         }
 
         // Revoke trust of renter if present
@@ -1461,7 +1531,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
         // Remove the sign block
         b.setType(org.bukkit.Material.AIR);
-        sender.sendMessage(Component.text("Rental sign removed and rental cleared.", NamedTextColor.GREEN));
+        sender.sendMessage(plugin.getMessages().get("eviction.rental-sign-removed"));
         return true;
     }
 
@@ -1469,11 +1539,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         if (!requirePlayer(sender)) return true;
         Player player = (Player) sender;
 
-        PendingRentStore pendingStore = plugin.getPendingRentStore();
-        if (pendingStore == null) {
-            sender.sendMessage(Component.text("Pending rent system is not available.", NamedTextColor.RED));
-            return true;
-        }
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
 
         // Check if player has any pending rents to collect
         boolean hasPending = false;
@@ -1481,8 +1547,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         int totalExp = 0;
         int totalClaimBlocks = 0;
 
-        for (PendingRentStore.PendingRentEntry entry : pendingStore.all().values()) {
-            if (entry.owner.equals(player.getUniqueId())) {
+        for (ClaimDataStore.PendingRentData entry : dataStore.getAllPendingRents().values()) {
+            if (entry.ownerId.equals(player.getUniqueId())) {
                 hasPending = true;
                 try {
                     double amount = Double.parseDouble(entry.amount);
@@ -1502,7 +1568,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         }
 
         if (!hasPending) {
-            sender.sendMessage(Component.text("You have no pending rental payments to collect.", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("claim.pending-rent-none"));
             return true;
         }
 
@@ -1512,7 +1578,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         if (totalMoney > 0 && plugin.isEconomyAvailable()) {
             if (!plugin.depositMoney(player, totalMoney)) {
                 success = false;
-                sender.sendMessage(Component.text("Failed to give you $" + totalMoney + " from rentals.", NamedTextColor.RED));
+                sender.sendMessage(plugin.getMessages().get("claim.pending-rent-failed-money",
+                    "{amount}", String.valueOf(totalMoney)));
             }
         }
 
@@ -1522,21 +1589,22 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
         if (totalClaimBlocks > 0) {
             // Note: Claim blocks would need GP integration here
-            sender.sendMessage(Component.text("You received " + totalClaimBlocks + " claim blocks from rentals!", NamedTextColor.GREEN));
+            sender.sendMessage(plugin.getMessages().get("claim.pending-rent-claimblocks",
+                "{amount}", String.valueOf(totalClaimBlocks)));
         }
 
         if (success) {
-            // Clear all pending rents for this player
-            pendingStore.all().entrySet().removeIf(entry -> {
-                if (entry.getValue().owner.equals(player.getUniqueId())) {
-                    pendingStore.removePendingRent(entry.getKey());
-                    return true;
+            boolean cleared = false;
+            for (Map.Entry<String, ClaimDataStore.PendingRentData> entry : new ArrayList<>(dataStore.getAllPendingRents().entrySet())) {
+                if (entry.getValue().ownerId.equals(player.getUniqueId())) {
+                    dataStore.clearPendingRent(entry.getKey());
+                    cleared = true;
                 }
-                return false;
-            });
-            pendingStore.save();
-
-            sender.sendMessage(Component.text("Successfully collected all pending rental payments!", NamedTextColor.GREEN));
+            }
+            if (cleared) {
+                dataStore.save();
+            }
+            sender.sendMessage(plugin.getMessages().get("claim.pending-rent-collected"));
         }
 
         return true;
@@ -1591,58 +1659,83 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         Object claim = claimOpt.get();
         
         // Get teleport location - prefer custom spawn, fallback to claim center
-        dev.towki.gpexpansion.storage.SpawnStore spawnStore = plugin.getSpawnStore();
-        Optional<Location> spawnOpt = spawnStore.get(claimId);
+        Optional<Location> spawnOpt = plugin.getClaimDataStore().getSpawn(claimId);
         
-        Location teleportLoc;
+        final Player finalTarget = targetPlayer;
+        final String finalClaimId = claimId;
+        final CommandSender finalSender = sender;
+        
         if (spawnOpt.isPresent()) {
-            teleportLoc = spawnOpt.get();
+            // Custom spawn location - can teleport directly
+            Location teleportLoc = spawnOpt.get();
+            plugin.teleportEntity(finalTarget, teleportLoc);
+            sendTeleportMessages(finalSender, finalTarget, finalClaimId);
         } else {
-            // Use claim center as fallback
-            Optional<Location> centerOpt = gp.getClaimCenter(claim);
-            if (!centerOpt.isPresent()) {
+            // Use claim center as fallback - need to get Y on correct region thread
+            Optional<Location> centerXZOpt = gp.getClaimCenterXZ(claim);
+            if (!centerXZOpt.isPresent()) {
                 sender.sendMessage(plugin.getMessages().get("claim.teleport-no-location", "{id}", claimId));
                 return true;
             }
-            teleportLoc = centerOpt.get();
-        }
-        
-        // Teleport the player
-        final Player finalTarget = targetPlayer;
-        final Location finalLoc = teleportLoc;
-        plugin.teleportEntity(finalTarget, finalLoc);
-        
-        if (sender == targetPlayer) {
-            sender.sendMessage(plugin.getMessages().get("claim.teleport-success", "{id}", claimId));
-        } else {
-            sender.sendMessage(plugin.getMessages().get("claim.teleport-other-success", "{player}", targetPlayer.getName(), "{id}", claimId));
-            targetPlayer.sendMessage(plugin.getMessages().get("claim.teleport-by-other", "{id}", claimId));
+            Location centerXZ = centerXZOpt.get();
+            
+            // Schedule on target region to get highest Y and teleport
+            dev.towki.gpexpansion.scheduler.SchedulerAdapter.runAtLocation(plugin, centerXZ, () -> {
+                int y = centerXZ.getWorld().getHighestBlockYAt(centerXZ.getBlockX(), centerXZ.getBlockZ()) + 1;
+                Location teleportLoc = new Location(centerXZ.getWorld(), centerXZ.getX(), y, centerXZ.getZ());
+                plugin.teleportEntity(finalTarget, teleportLoc);
+                sendTeleportMessages(finalSender, finalTarget, finalClaimId);
+            });
         }
         
         return true;
     }
     
-    // /claim setspawn
+    private void sendTeleportMessages(CommandSender sender, Player targetPlayer, String claimId) {
+        // Get claim name with color support (falls back to claimId if no custom name)
+        String claimName = plugin.getClaimDataStore().getCustomName(claimId).orElse(claimId);
+        
+        if (sender == targetPlayer) {
+            sender.sendMessage(plugin.getMessages().get("claim.teleport-success", "{id}", claimId, "{name}", claimName));
+        } else {
+            sender.sendMessage(plugin.getMessages().get("claim.teleport-other-success", "{player}", targetPlayer.getName(), "{id}", claimId, "{name}", claimName));
+            targetPlayer.sendMessage(plugin.getMessages().get("claim.teleport-by-other", "{id}", claimId, "{name}", claimName));
+        }
+    }
+    
+    // /claim setspawn [claimId]
     private boolean handleSetSpawn(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         Player player = (Player) sender;
         
-        // Get the claim at player's location
         Location loc = player.getLocation();
-        Optional<Object> claimOpt = gp.getClaimAt(loc);
+        Object claim;
+        String claimId;
         
-        if (!claimOpt.isPresent()) {
-            sender.sendMessage(plugin.getMessages().get("claim.setspawn-not-in-claim"));
-            return true;
+        // If claimId is provided, use it; otherwise get from player's location
+        if (args.length >= 1 && !args[0].isEmpty()) {
+            claimId = args[0];
+            Optional<Object> claimOpt = gp.findClaimById(claimId);
+            if (!claimOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", claimId));
+                return true;
+            }
+            claim = claimOpt.get();
+        } else {
+            // Get the claim at player's location
+            Optional<Object> claimOpt = gp.getClaimAt(loc);
+            if (!claimOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.setspawn-not-in-claim"));
+                return true;
+            }
+            claim = claimOpt.get();
+            Optional<String> claimIdOpt = gp.getClaimId(claim);
+            if (!claimIdOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.setspawn-error"));
+                return true;
+            }
+            claimId = claimIdOpt.get();
         }
-        
-        Object claim = claimOpt.get();
-        Optional<String> claimIdOpt = gp.getClaimId(claim);
-        if (!claimIdOpt.isPresent()) {
-            sender.sendMessage(plugin.getMessages().get("claim.setspawn-error"));
-            return true;
-        }
-        String claimId = claimIdOpt.get();
         
         // Check ownership (unless has .other permission)
         boolean hasOtherPerm = player.hasPermission("griefprevention.claim.setspawn.other");
@@ -1665,9 +1758,9 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         }
         
         // Save the spawn point
-        dev.towki.gpexpansion.storage.SpawnStore spawnStore = plugin.getSpawnStore();
-        spawnStore.set(claimId, loc);
-        spawnStore.save();
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
+        dataStore.setSpawn(claimId, loc);
+        dataStore.save();
         
         sender.sendMessage(plugin.getMessages().get("claim.setspawn-success", "{id}", claimId));
         return true;

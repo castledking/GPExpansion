@@ -2,6 +2,7 @@ package dev.towki.gpexpansion.setup;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
+import dev.towki.gpexpansion.scheduler.SchedulerAdapter;
 import dev.towki.gpexpansion.setup.SetupSession.SetupStep;
 import dev.towki.gpexpansion.setup.SetupSession.SetupType;
 import dev.towki.gpexpansion.util.EcoKind;
@@ -9,7 +10,9 @@ import dev.towki.gpexpansion.util.EcoKind;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerQuitEvent;
 
 import java.util.Map;
 import java.util.Optional;
@@ -86,12 +89,13 @@ public class SetupWizardManager {
         this.gp = new GPBridge();
         
         // Cleanup expired sessions every minute
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                activeSessions.entrySet().removeIf(entry -> entry.getValue().isExpired());
-            }
-        }.runTaskTimer(plugin, 20 * 60, 20 * 60);
+        SchedulerAdapter.runRepeatingGlobal(plugin, () -> {
+            activeSessions.entrySet().removeIf(entry -> entry.getValue().isExpired());
+        }, 20 * 60L, 20 * 60L);
+    }
+
+    public GPExpansionPlugin getPlugin() {
+        return plugin;
     }
     
     /**

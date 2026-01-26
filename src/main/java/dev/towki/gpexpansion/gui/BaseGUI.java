@@ -81,6 +81,20 @@ public abstract class BaseGUI {
     }
     
     /**
+     * Create an inventory with a pre-processed title (placeholders already replaced).
+     * Use this when the title has dynamic placeholders that need to be replaced before display.
+     */
+    protected Inventory createBaseInventoryWithTitle(String processedTitle, int defaultSize) {
+        int size = config != null ? config.getInt("size", defaultSize) : defaultSize;
+        
+        // Ensure size is valid (multiple of 9, max 54)
+        size = Math.min(54, Math.max(9, (size / 9) * 9));
+        
+        Component titleComponent = colorize(processedTitle);
+        return Bukkit.createInventory(null, size, titleComponent);
+    }
+    
+    /**
      * Create an item from config section.
      */
     protected ItemStack createItemFromConfig(String path, Map<String, String> placeholders) {
@@ -542,6 +556,26 @@ public abstract class BaseGUI {
      * Run a task later with Folia compatibility.
      */
     protected void runLater(Runnable task, long delayTicks) {
-        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runOnEntityLater(plugin, player, task, null, delayTicks);
+        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runLaterEntity(plugin, player, task, delayTicks);
+    }
+
+    /**
+     * Close the GUI and run a task immediately.
+     * Use this for operations that need to run after inventory close.
+     */
+    protected void closeAndRunOnMainThread(Runnable task) {
+        player.closeInventory();
+        task.run();
+    }
+
+    /**
+     * Close the GUI and run a command immediately.
+     * Use this for operations that need to run after inventory close.
+     */
+    protected void closeAndRunOnMainThread(String command) {
+        player.closeInventory();
+        // On Folia, commands with a player sender must be dispatched on the entity's region thread
+        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runEntity(plugin, player,
+            () -> org.bukkit.Bukkit.dispatchCommand(player, command), null);
     }
 }

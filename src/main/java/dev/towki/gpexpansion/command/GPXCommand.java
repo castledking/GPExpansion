@@ -2,9 +2,8 @@ package dev.towki.gpexpansion.command;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.permission.SignLimitManager;
+import dev.towki.gpexpansion.scheduler.SchedulerAdapter;
 import org.bukkit.Bukkit;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -35,7 +34,7 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         // Check permission
         if (!sender.hasPermission("griefprevention.admin")) {
-            sender.sendMessage(Component.text("You don't have permission to use this command.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("admin.no-permission"));
             return true;
         }
         
@@ -49,7 +48,9 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         // Handle reload subcommand
         if (subCommand.equals("reload")) {
             plugin.reloadAll();
-            sender.sendMessage(plugin.getMessages().get("general.reload-success"));
+            // Delay success message to let migration logs appear first
+            SchedulerAdapter.runLaterGlobal(plugin, () ->
+                sender.sendMessage(plugin.getMessages().get("general.reload-success")), 20L);
             return true;
         }
         
@@ -74,7 +75,7 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         }
         
         if (args.length < 5) {
-            sender.sendMessage(Component.text("Usage: /gpx max <sell|rent|mailbox|globals> <add|take|set> <player> <amount>", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("commands.gpx-max-usage"));
             return true;
         }
         
@@ -83,17 +84,17 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         String playerName = args[3];
         
         if (!type.equals("sell") && !type.equals("rent") && !type.equals("mailbox") && !type.equals("globals")) {
-            sender.sendMessage(Component.text("Invalid type. Use 'sell', 'rent', 'mailbox', or 'globals'.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("commands.gpx-max-invalid-type"));
             return true;
         }
         
         if (!action.equals("add") && !action.equals("take") && !action.equals("set")) {
-            sender.sendMessage(Component.text("Invalid action. Use 'add', 'take', or 'set'.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("commands.gpx-max-invalid-action"));
             return true;
         }
         
         if (args.length < 5) {
-            sender.sendMessage(Component.text("Please specify an amount.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("commands.gpx-max-amount-required"));
             return true;
         }
         
@@ -101,18 +102,18 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         try {
             amount = Integer.parseInt(args[4]);
             if (amount < 0) {
-                sender.sendMessage(Component.text("Amount must be positive.", NamedTextColor.RED));
+                sender.sendMessage(plugin.getMessages().get("commands.gpx-max-amount-positive"));
                 return true;
             }
         } catch (NumberFormatException e) {
-            sender.sendMessage(Component.text("Invalid amount.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("commands.gpx-max-amount-invalid"));
             return true;
         }
         
         // Get target player
         Player target = Bukkit.getPlayer(playerName);
         if (target == null) {
-            sender.sendMessage(Component.text("Player '" + playerName + "' is not online.", NamedTextColor.RED));
+            sender.sendMessage(plugin.getMessages().get("commands.player-not-online", "{player}", playerName));
             return true;
         }
         
@@ -135,8 +136,13 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                 } else {
                     signLimitManager.addMailboxLimit(target, amount);
                 }
-                sender.sendMessage(Component.text("Added " + amount + " to " + target.getName() + "'s " + limitType + " limit.", NamedTextColor.GREEN));
-                target.sendMessage(Component.text("Your " + limitType + " limit has been increased by " + amount + ".", NamedTextColor.YELLOW));
+                sender.sendMessage(plugin.getMessages().get("commands.gpx-max-added",
+                    "{amount}", String.valueOf(amount),
+                    "{player}", target.getName(),
+                    "{type}", limitType));
+                target.sendMessage(plugin.getMessages().get("commands.gpx-max-added-player",
+                    "{amount}", String.valueOf(amount),
+                    "{type}", limitType));
                 break;
                 
             case "take":
@@ -149,8 +155,13 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                 } else {
                     signLimitManager.takeMailboxLimit(target, amount);
                 }
-                sender.sendMessage(Component.text("Removed " + amount + " from " + target.getName() + "'s " + limitType + " limit.", NamedTextColor.GREEN));
-                target.sendMessage(Component.text("Your " + limitType + " limit has been decreased by " + amount + ".", NamedTextColor.YELLOW));
+                sender.sendMessage(plugin.getMessages().get("commands.gpx-max-removed",
+                    "{amount}", String.valueOf(amount),
+                    "{player}", target.getName(),
+                    "{type}", limitType));
+                target.sendMessage(plugin.getMessages().get("commands.gpx-max-removed-player",
+                    "{amount}", String.valueOf(amount),
+                    "{type}", limitType));
                 break;
                 
             case "set":
@@ -163,8 +174,13 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                 } else {
                     signLimitManager.setMailboxLimit(target, amount);
                 }
-                sender.sendMessage(Component.text("Set " + target.getName() + "'s " + limitType + " limit to " + amount + ".", NamedTextColor.GREEN));
-                target.sendMessage(Component.text("Your " + limitType + " limit has been set to " + amount + ".", NamedTextColor.YELLOW));
+                sender.sendMessage(plugin.getMessages().get("commands.gpx-max-set",
+                    "{amount}", String.valueOf(amount),
+                    "{player}", target.getName(),
+                    "{type}", limitType));
+                target.sendMessage(plugin.getMessages().get("commands.gpx-max-set-player",
+                    "{amount}", String.valueOf(amount),
+                    "{type}", limitType));
                 break;
         }
         
@@ -173,22 +189,28 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         int currentRent = signLimitManager.getRentLimit(target);
         int currentMailbox = signLimitManager.getMailboxLimit(target);
         int currentGlobals = signLimitManager.getGlobalClaimLimit(target);
-        sender.sendMessage(Component.text(target.getName() + "'s current limits:", NamedTextColor.AQUA));
-        sender.sendMessage(Component.text("  Sell signs: " + currentSell, NamedTextColor.AQUA));
-        sender.sendMessage(Component.text("  Rent signs: " + currentRent, NamedTextColor.AQUA));
-        sender.sendMessage(Component.text("  Mailbox signs: " + currentMailbox, NamedTextColor.AQUA));
-        sender.sendMessage(Component.text("  Global claims: " + currentGlobals, NamedTextColor.AQUA));
+        sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-header",
+            "{player}", target.getName()));
+        sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-sell",
+            "{count}", String.valueOf(currentSell)));
+        sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-rent",
+            "{count}", String.valueOf(currentRent)));
+        sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-mailbox",
+            "{count}", String.valueOf(currentMailbox)));
+        sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-globals",
+            "{count}", String.valueOf(currentGlobals)));
         
         // Check for permission desync and notify
         if (signLimitManager.hasPermissionDesync(target)) {
-            sender.sendMessage(Component.text("", NamedTextColor.YELLOW));
-            sender.sendMessage(Component.text("Warning: Permission desync detected for " + target.getName() + "!", NamedTextColor.YELLOW));
+            sender.sendMessage(plugin.getMessages().get("general.empty-line"));
+            sender.sendMessage(plugin.getMessages().get("commands.gpx-max-desync-warning",
+                "{player}", target.getName()));
             if (signLimitManager.isPermissionCleanupSupported()) {
-                sender.sendMessage(Component.text("Permissions will be automatically cleaned up using " + 
-                    signLimitManager.getSupportedPermissionPlugin() + ".", NamedTextColor.GREEN));
+                sender.sendMessage(plugin.getMessages().get("commands.gpx-max-desync-cleanup",
+                    "{plugin}", signLimitManager.getSupportedPermissionPlugin()));
             } else {
-                sender.sendMessage(Component.text("No supported permission plugin found for automatic cleanup.", NamedTextColor.RED));
-                sender.sendMessage(Component.text("Please manually remove duplicate permissions and set the highest one.", NamedTextColor.RED));
+                sender.sendMessage(plugin.getMessages().get("commands.gpx-max-desync-unsupported"));
+                sender.sendMessage(plugin.getMessages().get("commands.gpx-max-desync-manual"));
             }
         }
         
@@ -199,8 +221,7 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(plugin.getMessages().get("admin.gpx-help-header"));
         sender.sendMessage(plugin.getMessages().get("admin.gpx-reload"));
         sender.sendMessage(plugin.getMessages().get("admin.gpx-debug"));
-        sender.sendMessage(Component.text("/gpx max <sell|rent|mailbox|globals> <add|take|set> <player> <amount>", NamedTextColor.YELLOW)
-            .append(Component.text(" - Manage limits", NamedTextColor.GRAY)));
+        sender.sendMessage(plugin.getMessages().get("admin.gpx-max"));
     }
     
     @Override

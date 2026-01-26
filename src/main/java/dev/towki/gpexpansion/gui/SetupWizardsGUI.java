@@ -31,7 +31,7 @@ public class SetupWizardsGUI extends BaseGUI {
     @Override
     public Inventory createInventory() {
         String title = getString("title", "&d&lSetup Wizards - #{id}").replace("{id}", claimId);
-        inventory = createBaseInventory(title, 27);
+        inventory = createBaseInventoryWithTitle(title, 27);
         
         fillBorder(createFiller());
         
@@ -93,13 +93,13 @@ public class SetupWizardsGUI extends BaseGUI {
         
         if (slot == RENT_WIZARD_SLOT) {
             if (player.hasPermission("griefprevention.sign.create.rent")) {
-                closeAndRun(() -> player.performCommand("rentclaim " + claimId));
+                closeAndRunOnMainThread(() -> player.performCommand("rentclaim " + claimId));
             } else {
                 plugin.getMessages().send(player, "general.no-permission");
             }
         } else if (slot == SELL_WIZARD_SLOT) {
             if (player.hasPermission("griefprevention.sign.create.sell")) {
-                closeAndRun(() -> player.performCommand("sellclaim " + claimId));
+                closeAndRunOnMainThread(() -> player.performCommand("sellclaim " + claimId));
             } else {
                 plugin.getMessages().send(player, "general.no-permission");
             }

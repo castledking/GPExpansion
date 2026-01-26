@@ -1,5 +1,5 @@
 name: GPExpansion
-version: 0.1.0
+version: ${project.version}
 main: dev.towki.gpexpansion.GPExpansionPlugin
 description: GriefPrevention Expansion
 api-version: '1.20'
@@ -86,6 +86,14 @@ permissions:
 
   griefprevention.claim.name:
     description: Allows using /claim name
+    default: true
+
+  griefprevention.claim.name.anywhere:
+    description: Allows using /claim name outside own claims
+    default: true
+  
+  griefprevention.claim.name.other:
+    description: Allows using /claim name on other claims
     default: op
 
   griefprevention.claim.name.color.*:
@@ -98,6 +106,64 @@ permissions:
 
   griefprevention.claim.name.color.gradient:
     description: Allows gradient/rainbow MiniMessage tags
+    default: op
+
+  # === CLAIM DESCRIPTION PERMISSIONS ===
+  griefprevention.claim.description:
+    description: Allows using /claim desc
+    default: true
+
+  griefprevention.claim.description.anywhere:
+    description: Allows using /claim desc outside own claims
+    default: true
+
+  griefprevention.claim.description.other:
+    description: Allows using /claim desc on other claims
+    default: op
+
+  griefprevention.claim.icon:
+    description: Allows using /claim icon
+    default: true
+
+  griefprevention.claim.icon.other:
+    description: Allows using /claim icon on other claims
+    default: op
+
+  # === CLAIM BAN PERMISSIONS ===
+  griefprevention.claim.ban:
+    description: Allows using /claim ban
+    default: true
+
+  griefprevention.claim.ban.anywhere:
+    description: Allows using /claim ban outside own claims
+    default: true
+
+  griefprevention.claim.ban.other:
+    description: Allows using /claim ban on other claims
+    default: op
+
+  griefprevention.claim.unban:
+    description: Allows using /claim unban
+    default: true
+
+  griefprevention.claim.unban.anywhere:
+    description: Allows using /claim unban outside own claims
+    default: true
+
+  griefprevention.claim.unban.other:
+    description: Allows using /claim unban on other claims
+    default: op
+
+  griefprevention.claim.banlist:
+    description: Allows using /claim banlist
+    default: true
+
+  griefprevention.claim.banlist.anywhere:
+    description: Allows using /claim banlist outside own claims
+    default: true
+
+  griefprevention.claim.banlist.other:
+    description: Allows using /claim banlist on other claims
     default: op
 
   # === RENT SIGN PERMISSIONS ===
@@ -267,8 +333,24 @@ permissions:
     description: Allows creating 100 mailbox signs
     default: false
 
+  griefprevention.sign.admin:
+    description: Allows admin sign management
+    default: op
+
   griefprevention.admin:
     description: Allows access to GPExpansion admin commands
+    default: op
+
+  gpx.admin:
+    description: Allows viewing migration notices
+    default: op
+
+  griefprevention.adminclaimslist:
+    description: Allows viewing admin claims list
+    default: op
+
+  griefprevention.transferclaim:
+    description: Allows using /claim transfer
     default: op
 
   # Claim info permissions
@@ -314,9 +396,29 @@ permissions:
     description: Allows setting spawn points for other players' claims
     default: op
 
+  griefprevention.claim.gui.setclaimflag.own:
+    description: Allows opening claim flags GUI for own claims
+    default: true
+
+  griefprevention.claim.gui.setclaimflag.anywhere:
+    description: Allows opening claim flags GUI for other claims
+    default: op
+
+  gpflags.command.setclaimflag:
+    description: Allows using GPFlags claim flag commands
+    default: op
+
+  gpflags.flag.*:
+    description: Allows toggling any GPFlags flag
+    default: op
+
   griefprevention.claim.gui.globallist:
     description: Allows viewing the global public claim list GUI
     default: true
+
+  griefprevention.claim.gui.return:
+    description: Allows using /claim ! to return to last viewed GUI
+    default: op
 
   griefprevention.claim.toggleglobal:
     description: Allows toggling public listing for your own claims
@@ -324,6 +426,18 @@ permissions:
 
   griefprevention.claim.toggleglobal.other:
     description: Allows toggling public listing for claims you don't own
+    default: op
+
+  griefprevention.evict:
+    description: Allows evicting claim renters
+    default: op
+
+  griefprevention.evict.other:
+    description: Allows evicting renters from other claims
+    default: op
+
+  griefprevention.eviction.bypass:
+    description: Allows bypassing eviction protections
     default: op
 
   # === GLOBAL CLAIM LIMIT PERMISSIONS ===

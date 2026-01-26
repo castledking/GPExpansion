@@ -2,9 +2,6 @@ package dev.towki.gpexpansion.command;
 
 import dev.towki.gpexpansion.setup.SetupWizardManager;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
-
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -31,24 +28,24 @@ public class CancelSetupCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage(Component.text("This command can only be used by players.", NamedTextColor.RED));
+            sender.sendMessage(wizardManager.getPlugin().getMessages().get("general.player-only"));
             return true;
         }
         
         // Try to cancel pending auto-paste first
         if (wizardManager.cancelPendingAutoPaste(player.getUniqueId())) {
-            player.sendMessage(Component.text("Auto-paste mode cancelled. You can now place signs normally.", NamedTextColor.YELLOW));
+            wizardManager.getPlugin().getMessages().send(player, "wizard.auto-paste-cancelled");
             return true;
         }
         
         // Also try to cancel active wizard session
         if (wizardManager.hasActiveSession(player.getUniqueId())) {
             wizardManager.cancelSession(player.getUniqueId());
-            player.sendMessage(Component.text("Setup wizard cancelled.", NamedTextColor.YELLOW));
+            wizardManager.getPlugin().getMessages().send(player, "wizard.cancelled");
             return true;
         }
         
-        player.sendMessage(Component.text("You don't have an active setup or auto-paste mode to cancel.", NamedTextColor.GRAY));
+        wizardManager.getPlugin().getMessages().send(player, "wizard.cancel-none");
         return true;
     }
     

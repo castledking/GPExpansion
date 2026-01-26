@@ -2,7 +2,8 @@ package dev.towki.gpexpansion.listener;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
-import dev.towki.gpexpansion.storage.RentalStore;
+import dev.towki.gpexpansion.storage.ClaimDataStore;
+import dev.towki.gpexpansion.storage.ClaimDataStore;
 import dev.towki.gpexpansion.util.EcoKind;
 import dev.towki.gpexpansion.util.RenewalSpec;
 import dev.towki.gpexpansion.permission.SignLimitManager;
@@ -262,16 +263,17 @@ public class SignListener implements Listener {
         boolean sell = strippedLine0.equalsIgnoreCase("[Buy Claim]") || strippedLine0.equalsIgnoreCase("[Buy]")
                     || strippedLine0.equalsIgnoreCase("[Sell Claim]") || strippedLine0.equalsIgnoreCase("[Sell]");
         boolean mailbox = strippedLine0.equalsIgnoreCase("[Mailbox]");
+        boolean globalClaim = strippedLine0.equalsIgnoreCase("[Global Claim]") || strippedLine0.equalsIgnoreCase("[Global]") || strippedLine0.equalsIgnoreCase("[global claim]");
         boolean invalid = strippedLine0.equalsIgnoreCase("[Invalid Rental]") || strippedLine0.equalsIgnoreCase("[Invalid Listing]");
         // Check if using short header format (no claim ID on line 1, uses sign location)
-        boolean useLocationClaim = strippedLine0.equalsIgnoreCase("[Rent]") || strippedLine0.equalsIgnoreCase("[Buy]") || strippedLine0.equalsIgnoreCase("[Sell]");
+        boolean useLocationClaim = strippedLine0.equalsIgnoreCase("[Rent]") || strippedLine0.equalsIgnoreCase("[Buy]") || strippedLine0.equalsIgnoreCase("[Sell]") || globalClaim;
 
         if (invalid) {
             return;
         }
 
-        if (!rent && !sell && !mailbox) {
-            return; // Not a rent/sell/mailbox sign, ignore
+        if (!rent && !sell && !mailbox && !globalClaim) {
+            return; // Not a rent/sell/mailbox/global claim sign, ignore
         }
 
         // Debug logging
@@ -299,7 +301,7 @@ public class SignListener implements Listener {
         Object targetClaim = null;
         
         if (useLocationClaim) {
-            // Short format: [rent] or [buy] - get claim at sign location
+            // Short format: [rent] or [buy] or [global claim] - get claim at sign location
             Optional<Object> claimAtSign = gp.getClaimAt(event.getBlock().getLocation());
             if (claimAtSign.isPresent()) {
                 targetClaim = claimAtSign.get();
@@ -307,6 +309,12 @@ public class SignListener implements Listener {
             }
             if (targetClaimId == null) {
                 plugin.getMessages().send(player, "sign-creation.not-in-claim");
+                return;
+            }
+            
+            // Handle global claim sign
+            if (globalClaim) {
+                handleGlobalClaimSign(player, event.getBlock().getLocation(), targetClaim, targetClaimId);
                 return;
             }
         } else if (!mailbox) {
@@ -381,26 +389,88 @@ public class SignListener implements Listener {
             claimId = targetClaimId;
             
             if (rent) {
-                // Rent short format:
+                // Rent short format - support both space-separated and semicolon-delimited:
                 // Option 1: <renewTime> on line 1, <ecoAmt> on line 2 (no max time)
                 // Option 2: <renewTime> <maxTime> on line 1, <ecoAmt> on line 2
                 // Option 3: <renewTime> <maxTime> on line 1, <ecoType> on line 2, <ecoAmt> on line 3
-                String[] durations = line1.split("\\s+");
-                String renewTime = durations[0].trim();
-                String maxTime = durations.length > 1 ? durations[1].trim() : renewTime; // Default maxTime to renewTime if not specified
+                // Option 4: <renewTime>;<ecoAmt> on line 1 (no max time)
+                // Option 5: <renewTime>;<ecoAmt>;<maxTime> on line 1
+                // Option 6: <ecoAmt>;<renewTime> on line 1 (no max time)
+                // Option 7: <ecoAmt>;<renewTime>;<maxTime> on line 1
                 
-                // Check if line2 looks like a number (ecoAmt with default money type)
-                if (looksLikeNumber(line2)) {
-                    ecoKindStr = "money";
-                    renewalSpecStr = line2 + ";" + renewTime + ";" + maxTime;
-                } else if (!line2.isEmpty()) {
-                    // line2 is ecoType, line3 is ecoAmt
-                    ecoKindStr = line2;
-                    renewalSpecStr = line3 + ";" + renewTime + ";" + maxTime;
+                String renewTime, maxTime, ecoAmt;
+                
+                // Check if line 1 contains semicolons (new format)
+                if (line1.contains(";")) {
+                    String[] parts = line1.split(";");
+                    if (parts.length == 2) {
+                        // Format: <renewTime>;<ecoAmt> OR <ecoAmt>;<renewTime>
+                        String part1 = parts[0].trim();
+                        String part2 = parts[1].trim();
+                        
+                        if (looksLikeNumber(part1)) {
+                            // <ecoAmt>;<renewTime>
+                            ecoAmt = part1;
+                            renewTime = part2;
+                            maxTime = renewTime; // Default maxTime to renewTime
+                        } else {
+                            // <renewTime>;<ecoAmt>
+                            renewTime = part1;
+                            ecoAmt = part2;
+                            maxTime = renewTime; // Default maxTime to renewTime
+                        }
+                    } else if (parts.length >= 3) {
+                        // Format: <renewTime>;<ecoAmt>;<maxTime> OR <ecoAmt>;<renewTime>;<maxTime>
+                        String part1 = parts[0].trim();
+                        String part2 = parts[1].trim();
+                        String part3 = parts[2].trim();
+                        
+                        if (looksLikeNumber(part1)) {
+                            // <ecoAmt>;<renewTime>;<maxTime>
+                            ecoAmt = part1;
+                            renewTime = part2;
+                            maxTime = part3;
+                        } else {
+                            // <renewTime>;<ecoAmt>;<maxTime>
+                            renewTime = part1;
+                            ecoAmt = part2;
+                            maxTime = part3;
+                        }
+                    } else {
+                        plugin.getMessages().send(player, "sign-creation.invalid-format",
+                            "{details}", "Expected: <renewTime>;<ecoAmt> or <ecoAmt>;<renewTime>");
+                        return;
+                    }
+                    
+                    // Check if line2 contains ecoType
+                    if (!line2.isEmpty() && !looksLikeNumber(line2)) {
+                        ecoKindStr = line2;
+                    } else {
+                        ecoKindStr = "money";
+                    }
+                    
+                    renewalSpecStr = ecoAmt + ";" + renewTime + ";" + maxTime;
+                    
                 } else {
-                    // No amount provided - this is an error
-                    player.sendMessage(Component.text("Invalid format. Line 2 should contain the payment amount", NamedTextColor.RED));
-                    return;
+                    // Original space-separated format
+                    String[] durations = line1.split("\\s+");
+                    renewTime = durations[0].trim();
+                    maxTime = durations.length > 1 ? durations[1].trim() : renewTime; // Default maxTime to renewTime if not specified
+                    
+                    // Check if line2 looks like a number (ecoAmt with default money type)
+                    if (looksLikeNumber(line2)) {
+                        ecoKindStr = "money";
+                        renewalSpecStr = line2 + ";" + renewTime + ";" + maxTime;
+                    } else if (!line2.isEmpty()) {
+                        // line2 is ecoType, line3 is ecoAmt
+                        ecoKindStr = line2;
+                        renewalSpecStr = line3 + ";" + renewTime + ";" + maxTime;
+                    } else {
+                        // No amount provided - this is an error
+                        plugin.getMessages().send(player, "sign-creation.invalid-format",
+                            "{details}", "Line 2 should contain the payment amount or use semicolon format on Line 1");
+                        return;
+                    }
                 }
             } else {
                 // Sell/Buy short format:
@@ -425,7 +495,8 @@ public class SignListener implements Listener {
             if (sell) {
                 // For sell signs: <claimId>;<ecoKind>;<ecoAmount> or <claimId>;<ecoAmount>
                 if (parts.length < 2) {
-                    player.sendMessage(Component.text("Invalid format. Expected: <claimId>;<ecoAmount> or <claimId>;<ecoKind>;<ecoAmount>", NamedTextColor.RED));
+                    plugin.getMessages().send(player, "sign-creation.invalid-format",
+                        "{details}", "Expected: <claimId>;<ecoAmount> or <claimId>;<ecoKind>;<ecoAmount>");
                     return;
                 }
                 claimId = parts[0].trim();
@@ -441,7 +512,8 @@ public class SignListener implements Listener {
                 // For rent signs: <claimId>;<ecoKind>;<ecoAmount>;<renewalTime>;<maxTime> or <claimId>;<ecoAmount>;<renewalTime>;<maxTime>
                 // Also supports: <claimId>;<ecoAmount>;<renewalTime> (maxTime defaults to renewalTime)
                 if (parts.length < 3) {
-                    player.sendMessage(Component.text("Invalid format. Expected: <claimId>;<ecoAmount>;<renewalTime> [;<maxTime>]", NamedTextColor.RED));
+                    plugin.getMessages().send(player, "sign-creation.invalid-format",
+                        "{details}", "Expected: <claimId>;<ecoAmount>;<renewalTime> [;<maxTime>]");
                     return;
                 }
                 claimId = parts[0].trim();
@@ -462,7 +534,8 @@ public class SignListener implements Listener {
             } else {
                 // For mailbox signs: <claimId>;<ecoKind>;<amount> or <claimId>;<amount>
                 if (parts.length < 2) {
-                    player.sendMessage(Component.text("Invalid format. Expected: <claimId>;<ecoAmount> or <claimId>;<ecoKind>;<ecoAmount>", NamedTextColor.RED));
+                    plugin.getMessages().send(player, "sign-creation.invalid-format",
+                        "{details}", "Expected: <claimId>;<ecoAmount> or <claimId>;<ecoKind>;<ecoAmount>");
                     return;
                 }
                 claimId = parts[0].trim();
@@ -491,7 +564,8 @@ public class SignListener implements Listener {
                             renewalSpecStr = line2 + ";" + line3 + ";" + line3;
                         }
                     } else {
-                        player.sendMessage(Component.text("For rent signs with numeric amount, line 4 should be: <renewTime>;<maxTime>", NamedTextColor.RED));
+                        plugin.getMessages().send(player, "sign-creation.invalid-format",
+                            "{details}", "For rent signs with numeric amount, line 4 should be: <renewTime>;<maxTime>");
                         return;
                     }
                 } else {
@@ -596,7 +670,8 @@ public class SignListener implements Listener {
                 renewal = parseRenewal(renewalSpecStr, kind);
             }
         } catch (IllegalArgumentException iae) {
-            player.sendMessage(Component.text(iae.getMessage(), NamedTextColor.RED));
+            plugin.getMessages().send(player, "sign-creation.invalid-format",
+                "{details}", iae.getMessage());
             return;
         }
 
@@ -651,7 +726,7 @@ public class SignListener implements Listener {
             final String finalClaimId = claimId;
             final ItemStack finalItemInHand = (kind == EcoKind.ITEM) ? itemInHand : null;
             
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
+            dev.towki.gpexpansion.scheduler.SchedulerAdapter.runAtLocation(plugin, event.getBlock().getLocation(), () -> {
                 org.bukkit.block.Block block = event.getBlock();
                 if (block.getState() instanceof Sign sign) {
                     PersistentDataContainer pdc = sign.getPersistentDataContainer();
@@ -674,13 +749,12 @@ public class SignListener implements Listener {
             });
         }
 
-        player.sendMessage(Component.text("Sign created for claim ", NamedTextColor.GREEN)
-            .append(Component.text(claimId, NamedTextColor.GOLD))
-            .append(Component.text(".", NamedTextColor.GREEN)));
+        plugin.getMessages().send(player, "sign-creation.sign-created",
+            "{id}", claimId);
         
         // If ITEM sign was created without an item, tell them how to fix it
         if (missingItem) {
-            player.sendMessage(Component.text("Hold the payment item in your offhand and right-click the sign to set it.", NamedTextColor.YELLOW));
+            plugin.getMessages().send(player, "sign-creation.item-setup-reminder");
         }
     }
 
@@ -720,8 +794,9 @@ public class SignListener implements Listener {
         boolean rentSign = line0Plain.equalsIgnoreCase("[Rent Claim]") || line0Plain.equalsIgnoreCase("[Rented]") || line0Plain.equalsIgnoreCase("[Renew]");
         boolean sellSign = line0Plain.equalsIgnoreCase("[Buy Claim]") || line0Plain.equalsIgnoreCase("[Sell Claim]");
         boolean mailboxSign = line0Plain.equalsIgnoreCase("[Mailbox]");
+        boolean globalClaimSign = line0Plain.equalsIgnoreCase("[Global Claim]") || line0Plain.equalsIgnoreCase("[Global]") || line0Plain.equalsIgnoreCase("[global claim]");
 
-        if (!rentSign && !sellSign && !mailboxSign) {
+        if (!rentSign && !sellSign && !mailboxSign && !globalClaimSign) {
             return;
         }
 
@@ -730,9 +805,15 @@ public class SignListener implements Listener {
             event.setCancelled(true);
         }
         
-        if (!player.hasPermission(rentSign ? "griefprevention.sign.use.rent" : 
-                                   (sellSign ? "griefprevention.sign.use.buy" : "griefprevention.sign.use.mailbox"))) {
-            player.sendMessage(Component.text("You don't have permission to use this sign.", NamedTextColor.RED));
+        String usePermission = rentSign ? "griefprevention.sign.use.rent" :
+            (sellSign ? "griefprevention.sign.use.buy" :
+            (mailboxSign ? "griefprevention.sign.use.mailbox" : "griefprevention.sign.use.global"));
+        if (!player.hasPermission(usePermission)) {
+            String signType = rentSign ? "rent" : (sellSign ? "buy" : (mailboxSign ? "mailbox" : "global"));
+            plugin.getMessages().send(player, "permissions.use-sign-denied", "{signtype}", signType);
+            if (plugin.getConfig().getBoolean("messages.show-permission-details", true)) {
+                plugin.getMessages().send(player, "permissions.use-sign-denied-detail", "{permission}", usePermission);
+            }
             return;
         }
         
@@ -755,7 +836,7 @@ public class SignListener implements Listener {
                 EcoKind kind = parseEcoKind(line2);
                 if (kind == null) {
                     plugin.getLogger().warning("Sign at " + signLocation + " is missing required data");
-                    player.sendMessage(Component.text("This sign is missing required data. Please break and recreate it.", NamedTextColor.RED));
+                    plugin.getMessages().send(player, "sign-interaction.sign-missing-data");
                     return;
                 }
                 kindStr = kind.name();
@@ -764,29 +845,29 @@ public class SignListener implements Listener {
             // Get the economy kind from PDC for all sign types
             String ecoKindStr = pdc.get(new NamespacedKey(plugin, "sign.ecoKind"), PersistentDataType.STRING);
             if (ecoKindStr == null) {
-                player.sendMessage(Component.text("This sign is missing economy data. Please break and recreate it.", NamedTextColor.RED));
+                plugin.getMessages().send(player, "sign-interaction.sign-missing-economy");
                 return;
             }
             EcoKind kind = EcoKind.valueOf(ecoKindStr);
 
             if (kind == EcoKind.MONEY && !plugin.isEconomyAvailable()) {
-                player.sendMessage(Component.text("This rental requires an economy provider.", NamedTextColor.RED));
+                plugin.getMessages().send(player, "sign-interaction.economy-required");
                 return;
             }
 
             // Process the sign interaction
-            completeSignInteraction(event, player, currentSign, rentSign, sellSign, mailboxSign, kind, claimId, ecoAmtRaw, perClick, maxCap, pdc);
+            completeSignInteraction(event, player, currentSign, rentSign, sellSign, mailboxSign, globalClaimSign, kind, claimId, ecoAmtRaw, perClick, maxCap, pdc);
             
         } catch (IllegalArgumentException e) {
-            player.sendMessage(Component.text("Invalid economy type on sign.", NamedTextColor.RED));
+            plugin.getMessages().send(player, "sign-interaction.invalid-economy-type");
         } catch (Exception e) {
             plugin.getLogger().severe("Error processing sign interaction: " + e.getMessage());
             e.printStackTrace();
-            player.sendMessage(Component.text("An error occurred while processing this sign.", NamedTextColor.RED));
+            plugin.getMessages().send(player, "sign-interaction.error");
         }
     }
 
-    private void completeSignInteraction(PlayerInteractEvent event, Player player, Sign sign, boolean rent, boolean sell, boolean mailbox,
+    private void completeSignInteraction(PlayerInteractEvent event, Player player, Sign sign, boolean rent, boolean sell, boolean mailbox, boolean globalClaim,
                                      EcoKind kind, String claimId, String ecoAmtRaw, String perClick,
                                      String maxCap, PersistentDataContainer pdc) {
         // Skip mailbox signs - they are handled by MailboxListener
@@ -796,7 +877,7 @@ public class SignListener implements Listener {
         
         // Validate claim ID is not null or empty
         if (claimId == null || claimId.trim().isEmpty()) {
-            player.sendMessage(Component.text("Invalid claim ID on sign. Please break and recreate the sign.", NamedTextColor.RED));
+            plugin.getMessages().send(player, "sign-interaction.invalid-claim-id");
             return;
         }
         
@@ -833,15 +914,15 @@ public class SignListener implements Listener {
                         }
                         sign.update(true);
                         
-                        player.sendMessage(Component.text("Sign updated with payment item: " + itemName, NamedTextColor.GREEN));
+                        plugin.getMessages().send(player, "sign-interaction.item-updated", "{item}", itemName);
                         return;
                     } else {
-                        player.sendMessage(Component.text("Hold the payment item in your offhand and right-click to set it.", NamedTextColor.YELLOW));
+                        plugin.getMessages().send(player, "sign-interaction.item-set-hint");
                         return;
                     }
                 } else {
                     // Non-owner trying to use incomplete sign
-                    player.sendMessage(Component.text("This sign is not yet configured. The claim owner needs to set the payment item.", NamedTextColor.RED));
+                    plugin.getMessages().send(player, "sign-interaction.item-not-configured");
                     return;
                 }
             }
@@ -854,7 +935,24 @@ public class SignListener implements Listener {
             try {
                 Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
                 if (ownerId != null && ownerId.equals(player.getUniqueId())) {
-                    player.sendMessage(Component.text("You cannot rent your own claim.", NamedTextColor.RED));
+                    plugin.getMessages().send(player, "sign-interaction.rent-own-claim");
+                    return;
+                }
+            } catch (ReflectiveOperationException ignored) {}
+        }
+        
+        // Check if this is a global claim sign
+        if (globalClaim && claimOpt.isPresent()) {
+            Object claim = claimOpt.get();
+            try {
+                Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
+                if (ownerId != null && ownerId.equals(player.getUniqueId())) {
+                    // Owner clicking global claim sign - open global claim settings with fromSign flag
+                    plugin.getGUIManager().openGlobalClaimSettings(player, claim, claimId, true);
+                    return;
+                } else {
+                    // Non-owner clicking global claim sign - open global claims list
+                    plugin.getGUIManager().openGlobalClaimList(player);
                     return;
                 }
             } catch (ReflectiveOperationException ignored) {}
@@ -863,20 +961,17 @@ public class SignListener implements Listener {
         // RENT: enforce renter-only renew if already rented
         // SELL: permanent transfer, no rental logic needed
         if (rent) {
-            RentalStore store = plugin.getRentalStore();
             UUID existingRenter = null;
             long existingExpiry = 0L;
-            if (store != null) {
-                Optional<RentalStore.Entry> e = Optional.ofNullable(store.all().get(claimId));
-                if (e.isPresent()) {
-                    existingRenter = e.get().renter;
-                    existingExpiry = e.get().expiry;
-                }
+            ClaimDataStore.RentalData existing = plugin.getClaimDataStore().getRental(claimId).orElse(null);
+            if (existing != null) {
+                existingRenter = existing.renter;
+                existingExpiry = existing.expiry;
             }
             long now = System.currentTimeMillis();
             boolean alreadyRented = existingRenter != null && existingExpiry > now;
             if (alreadyRented && !player.getUniqueId().equals(existingRenter)) {
-                player.sendMessage(Component.text("This claim is already rented.", NamedTextColor.RED));
+                plugin.getMessages().send(player, "sign-interaction.rent-already-rented");
                 return;
             }
             
@@ -1199,7 +1294,154 @@ public class SignListener implements Listener {
         // As a last resort, just use '$' as prefix
         return "$" + numeric;
     }
-
+    
+    /**
+     * Handle [global claim] sign creation - toggles global listing and sets spawn point
+     */
+    private void handleGlobalClaimSign(Player player, Location signLocation, Object claim, String claimId) {
+        // Verify player owns the claim
+        if (!gp.isOwner(claim, player.getUniqueId()) && !player.hasPermission("griefprevention.admin")) {
+            plugin.getMessages().send(player, "sign-creation.not-claim-owner");
+            return;
+        }
+        
+        // Check if location is safe for spawn point
+        if (!isSafeSpawnLocation(signLocation)) {
+            plugin.getMessages().send(player, "sign-creation.unsafe-location");
+            return;
+        }
+        
+        // Toggle global listing
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
+        boolean wasPublic = dataStore.isPublicListed(claimId);
+        dataStore.setPublicListed(claimId, !wasPublic);
+        dataStore.save();
+        
+        // Set spawn point at sign location
+        plugin.getClaimDataStore().setSpawn(claimId, signLocation);
+        plugin.getClaimDataStore().save();
+        
+        // Create the sign with global claim data
+        org.bukkit.block.Sign sign = (org.bukkit.block.Sign) signLocation.getBlock().getState();
+        org.bukkit.block.sign.SignSide frontSide = sign.getSide(org.bukkit.block.sign.Side.FRONT);
+        
+        // Set sign lines
+        frontSide.setLine(0, "§a§l[Global Claim]");
+        frontSide.setLine(1, "§6" + player.getName());
+        frontSide.setLine(2, ""); // Empty
+        frontSide.setLine(3, ""); // Empty
+        
+        sign.update(true);
+        
+        // Send success message
+        plugin.getMessages().send(player, "gui.claim-listed", "{id}", claimId);
+        
+        // Log the action
+        plugin.getLogger().info("Global claim sign created for claim " + claimId + 
+            " by " + player.getName() + " at " + 
+            signLocation.getWorld().getName() + " " + 
+            signLocation.getBlockX() + "," + signLocation.getBlockY() + "," + signLocation.getBlockZ());
+    }
+    
+    /**
+     * Check if a location is safe for setting spawn point
+     * Based on Essentials' LocationUtil.isBlockUnsafe logic
+     */
+    private boolean isSafeSpawnLocation(Location loc) {
+        org.bukkit.Material at = loc.getBlock().getType();
+        org.bukkit.Material below = loc.clone().subtract(0, 1, 0).getBlock().getType();
+        org.bukkit.Material above = loc.clone().add(0, 1, 0).getBlock().getType();
+        
+        // Check for dangerous blocks at the spawn location
+        if (isDamagingBlock(at)) {
+            return false;
+        }
+        
+        // Check for dangerous blocks below
+        if (isDamagingBlock(below) || below == org.bukkit.Material.LAVA || below == org.bukkit.Material.WATER) {
+            return false;
+        }
+        
+        // Player needs solid ground to stand on
+        if (below.isAir() || isPassableBlock(below)) {
+            return false;
+        }
+        
+        // Check if player can fit at this location (not solid, can pass through)
+        if (isSolidBlock(at) || isSolidBlock(above)) {
+            return false;
+        }
+        
+        // Make sure player isn't spawning in a wall or too close to ceiling
+        org.bukkit.Material twoAbove = loc.clone().add(0, 2, 0).getBlock().getType();
+        if (isSolidBlock(twoAbove)) {
+            return false;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Check if a block is damaging to players
+     */
+    private boolean isDamagingBlock(org.bukkit.Material material) {
+        return material == org.bukkit.Material.LAVA ||
+               material == org.bukkit.Material.FIRE ||
+               material == org.bukkit.Material.SOUL_FIRE ||
+               material == org.bukkit.Material.MAGMA_BLOCK ||
+               material == org.bukkit.Material.CACTUS ||
+               material == org.bukkit.Material.SWEET_BERRY_BUSH ||
+               material == org.bukkit.Material.WITHER_ROSE ||
+               material.name().contains("CAMPFIRE");
+    }
+    
+    /**
+     * Check if a block is solid (player cannot pass through)
+     */
+    private boolean isSolidBlock(org.bukkit.Material material) {
+        if (material.isAir()) {
+            return false;
+        }
+        // Signs, walls, fences, etc. are passable but isSolid() returns true
+        if (material.name().contains("SIGN") || 
+            material.name().contains("FENCE") || 
+            material.name().contains("WALL") ||
+            material.name().contains("GATE") ||
+            material.name().contains("DOOR") ||
+            material.name().contains("TRAPDOOR") ||
+            material.name().contains("PRESSURE_PLATE") ||
+            material == org.bukkit.Material.LIGHT) {
+            return false;
+        }
+        return material.isSolid();
+    }
+    
+    /**
+     * Check if a block is passable (player can move through)
+     */
+    private boolean isPassableBlock(org.bukkit.Material material) {
+        if (material.isAir()) {
+            return true;
+        }
+        // Various blocks that are passable
+        return material.name().contains("SIGN") || 
+               material.name().contains("FENCE") || 
+               material.name().contains("WALL") ||
+               material.name().contains("GATE") ||
+               material.name().contains("DOOR") ||
+               material.name().contains("TRAPDOOR") ||
+               material.name().contains("PRESSURE_PLATE") ||
+               material == org.bukkit.Material.LIGHT ||
+               material == org.bukkit.Material.WATER ||
+               material.name().contains("SEAGRASS") ||
+               material.name().contains("FERN") ||
+               material.name().contains("GRASS") ||
+               material.name().contains("FLOWER") ||
+               material.name().contains("TALL_GRASS") ||
+               material.name().contains("CORAL") ||
+               material.name().contains("BAMBOO");
+    }
+    
     private boolean isCurrencySymbol(char c) {
         // Common currency symbols
         switch (c) {

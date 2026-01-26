@@ -136,7 +136,7 @@ public class ClaimFlagsGUI extends BaseGUI {
     }
 
     private ItemStack createInfoItem() {
-        String claimName = plugin.getNameStore().get(claimId).orElse("Claim " + claimId);
+        String claimName = plugin.getClaimDataStore().getCustomName(claimId).orElse("Claim " + claimId);
         return createItem(Material.BOOK, "&b&lClaim Flags",
                 Arrays.asList(
                         "&7Managing flags for:",
@@ -293,7 +293,13 @@ public class ClaimFlagsGUI extends BaseGUI {
         
         // Navigation
         if (slot == backSlot) {
-            manager.openClaimSettings(player, claim, claimId);
+            // Use GUI state tracker to go back to the previous menu
+            if (GUIStateTracker.hasState(player.getUniqueId())) {
+                GUIStateTracker.restoreLastGUI(manager, player);
+            } else {
+                // Fallback to claim settings if no previous state
+                manager.openClaimSettings(player, claim, claimId);
+            }
             return;
         }
         
@@ -324,18 +330,18 @@ public class ClaimFlagsGUI extends BaseGUI {
     private void toggleFlag(FlagDisplayInfo flag) {
         // Check permissions
         if (!player.hasPermission(BASE_PERMISSION)) {
-            player.sendMessage(Component.text("You don't have permission to set claim flags.", NamedTextColor.RED));
+            plugin.getMessages().send(player, "flags.no-permission");
             return;
         }
         
         if (!player.hasPermission("gpflags.flag." + flag.name.toLowerCase())) {
-            player.sendMessage(Component.text("You don't have permission to use the " + flag.name + " flag.", NamedTextColor.RED));
+            plugin.getMessages().send(player, "flags.no-permission-flag", "{flag}", flag.name);
             return;
         }
         
         // Check own/anywhere permission
         if (!isOwner && !player.hasPermission(ANYWHERE_PERMISSION)) {
-            player.sendMessage(Component.text("You can only modify flags on your own claims.", NamedTextColor.RED));
+            plugin.getMessages().send(player, "flags.not-owner");
             return;
         }
         
@@ -345,11 +351,12 @@ public class ClaimFlagsGUI extends BaseGUI {
         if (newState != null) {
             flag.enabled = newState;
             String stateText = newState ? "enabled" : "disabled";
-            player.sendMessage(Component.text("Flag " + flag.name + " " + stateText + ".", 
-                    newState ? NamedTextColor.GREEN : NamedTextColor.YELLOW));
+            plugin.getMessages().send(player, "flags.toggled",
+                "{flag}", flag.name,
+                "{state}", stateText);
             refresh();
         } else {
-            player.sendMessage(Component.text("Failed to toggle flag " + flag.name + ".", NamedTextColor.RED));
+            plugin.getMessages().send(player, "flags.toggle-failed", "{flag}", flag.name);
         }
     }
 

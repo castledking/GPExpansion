@@ -1,10 +1,8 @@
-package dev.towki.gpexpansion.setup;
+package dev.towki.gpexpansion.gui;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
-
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
-
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -12,46 +10,36 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
 
 /**
- * Listens for chat messages from players in active setup wizard sessions.
+ * Listens for chat input used to set claim descriptions.
  */
-public class SetupChatListener implements Listener {
+public class DescriptionChatListener implements Listener {
     
     private final GPExpansionPlugin plugin;
-    private final SetupWizardManager wizardManager;
+    private final DescriptionInputManager manager;
     
-    public SetupChatListener(GPExpansionPlugin plugin, SetupWizardManager wizardManager) {
+    public DescriptionChatListener(GPExpansionPlugin plugin, DescriptionInputManager manager) {
         this.plugin = plugin;
-        this.wizardManager = wizardManager;
+        this.manager = manager;
     }
     
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerChat(AsyncChatEvent event) {
         Player player = event.getPlayer();
-        
-        // Check if player has an active session
-        if (!wizardManager.hasActiveSession(player.getUniqueId())) {
+        if (!manager.hasPending(player.getUniqueId())) {
             return;
         }
         
-        // Extract plain text from the message component
         String message = PlainTextComponentSerializer.plainText().serialize(event.message());
-        
-        // Don't intercept commands
         if (message.startsWith("/")) {
             return;
         }
         
-        // Process the input on the player's thread (Folia compatible)
         event.setCancelled(true);
-        
-        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runEntity(plugin, player, () -> {
-            wizardManager.processInput(player, message);
-        }, null);
+        plugin.runAtEntity(player, () -> manager.processInput(player, message));
     }
     
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
-        // Clean up session when player leaves
-        wizardManager.cancelSession(event.getPlayer().getUniqueId());
+        manager.cancel(event.getPlayer().getUniqueId());
     }
 }

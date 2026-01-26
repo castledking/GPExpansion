@@ -25,6 +25,7 @@ public class Messages {
     private final GPExpansionPlugin plugin;
     private FileConfiguration langConfig;
     private File langFile;
+    private String currentVersion = "0.1.2a"; // Default fallback version
     
     // Cache for frequently accessed messages
     private final Map<String, String> messageCache = new HashMap<>();
@@ -84,6 +85,8 @@ public class Messages {
         
         // GUI messages
         DEFAULTS.put("gui.rename-prompt", "&eType the new name for claim &6{id}&e in chat, or type &ccancel&e to cancel.");
+        DEFAULTS.put("gui.description-prompt", "&eType the new description for claim &6{id}&e in chat, or type &ccancel&e to cancel.");
+        DEFAULTS.put("gui.description-cancelled", "&eDescription update cancelled for claim &6{id}&e.");
         DEFAULTS.put("gui.rental-renew-hint", "&eFind the rental sign for claim &6{id}&e and right-click to renew.");
         DEFAULTS.put("gui.ban-manage-hint", "&eManaging bans for claim &6{id}&e:");
         DEFAULTS.put("gui.not-enabled", "&cGUI mode is not enabled.");
@@ -153,12 +156,56 @@ public class Messages {
         DEFAULTS.put("claim.list-empty", "&7You don't own any claims.");
         DEFAULTS.put("claim.not-found", "&cClaim ID not found: {id}");
         DEFAULTS.put("claim.not-owner", "&cYou must own claim {id} to do that.");
+        DEFAULTS.put("claim.owner-unknown", "&cUnable to determine the claim owner.");
         DEFAULTS.put("claim.name-set", "&aClaim name set to: {name}");
-        DEFAULTS.put("claim.name-no-permission", "&cYou lack permission: &egpexpansion.claim.name");
+        DEFAULTS.put("claim.name-no-permission", "&cYou lack permission: &egriefprevention.claim.name");
         DEFAULTS.put("claim.transfer-success", "&aClaim {id} transferred to {player}.");
         DEFAULTS.put("claim.transfer-received", "&aYou are now the owner of claim {id}.");
         DEFAULTS.put("claim.ban-success", "&aBanned {player} from claim {id}.");
         DEFAULTS.put("claim.unban-success", "&aUnbanned {player} from claim {id}.");
+        DEFAULTS.put("claim.blocks-total", "&e{accrued} blocks from play + {bonus} bonus = {total} total.");
+        DEFAULTS.put("claim.blocks-remaining", "&e= {remaining} blocks left to spend");
+        DEFAULTS.put("claim.id-missing", "&cCould not determine claim ID for this action.");
+        DEFAULTS.put("claim.main-id-missing", "&cCould not determine main claim ID.");
+        DEFAULTS.put("claim.must-own-action", "&cYou must own this claim to {action}.");
+        DEFAULTS.put("claim.transfer-usage", "&eUsage: /claim transfer <claimId> <player>");
+        DEFAULTS.put("claim.transfer-failed-contact", "&cFailed to transfer claim ownership. Please contact an admin.");
+        DEFAULTS.put("claim.name-usage", "&eUsage: /claim name <newName> [claimId]");
+        DEFAULTS.put("claim.icon-no-permission", "&cYou lack permission: &egriefprevention.claim.icon");
+        DEFAULTS.put("claim.icon-hold-item", "&cYou must hold an item to set as the claim icon.");
+        DEFAULTS.put("claim.icon-set", "&aClaim {id} icon set to {icon}.");
+        DEFAULTS.put("claim.description-no-permission", "&cYou lack permission: &egriefprevention.claim.description");
+        DEFAULTS.put("claim.description-usage", "&eUsage: /claim desc <description...> [claimId]");
+        DEFAULTS.put("claim.description-truncated", "&eDescription truncated to {max} characters.");
+        DEFAULTS.put("claim.description-set", "&aClaim {id} description set to: {description}");
+        DEFAULTS.put("claim.ban-usage", "&eUsage: /claim ban <player|public> [claimId]");
+        DEFAULTS.put("claim.ban-no-permission", "&cYou lack permission: &egriefprevention.claim.ban");
+        DEFAULTS.put("claim.ban-self", "&cYou cannot ban yourself.");
+        DEFAULTS.put("claim.unban-usage", "&eUsage: /claim unban <player|public> [claimId]");
+        DEFAULTS.put("claim.unban-no-permission", "&cYou lack permission: &egriefprevention.claim.unban");
+        DEFAULTS.put("claim.unban-public-missing", "&eClaim {id} is not public-banned.");
+        DEFAULTS.put("claim.unban-not-banned", "&e{player} is not banned from claim {id}.");
+        DEFAULTS.put("claim.banlist-header", "&eBan list for claim {id}:");
+        DEFAULTS.put("claim.banlist-public", "&6 - Public banned");
+        DEFAULTS.put("claim.banlist-empty", "&7 - No players banned");
+        DEFAULTS.put("claim.banlist-entry", "&c - {player}");
+        DEFAULTS.put("claim.evict-usage", "&eUsage: /claim evict [claimId]");
+        DEFAULTS.put("claim.evict-help", "&7Starts a {days}-day eviction notice for the renter.");
+        DEFAULTS.put("claim.evict-no-permission", "&cYou lack permission: &egriefprevention.evict");
+        DEFAULTS.put("claim.not-rented", "&cThis claim is not currently rented.");
+        DEFAULTS.put("claim.rental-sign-confirm-usage", "&eUsage: /claim rentalsignconfirm <world> <x> <y> <z>");
+        DEFAULTS.put("claim.coords-must-be-int", "&cCoordinates must be integers.");
+        DEFAULTS.put("claim.world-unknown", "&cUnknown world: {world}");
+        DEFAULTS.put("claim.sign-not-found", "&cNo managed sign found at that location.");
+        DEFAULTS.put("claim.sign-not-managed", "&cThat sign is not managed by GPExpansion.");
+        DEFAULTS.put("claim.sign-use-denied", "&cYou don't have permission to use this sign.");
+        DEFAULTS.put("claim.pending-rent-none", "&eYou have no pending rental payments to collect.");
+        DEFAULTS.put("claim.pending-rent-failed-money", "&cFailed to give you ${amount} from rentals.");
+        DEFAULTS.put("claim.pending-rent-claimblocks", "&aYou received {amount} claim blocks from rentals!");
+        DEFAULTS.put("claim.pending-rent-collected", "&aSuccessfully collected all pending rental payments!");
+        DEFAULTS.put("claim.teleport-safe-location-fail", "&cCould not compute a safe location in claim {id}.");
+        DEFAULTS.put("claim.untrust-renter", "&cYou cannot untrust {renter} while they are renting your claim.");
+        DEFAULTS.put("claim.untrust-renter-hint", "&eUse {command} instead.");
         
         // Admin
         DEFAULTS.put("admin.gpx-help-header", "&6=== GPExpansion Admin Commands ===");
@@ -167,6 +214,131 @@ public class Messages {
         DEFAULTS.put("admin.gpx-max", "&e/gpx max &7- Modify player creation limits.");
         DEFAULTS.put("admin.debug-enabled", "&aDebug mode enabled.");
         DEFAULTS.put("admin.debug-disabled", "&cDebug mode disabled.");
+        DEFAULTS.put("admin.no-permission", "&cYou don't have permission to use this command.");
+        
+        // Command messages
+        DEFAULTS.put("commands.claim-usage", "&e/{label} <{subs}>");
+        DEFAULTS.put("commands.unknown-subcommand", "&cUnknown subcommand. Try: {subs}");
+        DEFAULTS.put("commands.exec-failed", "&cCommand failed to execute: {command}");
+        DEFAULTS.put("commands.exec-error", "&cAn error occurred while executing the command: {error}");
+        DEFAULTS.put("commands.player-not-online", "&cPlayer '{player}' is not online.");
+        DEFAULTS.put("commands.gpx-max-usage", "&cUsage: /gpx max <sell|rent|mailbox|globals> <add|take|set> <player> <amount>");
+        DEFAULTS.put("commands.gpx-max-invalid-type", "&cInvalid type. Use 'sell', 'rent', 'mailbox', or 'globals'.");
+        DEFAULTS.put("commands.gpx-max-invalid-action", "&cInvalid action. Use 'add', 'take', or 'set'.");
+        DEFAULTS.put("commands.gpx-max-amount-required", "&cPlease specify an amount.");
+        DEFAULTS.put("commands.gpx-max-amount-positive", "&cAmount must be positive.");
+        DEFAULTS.put("commands.gpx-max-amount-invalid", "&cInvalid amount.");
+        DEFAULTS.put("commands.gpx-max-added", "&aAdded {amount} to {player}'s {type} limit.");
+        DEFAULTS.put("commands.gpx-max-added-player", "&eYour {type} limit has been increased by {amount}.");
+        DEFAULTS.put("commands.gpx-max-removed", "&aRemoved {amount} from {player}'s {type} limit.");
+        DEFAULTS.put("commands.gpx-max-removed-player", "&eYour {type} limit has been decreased by {amount}.");
+        DEFAULTS.put("commands.gpx-max-set", "&aSet {player}'s {type} limit to {amount}.");
+        DEFAULTS.put("commands.gpx-max-set-player", "&eYour {type} limit has been set to {amount}.");
+        DEFAULTS.put("commands.gpx-max-current-header", "&b{player}'s current limits:");
+        DEFAULTS.put("commands.gpx-max-current-sell", "&b  Sell signs: {count}");
+        DEFAULTS.put("commands.gpx-max-current-rent", "&b  Rent signs: {count}");
+        DEFAULTS.put("commands.gpx-max-current-mailbox", "&b  Mailbox signs: {count}");
+        DEFAULTS.put("commands.gpx-max-current-globals", "&b  Global claims: {count}");
+        DEFAULTS.put("commands.gpx-max-desync-warning", "&eWarning: Permission desync detected for {player}!");
+        DEFAULTS.put("commands.gpx-max-desync-cleanup", "&aPermissions will be automatically cleaned up using {plugin}.");
+        DEFAULTS.put("commands.gpx-max-desync-unsupported", "&cNo supported permission plugin found for automatic cleanup.");
+        DEFAULTS.put("commands.gpx-max-desync-manual", "&cPlease manually remove duplicate permissions and set the highest one.");
+        
+        // Claim flags
+        DEFAULTS.put("flags.no-permission", "&cYou don't have permission to set claim flags.");
+        DEFAULTS.put("flags.no-permission-flag", "&cYou don't have permission to use the {flag} flag.");
+        DEFAULTS.put("flags.not-owner", "&cYou can only modify flags on your own claims.");
+        DEFAULTS.put("flags.toggled", "&aFlag {flag} {state}.");
+        DEFAULTS.put("flags.toggle-failed", "&cFailed to toggle flag {flag}.");
+        
+        // Mailbox
+        DEFAULTS.put("mailbox.invalid-sign", "&cInvalid mailbox sign.");
+        DEFAULTS.put("mailbox.claim-not-found", "&cClaim not found.");
+        DEFAULTS.put("mailbox.no-container", "&cNo container found in mailbox claim.");
+        DEFAULTS.put("mailbox.invalid-container", "&cInvalid container.");
+        DEFAULTS.put("mailbox.deposit-only", "&cYou can only deposit items, not take them!");
+        DEFAULTS.put("mailbox.full-warning", "&cWARNING: This mailbox is completely full!");
+        DEFAULTS.put("mailbox.almost-full-warning", "&eWARNING: This mailbox is almost full ({slots} slots left)!");
+        DEFAULTS.put("mailbox.storage-full-warning", "&cWARNING: Your mailbox at {x},{y},{z} is completely full!");
+        DEFAULTS.put("mailbox.storage-almost-full-warning", "&eWARNING: Your mailbox at {x},{y},{z} is almost full ({slots} slots left)!");
+        DEFAULTS.put("mailbox.already-purchased", "&cThis mailbox has already been purchased.");
+        DEFAULTS.put("mailbox.sign-not-found", "&cMailbox sign not found.");
+        DEFAULTS.put("mailbox.payment-failed", "&cPayment failed.");
+        DEFAULTS.put("mailbox.purchase-success", "&aYou have successfully purchased this mailbox!");
+        DEFAULTS.put("mailbox.economy-not-available", "&cEconomy not available. Please ensure Vault and an economy provider are installed.");
+        DEFAULTS.put("mailbox.not-enough-money", "&cYou don't have enough money.");
+        DEFAULTS.put("mailbox.not-enough-experience", "&cYou don't have enough experience.");
+        
+        // Sign creation / interaction extras
+        DEFAULTS.put("sign-creation.sign-created", "&aSign created for claim &6{id}&a.");
+        DEFAULTS.put("sign-creation.item-setup-reminder", "&eHold the payment item in your offhand and right-click the sign to set it.");
+        DEFAULTS.put("sign-interaction.rent-own-claim", "&cYou cannot rent your own claim.");
+        DEFAULTS.put("sign-interaction.rent-already-rented", "&cThis claim is already rented.");
+        DEFAULTS.put("sign-interaction.sign-missing-data", "&cThis sign is missing required data. Please break and recreate it.");
+        DEFAULTS.put("sign-interaction.sign-missing-economy", "&cThis sign is missing economy data. Please break and recreate it.");
+        DEFAULTS.put("sign-interaction.invalid-claim-id", "&cInvalid claim ID on sign. Please break and recreate the sign.");
+        DEFAULTS.put("sign-interaction.invalid-economy-type", "&cInvalid economy type on sign.");
+        DEFAULTS.put("sign-interaction.economy-required", "&cThis rental requires an economy provider.");
+        DEFAULTS.put("sign-interaction.error", "&cAn error occurred while processing this sign.");
+        DEFAULTS.put("sign-interaction.item-updated", "&aSign updated with payment item: &e{item}&a.");
+        DEFAULTS.put("sign-interaction.item-set-hint", "&eHold the payment item in your offhand and right-click to set it.");
+        DEFAULTS.put("sign-interaction.item-not-configured", "&cThis sign is not yet configured. The claim owner needs to set the payment item.");
+        DEFAULTS.put("sign-interaction.buy-success-claim", "&aYou have purchased claim &6{id}&a. The claim is now yours!");
+        DEFAULTS.put("sign-interaction.owner-payment", "&a{player} has {action} your rental: [&6{id}&a]");
+        DEFAULTS.put("sign-interaction.owner-claimblocks", "&aYou received {amount} claim blocks from rental!");
+        DEFAULTS.put("sign-interaction.owner-items", "&aYou received items from rental!");
+        
+        // General additions
+        DEFAULTS.put("general.unknown-player-online", "&cUnknown player: {player}. &eOnline players: {online}");
+        DEFAULTS.put("permissions.missing", "&cYou lack permission: &e{permission}");
+        DEFAULTS.put("gui.no-previous", "&eNo previous menu to return to.");
+        DEFAULTS.put("wizard.cancel-none", "&7You don't have an active setup or auto-paste mode to cancel.");
+        DEFAULTS.put("claiminfo.no-permission-other", "&cYou don't have permission to view info for claims you don't own.");
+        
+        // Eviction additions
+        DEFAULTS.put("eviction.notice-passed", "&aThe eviction notice period has passed. You can now remove the renter.");
+        DEFAULTS.put("eviction.cancel-hint", "&7Use /claim evict cancel {id} to cancel or break the rental sign.");
+        DEFAULTS.put("eviction.notice-in-progress", "&eAn eviction is already in progress. {time} remaining before you can remove the renter.");
+        DEFAULTS.put("eviction.notice-started", "&aEviction notice started for {renter}.");
+        DEFAULTS.put("eviction.notice-duration", "&eThey have {days} days before you can remove them from the claim or break the sign.");
+        DEFAULTS.put("eviction.notice-no-extend", "&7During this time, the renter cannot extend their rental.");
+        DEFAULTS.put("eviction.notice-received", "&cYou have received an eviction notice for claim {id}.");
+        DEFAULTS.put("eviction.notice-days", "&eYou have {days} days before you will be removed from this claim.");
+        DEFAULTS.put("eviction.no-pending", "&cThere is no pending eviction for this claim.");
+        DEFAULTS.put("eviction.no-pending-info", "&7There is no pending eviction for this claim.");
+        DEFAULTS.put("eviction.cancelled", "&aEviction cancelled for claim {id}.");
+        DEFAULTS.put("eviction.cancelled-notify", "&aThe eviction notice for claim {id} has been cancelled.");
+        DEFAULTS.put("eviction.effective", "&aEviction for {renter} is now effective.");
+        DEFAULTS.put("eviction.effective-hint", "&7You can now remove them from the claim or break the rental sign.");
+        DEFAULTS.put("eviction.pending", "&eEviction notice for {renter} is pending.");
+        
+        // Eviction messages
+        DEFAULTS.put("eviction.cannot-manage-sign", "&cYou cannot manage this sign.");
+        DEFAULTS.put("eviction.active-renter", "&cThis claim has an active renter.");
+        DEFAULTS.put("eviction.start-eviction-notice", "&eUse {command} to start a {days}-day eviction notice. &7(New: {coords} placeholder available)");
+        DEFAULTS.put("eviction.notice-pending", "&cEviction notice is still pending.");
+        DEFAULTS.put("eviction.time-remaining", "&e{time} remaining before you can remove the renter.");
+        DEFAULTS.put("eviction.cannot-break-sign", "&cYou cannot break this sign.");
+        DEFAULTS.put("eviction.rental-sign-removed", "&aRental sign removed and rental cleared.");
+        DEFAULTS.put("eviction.check-status-hint", "&7Use {command} to check status.");
+        DEFAULTS.put("eviction.cannot-remove-renter", "&7You cannot break this sign or remove the renter until the eviction period has passed.");
+        DEFAULTS.put("eviction.rental-expired", "&6Your rented claim has expired. &7(Location: {coords})");
+        DEFAULTS.put("eviction.cannot-abandon-during-eviction", "&cYou cannot abandon this claim while an eviction is in progress.");
+        DEFAULTS.put("eviction.abandon-eviction-command", "/claim evict {id}");
+        DEFAULTS.put("eviction.eviction-in-progress", "&cYou cannot extend this rental - an eviction notice is in progress.");
+        DEFAULTS.put("eviction.confirm-deletion", "Confirm deletion");
+        DEFAULTS.put("eviction.confirm-deletion-click", "Click here to delete the rental or break the sign again while sneaking.");
+        DEFAULTS.put("eviction.confirm-deletion-alt", "You can also confirm by sneak + right clicking the sign.");
+        
+        // Claim info messages
+        DEFAULTS.put("claim.not-standing-in-claim", "You are not standing in a claim.");
+        DEFAULTS.put("claim.provide-id", "Provide a claim ID.");
+        
+        // Empty line for formatting
+        DEFAULTS.put("general.empty-line", "");
+        
+        // Version for migration tracking
+        DEFAULTS.put("version", "0.1.3a");
     }
     
     public Messages(GPExpansionPlugin plugin) {
@@ -188,6 +360,22 @@ public class Messages {
         
         langConfig = YamlConfiguration.loadConfiguration(langFile);
         
+        // If no version key exists, treat as legacy and replace with fresh lang.yml
+        if (!langConfig.contains("version")) {
+            File backup = new File(plugin.getDataFolder(), "lang.yml.backup");
+            if (backup.exists()) {
+                backup = new File(plugin.getDataFolder(), "lang.yml.backup." + System.currentTimeMillis());
+            }
+            if (langFile.renameTo(backup)) {
+                plugin.getLogger().warning("Detected legacy lang.yml without version. Backed up to " + backup.getName());
+            } else {
+                plugin.getLogger().warning("Detected legacy lang.yml without version. Failed to back it up.");
+            }
+            
+            plugin.saveResource("lang.yml", false);
+            langConfig = YamlConfiguration.loadConfiguration(langFile);
+        }
+        
         // Load defaults from jar
         InputStream defaultStream = plugin.getResource("lang.yml");
         if (defaultStream != null) {
@@ -199,6 +387,9 @@ public class Messages {
         
         // Add any missing keys from DEFAULTS to the user's lang.yml
         addMissingKeys();
+        
+        // Check version and handle migrations
+        checkAndMigrateVersion();
     }
     
     /**
@@ -221,6 +412,61 @@ public class Messages {
             saveLanguageFile();
             plugin.getLogger().info("Updated lang.yml with missing keys.");
         }
+    }
+    
+    /**
+     * Check the lang file version and handle migrations for older versions.
+     */
+    private void checkAndMigrateVersion() {
+        String langVersion = langConfig.getString("version", "0.1.2a");
+        
+        // If version is older than 0.1.3a, add upgrade notices
+        if (isOlderVersion(langVersion, "0.1.3a")) {
+            boolean modified = false;
+            
+            // Add upgrade notices to eviction and expiry messages if they don't have {coords}
+            String startEvictionNotice = langConfig.getString("eviction.start-eviction-notice");
+            if (startEvictionNotice != null && !startEvictionNotice.contains("{coords}")) {
+                langConfig.set("eviction.start-eviction-notice", startEvictionNotice + " &7(New: {coords} placeholder available)");
+                modified = true;
+                plugin.getLogger().info("Added {coords} placeholder notice to eviction.start-eviction-notice");
+            }
+            
+            String rentalExpired = langConfig.getString("eviction.rental-expired");
+            if (rentalExpired != null && !rentalExpired.contains("{coords}")) {
+                langConfig.set("eviction.rental-expired", rentalExpired + " &7(Location: {coords})");
+                modified = true;
+                plugin.getLogger().info("Added {coords} placeholder notice to eviction.rental-expired");
+            }
+            
+            // Update version to current
+            langConfig.set("version", "0.1.3a");
+            
+            if (modified) {
+                saveLanguageFile();
+                plugin.getLogger().info("Updated lang.yml to version 0.1.3a with {coords} placeholder support.");
+            }
+        }
+        
+        currentVersion = langConfig.getString("version", "0.1.3a");
+    }
+    
+    /**
+     * Compare version strings to check if installed version is older than target version.
+     */
+    private boolean isOlderVersion(String current, String target) {
+        // Simple version comparison for X.Y.Za format
+        String[] currentParts = current.replaceAll("[^0-9.]", "").split("\\.");
+        String[] targetParts = target.replaceAll("[^0-9.]", "").split("\\.");
+        
+        for (int i = 0; i < Math.max(currentParts.length, targetParts.length); i++) {
+            int currentNum = i < currentParts.length ? Integer.parseInt(currentParts[i]) : 0;
+            int targetNum = i < targetParts.length ? Integer.parseInt(targetParts[i]) : 0;
+            
+            if (currentNum < targetNum) return true;
+            if (currentNum > targetNum) return false;
+        }
+        return false; // Same version or newer
     }
     
     /**

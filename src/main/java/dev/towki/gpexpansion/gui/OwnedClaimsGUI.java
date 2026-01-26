@@ -1,7 +1,7 @@
 package dev.towki.gpexpansion.gui;
 
 import dev.towki.gpexpansion.gp.GPBridge;
-import dev.towki.gpexpansion.storage.RentalStore;
+
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -10,11 +10,8 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 
 /**
  * GUI for viewing owned claims with filter options.
@@ -52,6 +49,7 @@ public class OwnedClaimsGUI extends BaseGUI {
     private FilterType currentFilter = FilterType.ALL;
     private int currentPage = 0;
     private List<ClaimInfo> filteredClaims = new ArrayList<>();
+    private String searchQuery = null;
     
     // Slot positions
     private static final int FILTER_SLOT = 49; // Bottom center (hopper)
@@ -67,9 +65,46 @@ public class OwnedClaimsGUI extends BaseGUI {
     };
     
     public OwnedClaimsGUI(GUIManager manager, Player player) {
+        this(manager, player, null);
+    }
+
+    public OwnedClaimsGUI(GUIManager manager, Player player, String searchQuery) {
         super(manager, player, "owned-claims");
         this.gp = new GPBridge();
-        loadClaims();
+        this.searchQuery = searchQuery;
+        // Claims loaded via openAsync or synchronously
+    }
+    
+    /**
+     * Open GUI with async claim loading to prevent server hang.
+     */
+    public static void openAsync(GUIManager manager, Player player, String searchQuery) {
+        openAsyncWithState(manager, player, searchQuery, null, 0);
+    }
+    
+    /**
+     * Open GUI with async claim loading and restore previous state (filter, page).
+     */
+    public static void openAsyncWithState(GUIManager manager, Player player, String searchQuery, String filterType, int page) {
+        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runAsyncNow(manager.getPlugin(), () -> {
+            OwnedClaimsGUI gui = new OwnedClaimsGUI(manager, player, searchQuery);
+            
+            // Restore filter state if provided
+            if (filterType != null) {
+                try {
+                    gui.currentFilter = FilterType.valueOf(filterType);
+                } catch (IllegalArgumentException ignored) {}
+            }
+            gui.currentPage = page;
+            
+            gui.loadClaims();
+            dev.towki.gpexpansion.scheduler.SchedulerAdapter.runEntity(manager.getPlugin(), player, () -> {
+                // Save state for /claim ! command
+                GUIStateTracker.saveState(player, GUIStateTracker.GUIType.OWNED_CLAIMS, 
+                    gui.searchQuery, gui.currentFilter.name(), gui.currentPage);
+                manager.openGUI(player, gui);
+            }, null);
+        });
     }
     
     private void loadClaims() {
@@ -94,16 +129,25 @@ public class OwnedClaimsGUI extends BaseGUI {
             info.isMailbox = isClaimMailbox(claimId);
             
             // Get claim details
-            info.name = plugin.getNameStore().get(claimId).orElse("Claim #" + claimId);
+            info.name = plugin.getClaimDataStore().getCustomName(claimId).orElse("Claim #" + claimId);
+            info.ownerName = player.getName();
             info.childCount = gp.getSubclaims(claim).size();
             info.area = getClaimArea(claim);
             info.location = getClaimLocation(claim);
             
             // Apply filter
-            if (matchesFilter(info)) {
+            if (matchesFilter(info) && matchesSearch(info)) {
                 filteredClaims.add(info);
             }
         }
+    }
+
+    private boolean matchesSearch(ClaimInfo info) {
+        if (searchQuery == null || searchQuery.isEmpty()) return true;
+        String query = searchQuery.toLowerCase();
+        if (info.claimId != null && info.claimId.equalsIgnoreCase(searchQuery)) return true;
+        if (info.name != null && info.name.toLowerCase().contains(query)) return true;
+        return info.ownerName != null && info.ownerName.toLowerCase().contains(query);
     }
     
     private boolean matchesFilter(ClaimInfo info) {
@@ -118,8 +162,7 @@ public class OwnedClaimsGUI extends BaseGUI {
     }
     
     private boolean isClaimRented(String claimId) {
-        RentalStore rentalStore = plugin.getRentalStore();
-        return rentalStore.isRented(claimId);
+        return plugin.getClaimDataStore().isRented(claimId);
     }
     
     private boolean isClaimForSale(String claimId) {
@@ -130,7 +173,7 @@ public class OwnedClaimsGUI extends BaseGUI {
     
     private boolean isClaimMailbox(String claimId) {
         // Check if claim is used as mailbox
-        return plugin.getMailboxStore().isMailbox(claimId);
+        return plugin.getClaimDataStore().isMailbox(claimId);
     }
     
     private int getClaimArea(Object claim) {
@@ -159,7 +202,10 @@ public class OwnedClaimsGUI extends BaseGUI {
     
     @Override
     public Inventory createInventory() {
-        inventory = createBaseInventory(getString("title", "&6&lMy Claims"), 54);
+        String title = searchQuery != null && !searchQuery.isEmpty()
+            ? getString("title-search", "&6&lMy Claims - \"{query}\"").replace("{query}", searchQuery)
+            : getString("title", "&6&lMy Claims");
+        inventory = createBaseInventoryWithTitle(title, 54);
         
         populateInventory();
         
@@ -210,7 +256,15 @@ public class OwnedClaimsGUI extends BaseGUI {
     }
     
     private ItemStack createSearchItem() {
-        return createItem(Material.COMPASS, "&b&lSearch Claims", List.of("&7Search claims by name", "", "&eClick to search"));
+        List<String> lore = new ArrayList<>();
+        if (searchQuery != null && !searchQuery.isEmpty()) {
+            lore.add("&7Current search: &e" + searchQuery);
+            lore.add("");
+        }
+        lore.add("&7Search by owner, ID, or name");
+        lore.add("");
+        lore.add("&eClick to search");
+        return createItem(Material.COMPASS, "&b&lSearch Claims", lore);
     }
     
     private ItemStack createPrevPageItem() {
@@ -282,37 +336,9 @@ public class OwnedClaimsGUI extends BaseGUI {
             player.closeInventory();
             SignInputGUI.openSearch(plugin, player,
                 query -> {
-                    // Search for matching claim by ID or name
-                    String searchLower = query.toLowerCase();
-                    ClaimInfo match = null;
-                    
-                    // First try exact ID match
-                    for (ClaimInfo info : filteredClaims) {
-                        if (info.claimId.equals(query)) {
-                            match = info;
-                            break;
-                        }
-                    }
-                    
-                    // Then try name contains match
-                    if (match == null) {
-                        for (ClaimInfo info : filteredClaims) {
-                            if (info.name.toLowerCase().contains(searchLower)) {
-                                match = info;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    if (match != null) {
-                        // Open claim options for the matched claim
-                        manager.openClaimOptions(player, match.claim, match.claimId);
-                    } else {
-                        plugin.getMessages().send(player, "gui.search-no-results", "{query}", query);
-                        manager.openOwnedClaims(player);
-                    }
+                    OwnedClaimsGUI.openAsync(manager, player, query);
                 },
-                () -> manager.openOwnedClaims(player));
+                () -> OwnedClaimsGUI.openAsync(manager, player, searchQuery));
             return;
         }
         
@@ -353,7 +379,7 @@ public class OwnedClaimsGUI extends BaseGUI {
         if (isLeftClick(event) && !event.isShiftClick()) {
             // Teleport to claim
             if (player.hasPermission("griefprevention.claim.teleport")) {
-                closeAndRun(() -> player.performCommand("claim tp " + info.claimId));
+                closeAndRunOnMainThread("claim tp " + info.claimId);
             } else {
                 plugin.getMessages().send(player, "general.no-permission");
             }
@@ -365,8 +391,8 @@ public class OwnedClaimsGUI extends BaseGUI {
                     ? info.name : "Unnamed";
                 SignInputGUI.openRename(plugin, player, displayName,
                     newName -> {
-                        plugin.getNameStore().set(info.claimId, newName);
-                        plugin.getNameStore().save();
+                        plugin.getClaimDataStore().setCustomName(info.claimId, newName);
+                        plugin.getClaimDataStore().save();
                         plugin.getMessages().send(player, "gui.claim-renamed", "{id}", info.claimId, "{name}", newName);
                         manager.openOwnedClaims(player);
                     },
@@ -387,6 +413,7 @@ public class OwnedClaimsGUI extends BaseGUI {
         final Object claim;
         final String claimId;
         String name;
+        String ownerName;
         int childCount;
         int area;
         String location;

@@ -3,8 +3,7 @@ package dev.towki.gpexpansion.confirm;
 import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
 import dev.towki.gpexpansion.listener.SignListener;
-import dev.towki.gpexpansion.storage.PendingRentStore;
-import dev.towki.gpexpansion.storage.RentalStore;
+import dev.towki.gpexpansion.storage.ClaimDataStore;
 import dev.towki.gpexpansion.util.EcoKind;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
@@ -108,7 +107,7 @@ public class ConfirmationService {
         // Send the messages with improved header/footer
         player.sendMessage(headerLine);
         player.sendMessage(header);
-        player.sendMessage(Component.text(""));
+        player.sendMessage(plugin.getMessages().get("general.empty-line"));
         player.sendMessage(buttons);
         player.sendMessage(headerLine);
     }
@@ -130,9 +129,9 @@ public class ConfirmationService {
             if (p.signLoc == null || p.signLoc.getWorld() == null) return false;
             
             // Check if there's a pending eviction - if so, the renter cannot extend
-            dev.towki.gpexpansion.storage.EvictionStore evictionStore = plugin.getEvictionStore();
-            if (evictionStore != null && evictionStore.hasPendingEviction(p.claimId)) {
-                player.sendMessage(Component.text("You cannot extend this rental - an eviction notice is in progress.", NamedTextColor.RED));
+            ClaimDataStore.EvictionData eviction = plugin.getClaimDataStore().getEviction(p.claimId).orElse(null);
+            if (eviction != null) {
+                plugin.getMessages().send(player, "eviction.eviction-in-progress");
                 return true;
             }
             
@@ -172,7 +171,7 @@ public class ConfirmationService {
             GPBridge gpBridge = new GPBridge();
             java.util.Optional<Object> claimOpt = gpBridge.findClaimById(claimId);
             if (!claimOpt.isPresent()) {
-                player.sendMessage(Component.text("Claim ID not found: " + claimId, NamedTextColor.RED));
+                plugin.getMessages().send(player, "claim.not-found", "{id}", claimId);
                 return;
             }
             
@@ -185,7 +184,7 @@ public class ConfirmationService {
             boolean transferred = gpBridge.transferClaimOwner(claim, player.getUniqueId());
             if (!transferred) {
                 plugin.getLogger().warning("Direct claim transfer failed for " + player.getName() + " on claim " + claimId);
-                player.sendMessage(Component.text("Failed to transfer claim ownership. Please contact an admin.", NamedTextColor.RED));
+                plugin.getMessages().send(player, "claim.transfer-failed-contact");
                 return;
             } else {
                 plugin.getLogger().info("Claim " + claimId + " ownership transferred to " + player.getName() + " via direct API");
@@ -207,12 +206,10 @@ public class ConfirmationService {
                 });
             }
 
-            RentalStore store = plugin.getRentalStore();
-            if (store != null) {
-                store.clear(claimId);
-                store.save();
-            }
-            player.sendMessage(Component.text("You have purchased claim " + claimId + ". The claim is now yours!", NamedTextColor.GREEN));
+            ClaimDataStore dataStore = plugin.getClaimDataStore();
+            dataStore.clearRental(claimId);
+            dataStore.save();
+            plugin.getMessages().send(player, "sign-interaction.buy-success-claim", "{id}", claimId);
         });
     }
 
@@ -226,15 +223,12 @@ public class ConfirmationService {
         long now = System.currentTimeMillis();
         long add = durationToMillis(perClick);
         long cap = now + durationToMillis(maxCap);
-        RentalStore store = plugin.getRentalStore();
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
         Long currentExpiry = pdc.get(new org.bukkit.NamespacedKey(plugin, "rent.expiry"), PersistentDataType.LONG);
-        if (store != null) {
-            Map<String, RentalStore.Entry> allRentals = store.all();
-            RentalStore.Entry existingEntry = allRentals.get(claimId);
-            if (existingEntry != null) {
-                long persisted = existingEntry.expiry;
-                if (persisted > (currentExpiry == null ? 0L : currentExpiry)) currentExpiry = persisted;
-            }
+        ClaimDataStore.RentalData existingEntry = dataStore.getRental(claimId).orElse(null);
+        if (existingEntry != null) {
+            long persisted = existingEntry.expiry;
+            if (persisted > (currentExpiry == null ? 0L : currentExpiry)) currentExpiry = persisted;
         }
         long base = currentExpiry != null && currentExpiry > now ? currentExpiry : now;
         long newExpiry = Math.min(base + add, cap);
@@ -283,10 +277,15 @@ public class ConfirmationService {
             s.update(true);
         }
 
-        if (store != null) {
-            store.set(claimId, player.getUniqueId(), newExpiry);
-            store.save();
+        long start = existingEntry != null ? existingEntry.start : now;
+        dataStore.setRental(claimId, player.getUniqueId(), newExpiry, start);
+        ClaimDataStore.RentalData updated = dataStore.getRental(claimId).orElse(null);
+        if (updated != null) {
+            updated.reminders.clear();
+            updated.pendingPayment = false; // clear pending expiry notice
+            updated.paymentFailed = false;  // clear eviction flag
         }
+        dataStore.save();
         long addedMillis = newExpiry - now;
         String costFormatted = formatEcoAmount(kind, ecoAmtRaw);
         plugin.getMessages().send(player, "sign-interaction.rent-success",
@@ -306,14 +305,15 @@ public class ConfirmationService {
                     // Owner is online - give payment immediately
                     givePaymentToPlayer(owner, kind, amount, isPurchase);
                     String action = isPurchase ? "purchased" : "rented";
-                    owner.sendMessage(Component.text(renterName + " has " + action + " your rental: [" + claimId + "]", NamedTextColor.GREEN));
+                    plugin.getMessages().send(owner, "sign-interaction.owner-payment",
+                        "{player}", renterName,
+                        "{action}", action,
+                        "{id}", claimId);
                 } else {
                     // Owner is offline - store for later collection
-                    PendingRentStore pendingStore = plugin.getPendingRentStore();
-                    if (pendingStore != null) {
-                        pendingStore.addPendingRent(claimId, ownerUuid, renterName, kind, amount, isPurchase);
-                        pendingStore.save();
-                    }
+                    ClaimDataStore dataStore = plugin.getClaimDataStore();
+                    dataStore.setPendingRent(claimId, ownerUuid, renterName, kind, amount, System.currentTimeMillis(), isPurchase);
+                    dataStore.save();
                 }
             }
         } catch (Exception ignored) {}
@@ -345,14 +345,15 @@ public class ConfirmationService {
                 case "CLAIMBLOCKS":
                     // Add claim blocks to player (this would need GP integration)
                     // For now, just send a message
-                    player.sendMessage(Component.text("You received " + amt + " claim blocks from rental!", NamedTextColor.GREEN));
+                    plugin.getMessages().send(player, "sign-interaction.owner-claimblocks",
+                        "{amount}", String.valueOf((int) amt));
                     break;
                 case "ITEM":
                     // Items would need more complex handling
                     // Add custom item handling here
                     // For example:
                     // player.getInventory().addItem(new ItemStack(Material.DIAMOND, (int) amt));
-                    player.sendMessage(Component.text("You received items from rental!", NamedTextColor.GREEN));
+                    plugin.getMessages().send(player, "sign-interaction.owner-items");
                     break;
             }
         } catch (NumberFormatException ignored) {}

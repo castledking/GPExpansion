@@ -1,6 +1,7 @@
 # GPExpansion Language File
 # Use & for color codes, supports MiniMessage format
 # Placeholders are shown in {brackets}
+version: "0.1.3a"
 
 # =============================================================================
 # GENERAL MESSAGES
@@ -12,6 +13,39 @@ general:
   reload-fail: "&cFailed to reload configuration: {error}"
   player-only: "&cThis command can only be used by players."
   unknown-player: "&cUnknown player: {player}"
+  unknown-player-online: "&cUnknown player: {player}. &eOnline players: {online}"
+
+# =============================================================================
+# UPDATE CHECKING MESSAGES
+# =============================================================================
+update-checker:
+  # Console messages
+  console-checking: "&8[&6GPX&8] &7Checking for updates on SpigotMC..."
+  console-up-to-date: "&8[&6GPX&8] &aYou are running the latest version!"
+  console-update-available: "&8[&6GPX&8] &eUpdate available! Current: {current}, Latest: {latest}"
+  console-download-link: "&8[&6GPX&8] &7Download: {url}"
+  console-check-failed: "&8[&6GPX&8] &cFailed to check for updates: {error}"
+  
+  # In-game messages (to admins)
+  ingame-update-available: "&8[&6GPX&8] &e&lUPDATE AVAILABLE!&r &7Current: {current}, Latest: {latest}"
+  ingame-download-link: "&8[&6GPX&8] &7Download at: &e{url}"
+  ingame-check-failed: "&8[&6GPX&8] &cFailed to check for updates"
+
+# =============================================================================
+# CONFIGURATION MIGRATION MESSAGES
+# =============================================================================
+migration:
+  # Console messages
+  console-starting: "&8[&6GPX&8] &7Starting configuration migration from version {old} to {new}..."
+  console-backup-created: "&8[&6GPX&8] &7Backup created: {backup-file}"
+  console-deprecated-file: "&8[&6GPX&8] &eDeprecated file found: {file} - This file is safe to delete."
+  console-file-recreated: "&8[&6GPX&8] &7Recreated file: {file} with new format"
+  console-migration-complete: "&8[&6GPX&8] &aConfiguration migration completed successfully!"
+  console-migration-failed: "&8[&6GPX&8] &cConfiguration migration failed: {error}"
+  
+  # In-game messages (to admins)
+  ingame-migration-complete: "&8[&6GPX&8] &aConfiguration has been migrated to the new version!"
+  ingame-deprecated-files: "&8[&6GPX&8] &eSome deprecated files were detected. Check console for details."
 
 # =============================================================================
 # PERMISSION MESSAGES
@@ -32,6 +66,7 @@ permissions:
   # Anywhere permission (creating signs outside own claims)
   anywhere-denied: "&cYou can only create {signtype} signs in your own claims."
   anywhere-denied-detail: "&7  Missing: &e{permission}"
+  missing: "&cYou lack permission: &e{permission}"
 
 # =============================================================================
 # SIGN CREATION MESSAGES
@@ -41,6 +76,8 @@ sign-creation:
   rent-sign-created: "&aRent sign created successfully!"
   sell-sign-created: "&aSell sign created successfully!"
   mailbox-sign-created: "&aMailbox sign created successfully!"
+  sign-created: "&aSign created for claim &6{id}&a."
+  item-setup-reminder: "&eHold the payment item in your offhand and right-click the sign to set it."
   
   # Limit messages
   rent-limit-reached: "&cYou have reached your rent sign limit ({current}/{max})."
@@ -58,6 +95,8 @@ sign-creation:
   
   # Claim validation
   not-in-claim: "&cThis sign must be placed inside a claim."
+  not-claim-owner: "&cYou must be the owner of this claim to create a global claim sign."
+  unsafe-location: "&cThis location is not safe for a spawn point. Please place the sign in a safer area."
   not-claim-owner: "&cYou must be the owner of this claim to create this sign."
   claim-already-rented: "&cThis claim is already being rented."
   claim-already-for-sale: "&cThis claim is already for sale."
@@ -97,12 +136,33 @@ sign-interaction:
   rent-cannot-afford: "&cYou cannot afford this rental. Cost: {cost}"
   rent-already-renting: "&cYou are already renting this claim."
   rent-claim-unavailable: "&cThis claim is not available for rent."
+  rent-own-claim: "&cYou cannot rent your own claim."
+  rent-already-rented: "&cThis claim is already rented."
+  
+  # Sign data issues
+  sign-missing-data: "&cThis sign is missing required data. Please break and recreate it."
+  sign-missing-economy: "&cThis sign is missing economy data. Please break and recreate it."
+  invalid-claim-id: "&cInvalid claim ID on sign. Please break and recreate the sign."
+  invalid-economy-type: "&cInvalid economy type on sign."
+  economy-required: "&cThis rental requires an economy provider."
+  error: "&cAn error occurred while processing this sign."
+  
+  # Item sign setup
+  item-updated: "&aSign updated with payment item: &e{item}&a."
+  item-set-hint: "&eHold the payment item in your offhand and right-click to set it."
+  item-not-configured: "&cThis sign is not yet configured. The claim owner needs to set the payment item."
   
   # Sell sign messages
   buy-success: "&aCongratulations! You now own this claim!"
+  buy-success-claim: "&aYou have purchased claim &6{id}&a. The claim is now yours!"
   buy-cannot-afford: "&cYou cannot afford this claim. Cost: {cost}"
   buy-already-owner: "&cYou already own this claim."
   buy-claim-unavailable: "&cThis claim is not available for purchase."
+  
+  # Owner payment notifications
+  owner-payment: "&a{player} has {action} your rental: [&6{id}&a]"
+  owner-claimblocks: "&aYou received {amount} claim blocks from rental!"
+  owner-items: "&aYou received items from rental!"
   
   # Mailbox messages
   mailbox-deposit-success: "&aDeposited {amount} into the mailbox!"
@@ -125,13 +185,34 @@ sign-interaction:
   confirmation-cancelled: "&eCancelled."
 
 # =============================================================================
+# MAILBOX MESSAGES
+# =============================================================================
+mailbox:
+  invalid-sign: "&cInvalid mailbox sign."
+  claim-not-found: "&cClaim not found."
+  no-container: "&cNo container found in mailbox claim."
+  invalid-container: "&cInvalid container."
+  deposit-only: "&cYou can only deposit items, not take them!"
+  full-warning: "&cWARNING: This mailbox is completely full!"
+  almost-full-warning: "&eWARNING: This mailbox is almost full ({slots} slots left)!"
+  storage-full-warning: "&cWARNING: Your mailbox at {x},{y},{z} is completely full!"
+  storage-almost-full-warning: "&eWARNING: Your mailbox at {x},{y},{z} is almost full ({slots} slots left)!"
+  already-purchased: "&cThis mailbox has already been purchased."
+  sign-not-found: "&cMailbox sign not found."
+  payment-failed: "&cPayment failed."
+  purchase-success: "&aYou have successfully purchased this mailbox!"
+  economy-not-available: "&cEconomy not available. Please ensure Vault and an economy provider are installed."
+  not-enough-money: "&cYou don't have enough money."
+  not-enough-experience: "&cYou don't have enough experience."
+
+# =============================================================================
 # CLAIM TELEPORT MESSAGES
 # =============================================================================
 claim:
   teleport-usage: "&cUsage: /claim tp <claimId> [player]"
-  teleport-success: "&aTeleported to claim &6{id}&a."
-  teleport-other-success: "&aTeleported &6{player}&a to claim &6{id}&a."
-  teleport-by-other: "&aYou were teleported to claim &6{id}&a."
+  teleport-success: "&aTeleported to claim &6{id}&a ({name}&a)."
+  teleport-other-success: "&aTeleported &6{player}&a to claim &6{id}&a ({name}&a)."
+  teleport-by-other: "&aYou were teleported to claim &6{id}&a ({name}&a)."
   teleport-no-location: "&cCould not find a teleport location for claim &6{id}&c."
   player-not-found: "&cPlayer not found: &6{player}"
   setspawn-not-in-claim: "&cYou must be standing inside a claim to set its spawn point."
@@ -147,6 +228,7 @@ gui:
   rental-renew-hint: "&eFind the rental sign for claim &6{id}&e and right-click to renew."
   ban-manage-hint: "&eManaging bans for claim &6{id}&e:"
   not-enabled: "&cGUI mode is not enabled."
+  no-previous: "&eNo previous menu to return to."
   claim-listed: "&aClaim &6{id}&a is now publicly listed!"
   claim-unlisted: "&eClaim &6{id}&e is no longer publicly listed."
   icon-set: "&aIcon set for claim &6{id}&a."
@@ -159,6 +241,16 @@ gui:
   color-not-allowed: "&cYou don't have permission to use the color code &e{code}&c."
   format-not-allowed: "&cYou don't have permission to use the format code &e{code}&c."
 
+# =============================================================================
+# CLAIM FLAGS MESSAGES
+# =============================================================================
+flags:
+  no-permission: "&cYou don't have permission to set claim flags."
+  no-permission-flag: "&cYou don't have permission to use the {flag} flag."
+  not-owner: "&cYou can only modify flags on your own claims."
+  toggled: "&aFlag {flag} {state}."
+  toggle-failed: "&cFailed to toggle flag {flag}."
+
 claim:
   global-usage: "&cUsage: /claim global <true|false> [claimId]"
   global-not-in-claim: "&cYou must be standing in a claim or provide a claim ID."
@@ -168,6 +260,13 @@ claim:
 # COMMAND MESSAGES
 # =============================================================================
 commands:
+  # Generic command messages
+  claim-usage: "&e/{label} <{subs}>"
+  unknown-subcommand: "&cUnknown subcommand. Try: {subs}"
+  exec-failed: "&cCommand failed to execute: {command}"
+  exec-error: "&cAn error occurred while executing the command: {error}"
+  player-not-online: "&cPlayer '{player}' is not online."
+  
   # Mailbox command
   mailbox-help-title: "&6Mailbox Usage:"
   mailbox-help-step1: "&71. Create a 1x1x1 3D subdivision claim"
@@ -189,6 +288,29 @@ commands:
   sellclaim-help-desc: "&7Creates a sell sign for your claim"
   sellclaim-cmd-setup: "&7/sellclaim [id] - Start sell sign setup wizard"
   sellclaim-cmd-hint: "&7(If no ID provided, uses current claim)"
+  
+  # GPX max command
+  gpx-max-usage: "&cUsage: /gpx max <sell|rent|mailbox|globals> <add|take|set> <player> <amount>"
+  gpx-max-invalid-type: "&cInvalid type. Use 'sell', 'rent', 'mailbox', or 'globals'."
+  gpx-max-invalid-action: "&cInvalid action. Use 'add', 'take', or 'set'."
+  gpx-max-amount-required: "&cPlease specify an amount."
+  gpx-max-amount-positive: "&cAmount must be positive."
+  gpx-max-amount-invalid: "&cInvalid amount."
+  gpx-max-added: "&aAdded {amount} to {player}'s {type} limit."
+  gpx-max-added-player: "&eYour {type} limit has been increased by {amount}."
+  gpx-max-removed: "&aRemoved {amount} from {player}'s {type} limit."
+  gpx-max-removed-player: "&eYour {type} limit has been decreased by {amount}."
+  gpx-max-set: "&aSet {player}'s {type} limit to {amount}."
+  gpx-max-set-player: "&eYour {type} limit has been set to {amount}."
+  gpx-max-current-header: "&b{player}'s current limits:"
+  gpx-max-current-sell: "&b  Sell signs: {count}"
+  gpx-max-current-rent: "&b  Rent signs: {count}"
+  gpx-max-current-mailbox: "&b  Mailbox signs: {count}"
+  gpx-max-current-globals: "&b  Global claims: {count}"
+  gpx-max-desync-warning: "&eWarning: Permission desync detected for {player}!"
+  gpx-max-desync-cleanup: "&aPermissions will be automatically cleaned up using {plugin}."
+  gpx-max-desync-unsupported: "&cNo supported permission plugin found for automatic cleanup."
+  gpx-max-desync-manual: "&cPlease manually remove duplicate permissions and set the highest one."
 
 # =============================================================================
 # SETUP WIZARD MESSAGES
@@ -199,6 +321,7 @@ wizard:
   timeout: "&cSetup wizard timed out."
   already-in-wizard: "&cYou are already in a setup wizard. Use &e/cancelsetup&c to cancel."
   previous-cancelled: "&7(Previous setup wizard cancelled)"
+  cancel-none: "&7You don't have an active setup or auto-paste mode to cancel."
   
   # Validation errors
   claim-not-found: "&cClaim ID not found: {id}"
@@ -270,6 +393,8 @@ claim:
   list-admin-header: "&eAdmin Claims ({count}):"
   list-empty: "&7You don't own any claims."
   list-no-admin: "&7No admin claims found."
+  blocks-total: "&e{accrued} blocks from play + {bonus} bonus = {total} total."
+  blocks-remaining: "&e= {remaining} blocks left to spend"
   
   # Claim line format (used in /claim list)
   # Placeholders: {id}, {name}, {world}, {x}, {z}, {area}
@@ -296,7 +421,19 @@ claim:
   name-cleared: "&aClaim name cleared."
   name-too-long: "&cClaim name is too long (max {max} characters)."
   name-invalid-chars: "&cClaim name contains invalid characters."
-  name-no-permission: "&cYou lack permission: &egpexpansion.claim.name"
+  name-no-permission: "&cYou lack permission: &egriefprevention.claim.name"
+  name-usage: "&eUsage: /claim name <newName> [claimId]"
+  
+  # Icon
+  icon-no-permission: "&cYou lack permission: &egriefprevention.claim.icon"
+  icon-hold-item: "&cYou must hold an item to set as the claim icon."
+  icon-set: "&aClaim {id} icon set to {icon}."
+  
+  # Description
+  description-no-permission: "&cYou lack permission: &egriefprevention.claim.description"
+  description-usage: "&eUsage: /claim desc <description...> [claimId]"
+  description-truncated: "&eDescription truncated to {max} characters."
+  description-set: "&aClaim {id} description set to: {description}"
   
   # Trust list
   trustlist-header: "&6=== Trust List for Claim {id} ==="
@@ -306,18 +443,117 @@ claim:
   # Claim not found
   not-found: "&cClaim ID not found: {id}"
   not-owner: "&cYou must own claim {id} to do that."
+  owner-unknown: "&cUnable to determine the claim owner."
+  id-missing: "&cCould not determine claim ID for this action."
+  main-id-missing: "&cCould not determine main claim ID."
+  must-own-action: "&cYou must own this claim to {action}."
   
   # Transfer
+  transfer-usage: "&eUsage: /claim transfer <claimId> <player>"
   transfer-success: "&aClaim {id} transferred to {player}."
   transfer-received: "&aYou are now the owner of claim {id}."
   transfer-failed: "&cFailed to transfer claim {id}."
+  transfer-failed-contact: "&cFailed to transfer claim ownership. Please contact an admin."
   
   # Ban/Unban
+  ban-usage: "&eUsage: /claim ban <player|public> [claimId]"
+  ban-no-permission: "&cYou lack permission: &egriefprevention.claim.ban"
   ban-success: "&aBanned {player} from claim {id}."
   ban-public: "&aClaim {id} is now public-banned."
   ban-already: "&eClaim {id} already has a public ban."
+  ban-self: "&cYou cannot ban yourself."
+  unban-usage: "&eUsage: /claim unban <player|public> [claimId]"
+  unban-no-permission: "&cYou lack permission: &egriefprevention.claim.unban"
   unban-success: "&aUnbanned {player} from claim {id}."
   unban-public: "&aClaim {id} is no longer public-banned."
+  unban-public-missing: "&eClaim {id} is not public-banned."
+  unban-not-banned: "&e{player} is not banned from claim {id}."
+  
+  # Ban list
+  banlist-header: "&eBan list for claim {id}:"
+  banlist-public: "&6 - Public banned"
+  banlist-empty: "&7 - No players banned"
+  banlist-entry: "&c - {player}"
+  
+  # Eviction (claim command)
+  evict-usage: "&eUsage: /claim evict [claimId]"
+  evict-help: "&7Starts a {days}-day eviction notice for the renter."
+  evict-no-permission: "&cYou lack permission: &egriefprevention.evict"
+  not-rented: "&cThis claim is not currently rented."
+  
+  # Sign confirmation and payments
+  rental-sign-confirm-usage: "&eUsage: /claim rentalsignconfirm <world> <x> <y> <z>"
+  coords-must-be-int: "&cCoordinates must be integers."
+  world-unknown: "&cUnknown world: {world}"
+  sign-not-found: "&cNo managed sign found at that location."
+  sign-not-managed: "&cThat sign is not managed by GPExpansion."
+  sign-use-denied: "&cYou don't have permission to use this sign."
+  
+  # Pending rent collection
+  pending-rent-none: "&eYou have no pending rental payments to collect."
+  pending-rent-failed-money: "&cFailed to give you ${amount} from rentals."
+  pending-rent-claimblocks: "&aYou received {amount} claim blocks from rentals!"
+  pending-rent-collected: "&aSuccessfully collected all pending rental payments!"
+  
+  # Other
+  teleport-safe-location-fail: "&cCould not compute a safe location in claim {id}."
+  untrust-renter: "&cYou cannot untrust {renter} while they are renting your claim."
+  untrust-renter-hint: "&eUse {command} instead."
+
+# =============================================================================
+# EVICTION MESSAGES
+# =============================================================================
+eviction:
+  # Sign protection messages
+  cannot-manage-sign: "&cYou cannot manage this sign."
+  cannot-break-sign: "&cYou cannot break this sign."
+  rental-sign-removed: "&aRental sign removed and rental cleared."
+  
+  # Active renter messages
+  active-renter: "&cThis claim has an active renter."
+  start-eviction-notice: "&eUse {command} to start a {days}-day eviction notice. &7(New: {coords} placeholder available)"
+  
+  # Eviction pending messages
+  notice-pending: "&cEviction notice is still pending."
+  time-remaining: "&e{time} remaining before you can remove the renter."
+  check-status-hint: "&7Use {command} to check status."
+  cannot-remove-renter: "&7You cannot break this sign or remove the renter until the eviction period has passed."
+  notice-passed: "&aThe eviction notice period has passed. You can now remove the renter."
+  cancel-hint: "&7Use /claim evict cancel {id} to cancel or break the rental sign."
+  notice-in-progress: "&eAn eviction is already in progress. {time} remaining before you can remove the renter."
+  notice-started: "&aEviction notice started for {renter}."
+  notice-duration: "&eThey have {days} days before you can remove them from the claim or break the sign."
+  notice-no-extend: "&7During this time, the renter cannot extend their rental."
+  notice-received: "&cYou have received an eviction notice for claim {id}."
+  notice-days: "&eYou have {days} days before you will be removed from this claim."
+  no-pending: "&cThere is no pending eviction for this claim."
+  no-pending-info: "&7There is no pending eviction for this claim."
+  cancelled: "&aEviction cancelled for claim {id}."
+  cancelled-notify: "&aThe eviction notice for claim {id} has been cancelled."
+  effective: "&aEviction for {renter} is now effective."
+  effective-hint: "&7You can now remove them from the claim or break the rental sign."
+  pending: "&eEviction notice for {renter} is pending."
+  
+  # Rental expiry
+  rental-expired: "&6Your rented claim has expired. &7(Location: {coords})"
+  
+  # Claim abandonment protection
+  cannot-abandon-during-eviction: "&cYou cannot abandon this claim while an eviction is in progress."
+  abandon-eviction-command: "/claim evict {id}"
+  eviction-in-progress: "&cYou cannot extend this rental - an eviction notice is in progress."
+  confirm-deletion: "Confirm deletion"
+  confirm-deletion-click: "Click here to delete the rental or break the sign again while sneaking."
+  confirm-deletion-alt: "You can also confirm by sneak + right clicking the sign."
+
+# =============================================================================
+# CLAIM INFO MESSAGES
+# =============================================================================
+claim:
+  not-standing-in-claim: "You are not standing in a claim."
+  provide-id: "Provide a claim ID."
+
+claiminfo:
+  no-permission-other: "&cYou don't have permission to view info for claims you don't own."
 
 # =============================================================================
 # ADMIN MESSAGES
@@ -329,6 +565,7 @@ admin:
   gpx-debug: "&e/gpx debug &7- Toggle debug mode"
   gpx-info: "&e/gpx info &7- Show plugin information"
   gpx-max: "&e/gpx max &7- Modify player creation limits."
+  no-permission: "&cYou don't have permission to use this command."
   
   # Debug mode
   debug-enabled: "&aDebug mode enabled."

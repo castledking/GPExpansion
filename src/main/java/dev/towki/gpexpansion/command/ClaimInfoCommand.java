@@ -2,7 +2,7 @@ package dev.towki.gpexpansion.command;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
-import dev.towki.gpexpansion.storage.NameStore;
+import dev.towki.gpexpansion.storage.ClaimDataStore;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
@@ -36,12 +36,12 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
     
     private final GPExpansionPlugin plugin;
     private final GPBridge gp;
-    private final NameStore nameStore;
+    private final ClaimDataStore claimDataStore;
     
     public ClaimInfoCommand(GPExpansionPlugin plugin) {
         this.plugin = plugin;
         this.gp = new GPBridge();
-        this.nameStore = plugin.getNameStore();
+        this.claimDataStore = plugin.getClaimDataStore();
     }
     
     private UUID getClaimOwnerUUID(Object claim) {
@@ -73,7 +73,8 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
             // Use claim at player's location
             Optional<Object> claimOpt = gp.getClaimAt(player.getLocation());
             if (!claimOpt.isPresent()) {
-                player.sendMessage(Component.text("You are not standing in a claim.", NamedTextColor.RED));
+                sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+                sender.sendMessage(plugin.getMessages().get("claim.provide-id"));
                 return true;
             }
             claim = claimOpt.get();
@@ -94,7 +95,7 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
         boolean canViewOthers = player.hasPermission("griefprevention.claiminfo.other") || player.isOp();
         
         if (!isOwner && !canViewOthers) {
-            player.sendMessage(Component.text("You don't have permission to view info for claims you don't own.", NamedTextColor.RED));
+            plugin.getMessages().send(player, "claiminfo.no-permission-other");
             return true;
         }
         
@@ -105,7 +106,7 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
     
     private void displayClaimInfo(Player player, Object claim, String claimId) {
         // Get claim details
-        String claimName = nameStore.get(claimId).orElse(null);
+        String claimName = claimDataStore.getCustomName(claimId).orElse(null);
         UUID ownerUuid = getClaimOwnerUUID(claim);
         String ownerName = "Unknown";
         if (ownerUuid != null) {
@@ -252,7 +253,7 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
         
         // Display sign usage info
         if (hasRentSign || hasSellSign || hasMailboxSign) {
-            player.sendMessage(Component.text(""));
+            player.sendMessage(plugin.getMessages().get("general.empty-line"));
             player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize("&6=== Sign Usage ==="));
             
             if (hasRentSign) {

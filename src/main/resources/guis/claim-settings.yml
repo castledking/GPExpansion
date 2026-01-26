@@ -1,13 +1,35 @@
-# Claim Settings GUI Configuration
-# Edit claim settings like bans and spawn point
+# Claim Options GUI Configuration
+# Shows options for a specific claim
 
-title: "&e&lClaim Settings - #{id}"
-size: 27
+title: "&6&lClaim Options - #{id}"
+size: 9
 
 filler:
   material: GRAY_STAINED_GLASS_PANE
 
+slots:
+  view-children: 0
+  banned-players: 2
+  claim-flags: 4
+  global-settings: 6
+  back: 8
+
 items:
+  view-children:
+    material: CHEST
+    name: "&b&lView Children"
+    lore:
+      - "&7View subdivisions of this claim"
+      - ""
+      - "&7Children: &6{count}"
+      - ""
+      - "&7No subdivisions found"
+      - ""
+      - "&7Shift+Left click to navigate"
+      - "&7through nested subdivisions"
+      - ""
+      - "&eClick to view children"
+  
   banned-players:
     material: BARRIER
     name: "&c&lBanned Players"
@@ -15,24 +37,48 @@ items:
       - "&7Manage players banned from this claim"
       - ""
       - "&7Currently banned: &6{count}"
+      - ""
+      - "&a✓ You can manage bans"
+      - "&8Missing: griefprevention.claim.ban"
+      - ""
+      - "&eClick to manage banned players"
   
-  spawn-point:
-    material: ENDER_PEARL
-    name: "&b&lSpawn Point"
+  claim-flags:
+    material: COMPARATOR
+    name: "&d&lClaim Flags"
     lore:
-      - "&7Set the teleport spawn point"
+      - "&7Manage GPFlags for this claim"
+      - ""
+      - "&7Toggle flags like PvP, mob spawns,"
+      - "&7enter/exit messages, and more."
+      - ""
+      - "&a✓ GPFlags available"
+      - ""
+      - "&eClick to manage claim flags"
+  
+  global-settings:
+    material: ENDER_CHEST
+    name: "&6&lGlobal Settings"
+    lore:
+      - "&7Manage global claim settings"
+      - ""
+      - "&7• Claim name & icon"
+      - "&7• Description & listing"
+      - "&7• Spawn point"
+      - "&7• Global claims list"
+      - ""
+      - "&eClick to manage global settings"
   
   back:
     material: ARROW
     name: "&c&lBack"
     lore:
-      - "&7Return to claim options"
+      - "&7Return to claims list"
 
 # Permission-based lore
 permissions:
   ban-allowed: "&a✓ You can manage bans"
   ban-denied: "&c✗ No permission to manage bans"
   ban-denied-detail: "&8Missing: griefprevention.claim.ban"
-  spawn-allowed: "&a✓ You can set spawn point"
-  spawn-denied: "&c✗ No permission to set spawn"
-  spawn-denied-detail: "&8Missing: griefprevention.claim.setspawn"
+  flags-available: "&a✓ GPFlags available"
+  flags-unavailable: "&c✗ GPFlags not available"

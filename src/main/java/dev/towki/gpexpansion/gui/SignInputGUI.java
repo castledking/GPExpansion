@@ -31,6 +31,7 @@ public class SignInputGUI implements Listener {
     private Location signLocation;
     private Material originalBlockType;
     private boolean completed = false;
+    private int inputLine = 0; // Which line the user should type on
     
     public SignInputGUI(GPExpansionPlugin plugin, Player player, String[] promptLines,
                         Consumer<String> onComplete, Runnable onCancel) {
@@ -45,50 +46,60 @@ public class SignInputGUI implements Listener {
         Bukkit.getPluginManager().registerEvents(this, plugin);
         
         // Find a location for the fake sign (below player's feet, underground)
-        signLocation = player.getLocation().clone();
-        signLocation.setY(Math.max(signLocation.getWorld().getMinHeight(), signLocation.getBlockY() - 5));
+        // Use player's current location so we're in the same region
+        // IMPORTANT: Use block coordinates for proper comparison with SignChangeEvent
+        Location playerLoc = player.getLocation();
+        signLocation = new Location(
+            playerLoc.getWorld(),
+            playerLoc.getBlockX(),
+            Math.max(playerLoc.getWorld().getMinHeight(), playerLoc.getBlockY() - 5),
+            playerLoc.getBlockZ()
+        );
         
-        Block block = signLocation.getBlock();
-        originalBlockType = block.getType();
-        
-        // Place a temporary sign
-        block.setType(Material.OAK_SIGN);
-        
-        if (block.getState() instanceof Sign) {
-            Sign sign = (Sign) block.getState();
+        // Schedule block operations on the correct region thread
+        runAtSignLocation(() -> {
+            Block block = signLocation.getBlock();
+            originalBlockType = block.getType();
             
-            // Set prompt lines on the sign
-            try {
-                // Try modern API first (1.20+)
-                for (int i = 0; i < 4 && i < promptLines.length; i++) {
-                    sign.getSide(Side.FRONT).setLine(i, promptLines[i] != null ? promptLines[i] : "");
-                }
-            } catch (NoSuchMethodError | NoClassDefFoundError e) {
-                // Fallback to legacy API
-                for (int i = 0; i < 4 && i < promptLines.length; i++) {
-                    sign.setLine(i, promptLines[i] != null ? promptLines[i] : "");
-                }
-            }
-            sign.update();
+            // Place a temporary sign
+            block.setType(Material.OAK_SIGN);
             
-            // Open sign editor for player
-            runLater(() -> player.openSign(sign), 2L);
-            
-            // Schedule cleanup in case player doesn't complete
-            runLater(() -> {
-                if (!completed) {
-                    cleanup();
-                    if (onCancel != null) {
-                        onCancel.run();
+            if (block.getState() instanceof Sign) {
+                Sign sign = (Sign) block.getState();
+                
+                // Set prompt lines on the sign
+                try {
+                    // Try modern API first (1.20+)
+                    for (int i = 0; i < 4 && i < promptLines.length; i++) {
+                        sign.getSide(Side.FRONT).setLine(i, promptLines[i] != null ? promptLines[i] : "");
+                    }
+                } catch (NoSuchMethodError | NoClassDefFoundError e) {
+                    // Fallback to legacy API
+                    for (int i = 0; i < 4 && i < promptLines.length; i++) {
+                        sign.setLine(i, promptLines[i] != null ? promptLines[i] : "");
                     }
                 }
-            }, 200L); // 10 second timeout
-        } else {
-            cleanup();
-            if (onCancel != null) {
-                onCancel.run();
+                sign.update();
+                
+                // Open sign editor for player - must run on sign's region thread (not player's)
+                runAtSignLocationDelayed(() -> player.openSign(sign), 2L);
+                
+                // Schedule cleanup in case player doesn't complete
+                runOnPlayer(() -> {
+                    if (!completed) {
+                        cleanupSign();
+                        if (onCancel != null) {
+                            onCancel.run();
+                        }
+                    }
+                }, 200L); // 10 second timeout
+            } else {
+                cleanupSign();
+                if (onCancel != null) {
+                    runOnPlayer(() -> onCancel.run(), 1L);
+                }
             }
-        }
+        });
     }
     
     @EventHandler(priority = EventPriority.LOWEST)
@@ -99,21 +110,13 @@ public class SignInputGUI implements Listener {
         completed = true;
         event.setCancelled(true);
         
-        // Collect all non-empty lines as the search input
-        StringBuilder input = new StringBuilder();
-        for (int i = 0; i < 4; i++) {
-            String line = event.getLine(i);
-            if (line != null && !line.isEmpty()) {
-                if (input.length() > 0) input.append(" ");
-                input.append(line);
-            }
-        }
+        // Get the user input from the designated input line only
+        String rawInput = event.getLine(inputLine);
+        final String result = (rawInput != null ? rawInput : "").trim();
         
-        String result = input.toString().trim();
-        
-        // Cleanup and process
-        runLater(() -> {
-            cleanup();
+        // Cleanup and process - run cleanup on sign location thread, callback on player thread
+        runOnPlayer(() -> {
+            cleanupSign();
             if (onComplete != null && !result.isEmpty()) {
                 onComplete.accept(result);
             } else if (onCancel != null) {
@@ -122,18 +125,32 @@ public class SignInputGUI implements Listener {
         }, 1L);
     }
     
-    private void cleanup() {
+    private void cleanupSign() {
         HandlerList.unregisterAll(this);
         
-        // Restore original block
+        // Restore original block - schedule on sign's region thread
         if (signLocation != null) {
-            Block block = signLocation.getBlock();
-            block.setType(originalBlockType != null ? originalBlockType : Material.AIR);
+            runAtSignLocation(() -> {
+                Block block = signLocation.getBlock();
+                block.setType(originalBlockType != null ? originalBlockType : Material.AIR);
+            });
         }
     }
     
-    private void runLater(Runnable task, long delayTicks) {
-        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runOnEntityLater(plugin, player, task, null, delayTicks);
+    private void runOnPlayer(Runnable task, long delayTicks) {
+        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runLaterEntity(plugin, player, task, delayTicks);
+    }
+    
+    private void runAtSignLocation(Runnable task) {
+        if (signLocation != null) {
+            dev.towki.gpexpansion.scheduler.SchedulerAdapter.runAtLocation(plugin, signLocation, task);
+        }
+    }
+    
+    private void runAtSignLocationDelayed(Runnable task, long delayTicks) {
+        if (signLocation != null) {
+            dev.towki.gpexpansion.scheduler.SchedulerAdapter.runAtLocationLater(plugin, signLocation, task, delayTicks);
+        }
     }
     
     // Static factory methods

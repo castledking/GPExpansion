@@ -1,7 +1,7 @@
 package dev.towki.gpexpansion.gui;
 
 import dev.towki.gpexpansion.gp.GPBridge;
-import dev.towki.gpexpansion.storage.BanStore;
+import dev.towki.gpexpansion.storage.ClaimDataStore;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
@@ -32,7 +32,7 @@ public class BannedPlayersGUI extends BaseGUI {
     private static final int BACK_SLOT = 51;
     
     private final GPBridge gp;
-    private final BanStore banStore;
+    private final ClaimDataStore claimDataStore;
     
     // Original claim context (for single claim view and back button)
     private final Object originClaim;
@@ -67,9 +67,34 @@ public class BannedPlayersGUI extends BaseGUI {
     public BannedPlayersGUI(GUIManager manager, Player player, Object claim, String claimId) {
         super(manager, player, "banned-players");
         this.gp = new GPBridge();
-        this.banStore = plugin.getBanStore();
+        this.claimDataStore = plugin.getClaimDataStore();
         this.originClaim = claim;
         this.originClaimId = claimId;
+    }
+    
+    /**
+     * Open GUI with async ban list loading to prevent server hang.
+     */
+    public static void openAsync(GUIManager manager, Player player, Object claim, String claimId) {
+        openAsyncWithState(manager, player, claim, claimId, null, 0);
+    }
+    
+    /**
+     * Open GUI with async ban list loading and restore previous state (search, page).
+     */
+    public static void openAsyncWithState(GUIManager manager, Player player, Object claim, String claimId, String searchQuery, int page) {
+        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runAsyncNow(manager.getPlugin(), () -> {
+            BannedPlayersGUI gui = new BannedPlayersGUI(manager, player, claim, claimId);
+            gui.currentPage = page;
+            
+            gui.loadBannedPlayers();
+            dev.towki.gpexpansion.scheduler.SchedulerAdapter.runEntity(manager.getPlugin(), player, () -> {
+                // Save state for /claim ! command
+                GUIStateTracker.saveState(player, GUIStateTracker.GUIType.BANNED_PLAYERS, 
+                    null, null, gui.currentPage, claimId);
+                manager.openGUI(player, gui);
+            }, null);
+        });
     }
     
     @Override
@@ -112,15 +137,15 @@ public class BannedPlayersGUI extends BaseGUI {
     
     @SuppressWarnings("deprecation")
     private void loadBannedForClaim(String claimId, Object claim) {
-        BanStore.BanEntry entry = banStore.get(claimId);
-        if (entry == null || entry.players.isEmpty()) return;
+        ClaimDataStore.BanData entry = claimDataStore.getBans(claimId);
+        if (entry == null || entry.bannedPlayers.isEmpty()) return;
         
-        String claimName = plugin.getNameStore().get(claimId).orElse("Claim #" + claimId);
+        String claimName = claimDataStore.getCustomName(claimId).orElse("Claim #" + claimId);
         boolean isSubdivision = gp.isSubdivision(claim);
         
-        for (UUID playerId : entry.players) {
+        for (UUID playerId : entry.bannedPlayers) {
             OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(playerId);
-            String playerName = entry.names.getOrDefault(playerId, 
+            String playerName = entry.playerNames.getOrDefault(playerId, 
                 offlinePlayer.getName() != null ? offlinePlayer.getName() : playerId.toString().substring(0, 8));
             
             bannedPlayers.add(new BannedPlayerInfo(
@@ -200,7 +225,7 @@ public class BannedPlayersGUI extends BaseGUI {
     }
     
     private ItemStack createBanPlayerItem() {
-        String claimName = plugin.getNameStore().get(originClaimId).orElse("Claim #" + originClaimId);
+        String claimName = claimDataStore.getCustomName(originClaimId).orElse("Claim #" + originClaimId);
         boolean isSubdivision = gp.isSubdivision(originClaim);
         String type = isSubdivision ? "subdivision" : "claim";
         
@@ -267,10 +292,23 @@ public class BannedPlayersGUI extends BaseGUI {
             String[] lines = {"", "Ban Player:", "Enter name", ""};
             new SignInputGUI(plugin, player, lines,
                 playerName -> {
-                    player.performCommand("claim ban " + originClaimId + " " + playerName);
-                    runLater(() -> manager.openBannedPlayers(player, originClaim, originClaimId), 5L);
+                    plugin.runAtEntity(player, () -> {
+                        // Check if player is standing in the target claim
+                        boolean isStandingInClaim = isPlayerInClaim(player, originClaimId);
+                        String command;
+                        if (player.hasPermission("griefprevention.claim.ban.other") && !isStandingInClaim) {
+                            // Admin banning from outside the claim - need to specify claim ID
+                            command = "claim ban " + playerName + " " + originClaimId;
+                        } else {
+                            // Player is in the claim or owns it - just use player name
+                            command = "claim ban " + playerName;
+                        }
+                        player.performCommand(command);
+                        // Use async reload to prevent server hang
+                        runLater(() -> BannedPlayersGUI.openAsync(manager, player, originClaim, originClaimId), 5L);
+                    });
                 },
-                () -> manager.openBannedPlayers(player, originClaim, originClaimId)).open();
+                () -> BannedPlayersGUI.openAsync(manager, player, originClaim, originClaimId)).open();
             return;
         }
         
@@ -293,14 +331,28 @@ public class BannedPlayersGUI extends BaseGUI {
             if (playerIndex < bannedPlayers.size()) {
                 BannedPlayerInfo info = bannedPlayers.get(playerIndex);
                 // Unban the player
-                player.performCommand("claim unban " + info.claimId + " " + info.playerName);
-                // Refresh after a short delay
-                runLater(() -> {
-                    loadBannedPlayers();
-                    populateInventory();
-                }, 5L);
+                plugin.runAtEntity(player, () -> {
+                    player.performCommand("claim unban " + info.playerName + " " + info.claimId);
+                    // Refresh after a short delay
+                    runLater(() -> {
+                        loadBannedPlayers();
+                        populateInventory();
+                    }, 5L);
+                });
             }
         }
+    }
+    
+    private boolean isPlayerInClaim(Player player, String claimId) {
+        // Get the claim the player is currently standing in
+        java.util.Optional<Object> currentClaimOpt = gp.getClaimAt(player.getLocation());
+        if (!currentClaimOpt.isPresent()) return false;
+        
+        Object currentClaim = currentClaimOpt.get();
+        java.util.Optional<String> currentClaimIdOpt = gp.getClaimId(currentClaim);
+        if (!currentClaimIdOpt.isPresent()) return false;
+        
+        return currentClaimIdOpt.get().equals(claimId);
     }
     
     private static class BannedPlayerInfo {

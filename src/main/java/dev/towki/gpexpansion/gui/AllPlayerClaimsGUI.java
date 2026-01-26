@@ -1,7 +1,6 @@
 package dev.towki.gpexpansion.gui;
 
 import dev.towki.gpexpansion.gp.GPBridge;
-import dev.towki.gpexpansion.storage.RentalStore;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -51,6 +50,7 @@ public class AllPlayerClaimsGUI extends BaseGUI {
     private FilterType currentFilter = FilterType.ALL;
     private int currentPage = 0;
     private List<ClaimInfo> filteredClaims = new ArrayList<>();
+    private String searchQuery = null;
     
     // Slot positions
     private static final int FILTER_SLOT = 49; // Bottom center (hopper)
@@ -66,9 +66,50 @@ public class AllPlayerClaimsGUI extends BaseGUI {
     };
     
     public AllPlayerClaimsGUI(GUIManager manager, Player player) {
+        this(manager, player, null);
+    }
+
+    public AllPlayerClaimsGUI(GUIManager manager, Player player, String searchQuery) {
         super(manager, player, "all-player-claims");
         this.gp = new GPBridge();
-        loadClaims();
+        this.searchQuery = searchQuery;
+        // Claims loaded via loadClaimsAsync or synchronously if already on async thread
+    }
+    
+    /**
+     * Open GUI with async claim loading to prevent server hang.
+     * Use this instead of directly creating the GUI when coming from sign input.
+     */
+    public static void openAsync(GUIManager manager, Player player, String searchQuery) {
+        openAsyncWithState(manager, player, searchQuery, null, 0);
+    }
+    
+    /**
+     * Open GUI with async claim loading and restore previous state (filter, page).
+     */
+    public static void openAsyncWithState(GUIManager manager, Player player, String searchQuery, String filterType, int page) {
+        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runAsyncNow(manager.getPlugin(), () -> {
+            // Create GUI and load claims on async thread
+            AllPlayerClaimsGUI gui = new AllPlayerClaimsGUI(manager, player, searchQuery);
+            
+            // Restore filter state if provided
+            if (filterType != null) {
+                try {
+                    gui.currentFilter = FilterType.valueOf(filterType);
+                } catch (IllegalArgumentException ignored) {}
+            }
+            gui.currentPage = page;
+            
+            gui.loadClaims();
+            
+            // Open GUI on player's entity thread
+            dev.towki.gpexpansion.scheduler.SchedulerAdapter.runEntity(manager.getPlugin(), player, () -> {
+                // Save state for /claim ! command
+                GUIStateTracker.saveState(player, GUIStateTracker.GUIType.ALL_PLAYER_CLAIMS, 
+                    gui.searchQuery, gui.currentFilter.name(), gui.currentPage);
+                manager.openGUI(player, gui);
+            }, null);
+        });
     }
     
     private void loadClaims() {
@@ -105,16 +146,24 @@ public class AllPlayerClaimsGUI extends BaseGUI {
             info.isMailbox = isClaimMailbox(claimId);
             
             // Get claim details
-            info.name = plugin.getNameStore().get(claimId).orElse("Claim #" + claimId);
+            info.name = plugin.getClaimDataStore().getCustomName(claimId).orElse("Claim #" + claimId);
             info.childCount = gp.getSubclaims(claim).size();
             info.area = getClaimArea(claim);
             info.location = getClaimLocation(claim);
             
             // Apply filter
-            if (matchesFilter(info)) {
+            if (matchesFilter(info) && matchesSearch(info)) {
                 filteredClaims.add(info);
             }
         }
+    }
+
+    private boolean matchesSearch(ClaimInfo info) {
+        if (searchQuery == null || searchQuery.isEmpty()) return true;
+        String query = searchQuery.toLowerCase();
+        if (info.claimId != null && info.claimId.equalsIgnoreCase(searchQuery)) return true;
+        if (info.ownerName != null && info.ownerName.toLowerCase().contains(query)) return true;
+        return info.name != null && info.name.toLowerCase().contains(query);
     }
     
     private boolean matchesFilter(ClaimInfo info) {
@@ -128,12 +177,11 @@ public class AllPlayerClaimsGUI extends BaseGUI {
     }
     
     private boolean isClaimRented(String claimId) {
-        RentalStore rentalStore = plugin.getRentalStore();
-        return rentalStore.isRented(claimId);
+        return plugin.getClaimDataStore().isRented(claimId);
     }
     
     private boolean isClaimMailbox(String claimId) {
-        return plugin.getMailboxStore().isMailbox(claimId);
+        return plugin.getClaimDataStore().isMailbox(claimId);
     }
     
     private int getClaimArea(Object claim) {
@@ -162,7 +210,10 @@ public class AllPlayerClaimsGUI extends BaseGUI {
     
     @Override
     public Inventory createInventory() {
-        inventory = createBaseInventory(getString("title", "&a&lAll Player Claims"), 54);
+        String title = searchQuery != null && !searchQuery.isEmpty()
+            ? getString("title-search", "&a&lAll Player Claims - \"{query}\"").replace("{query}", searchQuery)
+            : getString("title", "&a&lAll Player Claims");
+        inventory = createBaseInventoryWithTitle(title, 54);
         
         populateInventory();
         
@@ -213,7 +264,15 @@ public class AllPlayerClaimsGUI extends BaseGUI {
     }
     
     private ItemStack createSearchItem() {
-        return createItem(Material.COMPASS, "&b&lSearch Claims", List.of("&7Search by player, ID, or name", "", "&eClick to search"));
+        List<String> lore = new ArrayList<>();
+        if (searchQuery != null && !searchQuery.isEmpty()) {
+            lore.add("&7Current search: &e" + searchQuery);
+            lore.add("");
+        }
+        lore.add("&7Search by player, ID, or name");
+        lore.add("");
+        lore.add("&eClick to search");
+        return createItem(Material.COMPASS, "&b&lSearch Claims", lore);
     }
     
     private ItemStack createPrevPageItem() {
@@ -226,9 +285,7 @@ public class AllPlayerClaimsGUI extends BaseGUI {
     
     private ItemStack createClaimItem(ClaimInfo info) {
         // Try to get custom icon first
-        Material material = plugin.getIconStore().get(info.claimId)
-            .map(Material::matchMaterial)
-            .filter(m -> m != null)
+        Material material = plugin.getClaimDataStore().getIcon(info.claimId)
             .orElse(Material.GRASS_BLOCK);
         
         if (info.isRented) material = Material.CLOCK;
@@ -281,45 +338,10 @@ public class AllPlayerClaimsGUI extends BaseGUI {
             player.closeInventory();
             SignInputGUI.openSearch(plugin, player,
                 query -> {
-                    String searchLower = query.toLowerCase();
-                    ClaimInfo match = null;
-                    
-                    // First try exact ID match
-                    for (ClaimInfo info : filteredClaims) {
-                        if (info.claimId.equals(query)) {
-                            match = info;
-                            break;
-                        }
-                    }
-                    
-                    // Then try owner name match
-                    if (match == null) {
-                        for (ClaimInfo info : filteredClaims) {
-                            if (info.ownerName.toLowerCase().contains(searchLower)) {
-                                match = info;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    // Then try name contains match
-                    if (match == null) {
-                        for (ClaimInfo info : filteredClaims) {
-                            if (info.name.toLowerCase().contains(searchLower)) {
-                                match = info;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    if (match != null) {
-                        manager.openClaimOptions(player, match.claim, match.claimId);
-                    } else {
-                        plugin.getMessages().send(player, "gui.search-no-results", "{query}", query);
-                        manager.openAllPlayerClaims(player);
-                    }
+                    // Use async loading to prevent server hang
+                    AllPlayerClaimsGUI.openAsync(manager, player, query);
                 },
-                () -> manager.openAllPlayerClaims(player));
+                () -> AllPlayerClaimsGUI.openAsync(manager, player, searchQuery));
             return;
         }
         
@@ -359,7 +381,7 @@ public class AllPlayerClaimsGUI extends BaseGUI {
     private void handleClaimClick(InventoryClickEvent event, ClaimInfo info) {
         if (isLeftClick(event) && !event.isShiftClick()) {
             // Teleport to claim
-            closeAndRun(() -> player.performCommand("claim tp " + info.claimId));
+            closeAndRunOnMainThread("claim tp " + info.claimId);
         } else if (isRightClick(event) && !event.isShiftClick()) {
             // Rename claim via sign editor
             player.closeInventory();
@@ -367,8 +389,8 @@ public class AllPlayerClaimsGUI extends BaseGUI {
                 ? info.name : "Unnamed";
             SignInputGUI.openRename(plugin, player, displayName,
                 newName -> {
-                    plugin.getNameStore().set(info.claimId, newName);
-                    plugin.getNameStore().save();
+                    plugin.getClaimDataStore().setCustomName(info.claimId, newName);
+                    plugin.getClaimDataStore().save();
                     plugin.getMessages().send(player, "gui.claim-renamed", "{id}", info.claimId, "{name}", newName);
                     manager.openAllPlayerClaims(player);
                 },

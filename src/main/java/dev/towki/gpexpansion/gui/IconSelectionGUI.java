@@ -1,334 +1,261 @@
 package dev.towki.gpexpansion.gui;
 
-import dev.towki.gpexpansion.scheduler.SchedulerAdapter;
+import dev.towki.gpexpansion.GPExpansionPlugin;
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 
-import java.util.ArrayList;
-import java.util.EnumSet;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 /**
- * Double chest GUI for selecting a claim icon from available materials.
- * Uses async loading to show the first page immediately while loading more in the background.
+ * GUI for selecting an icon for a claim using a hopper inventory.
+ * Shows a hopper where players can place any item to set it as the claim icon.
  */
-public class IconSelectionGUI extends BaseGUI {
+public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listener, InventoryHolder {
     
-    private final String claimId;
-    private final Consumer<Material> onSelect;
+    private final Consumer<Material> onIconSelected;
     private final Runnable onCancel;
+    private Inventory inventory;
+    private boolean selectionHandled = false;
     
-    private int currentPage = 0;
-    private final CopyOnWriteArrayList<Material> availableMaterials = new CopyOnWriteArrayList<>();
-    private final AtomicInteger loadedPages = new AtomicInteger(0);
-    private final AtomicBoolean fullyLoaded = new AtomicBoolean(false);
+    // Slot positions from config
+    private int instructionsSlot = 0;
+    private int centerSlot = 2;
+    private int backSlot = 4;
     
-    private static final int PREV_PAGE_SLOT = 45;
-    private static final int NEXT_PAGE_SLOT = 53;
-    private static final int BACK_SLOT = 49;
-    private static final int CLEAR_SLOT = 47;
-    private static final int ITEMS_PER_PAGE = 45;
-    
-    // Item slots (excluding bottom row for navigation)
-    private static final int[] ITEM_SLOTS;
-    static {
-        List<Integer> slots = new ArrayList<>();
-        for (int i = 0; i < 45; i++) {
-            slots.add(i);
-        }
-        ITEM_SLOTS = slots.stream().mapToInt(Integer::intValue).toArray();
-    }
-    
-    // Non-survival/unobtainable items to exclude
-    private static final Set<Material> EXCLUDED_MATERIALS = EnumSet.of(
-        // Command/Admin blocks
-        Material.COMMAND_BLOCK,
-        Material.CHAIN_COMMAND_BLOCK,
-        Material.REPEATING_COMMAND_BLOCK,
-        Material.COMMAND_BLOCK_MINECART,
-        Material.STRUCTURE_BLOCK,
-        Material.STRUCTURE_VOID,
-        Material.JIGSAW,
-        Material.BARRIER,
-        Material.LIGHT,
-        
-        // Bedrock and indestructible
-        Material.BEDROCK,
-        Material.REINFORCED_DEEPSLATE,
-        
-        // Portal blocks
-        Material.END_PORTAL_FRAME,
-        Material.END_GATEWAY,
-        
-        // Debug/technical items
-        Material.DEBUG_STICK,
-        Material.KNOWLEDGE_BOOK,
-        Material.BUNDLE, // Often buggy in older versions
-        
-        // Perishable/internal
-        Material.PETRIFIED_OAK_SLAB,
-        
-        // Air variants
-        Material.AIR,
-        Material.CAVE_AIR,
-        Material.VOID_AIR
-    );
-    
-    // Additional name patterns to exclude
-    private static final String[] EXCLUDED_PATTERNS = {
-        "SPAWN_EGG",
-        "LEGACY",
-        "POTTED_",
-        "WALL_",
-        "_BANNER_PATTERN",
-        "INFESTED_",
-        "BUDDING_AMETHYST", // Can't be obtained with silk touch
-        "SPAWNER", // Monster spawner
-        "TRIAL_SPAWNER",
-        "VAULT" // Trial vault
-    };
-    
-    public IconSelectionGUI(GUIManager manager, Player player, String claimId, 
-                            Consumer<Material> onSelect, Runnable onCancel) {
-        super(manager, player, "icon-selection");
-        this.claimId = claimId;
-        this.onSelect = onSelect;
+    public IconSelectionGUI(GPExpansionPlugin plugin, Player player, Consumer<Material> onIconSelected, Runnable onCancel) {
+        super(new GUIManager(plugin), player, "icon-selection");
+        this.onIconSelected = onIconSelected;
         this.onCancel = onCancel;
-        // Start async loading - first page will be ready quickly
-        startAsyncLoading();
-    }
-    
-    private void startAsyncLoading() {
-        // Load materials asynchronously
-        SchedulerAdapter.runAsync(plugin, () -> {
-            List<Material> allMaterials = new ArrayList<>();
-            
-            for (Material m : Material.values()) {
-                if (isValidIconMaterial(m)) {
-                    allMaterials.add(m);
-                }
-            }
-            
-            // Sort alphabetically
-            allMaterials.sort((a, b) -> a.name().compareTo(b.name()));
-            
-            // Add materials in batches and update loaded pages count
-            int batchSize = ITEMS_PER_PAGE;
-            for (int i = 0; i < allMaterials.size(); i += batchSize) {
-                int end = Math.min(i + batchSize, allMaterials.size());
-                List<Material> batch = allMaterials.subList(i, end);
-                availableMaterials.addAll(batch);
-                
-                int pagesLoaded = (availableMaterials.size() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
-                loadedPages.set(pagesLoaded);
-                
-                // Update inventory on main thread if player is viewing first page while it loads
-                if (pagesLoaded == 1 && inventory != null) {
-                    SchedulerAdapter.runOnEntity(plugin, player, () -> {
-                        if (player.getOpenInventory().getTopInventory() == inventory) {
-                            populateInventory();
-                        }
-                    }, null);
-                }
-            }
-            
-            fullyLoaded.set(true);
-            
-            // Final update to refresh navigation buttons
-            SchedulerAdapter.runOnEntity(plugin, player, () -> {
-                if (player.getOpenInventory().getTopInventory() == inventory) {
-                    updateNavigationButtons();
-                }
-            }, null);
-        });
-    }
-    
-    private boolean isValidIconMaterial(Material m) {
-        // Must be an item
-        if (!m.isItem()) return false;
-        if (m.isAir()) return false;
         
-        // Check exclusion set
-        if (EXCLUDED_MATERIALS.contains(m)) return false;
-        
-        // Check name patterns
-        String name = m.name();
-        for (String pattern : EXCLUDED_PATTERNS) {
-            if (name.contains(pattern)) return false;
+        // Load slot positions from config
+        if (config != null) {
+            instructionsSlot = config.getInt("slots.instructions", 0);
+            centerSlot = config.getInt("slots.center", 2);
+            backSlot = config.getInt("slots.back", 4);
         }
-        
-        return true;
     }
     
     @Override
     public Inventory createInventory() {
-        String title = getString("title", "&6&lSelect Icon");
-        inventory = createBaseInventory(title, 54);
-        populateInventory();
-        return inventory;
-    }
-    
-    private void populateInventory() {
-        inventory.clear();
-        
-        // Fill navigation row
-        ItemStack filler = createFiller();
-        for (int i = 45; i < 54; i++) {
-            inventory.setItem(i, filler);
-        }
-        
-        // Navigation buttons
-        inventory.setItem(BACK_SLOT, createBackItem());
-        inventory.setItem(CLEAR_SLOT, createClearItem());
-        
-        updateNavigationButtons();
-        
-        // Material items
-        int startIndex = currentPage * ITEMS_PER_PAGE;
-        for (int i = 0; i < ITEMS_PER_PAGE && startIndex + i < availableMaterials.size(); i++) {
-            Material mat = availableMaterials.get(startIndex + i);
-            inventory.setItem(ITEM_SLOTS[i], createMaterialItem(mat));
-        }
-        
-        // Show loading indicator if not fully loaded and on last available page
-        if (!fullyLoaded.get() && availableMaterials.size() > 0) {
-            int lastItemIndex = availableMaterials.size() - 1;
-            int lastItemPage = lastItemIndex / ITEMS_PER_PAGE;
-            if (currentPage == lastItemPage) {
-                // Show a loading indicator in an empty slot if we're on the loading edge
-                int itemsOnPage = availableMaterials.size() - (currentPage * ITEMS_PER_PAGE);
-                if (itemsOnPage < ITEMS_PER_PAGE) {
-                    inventory.setItem(itemsOnPage, createItem(Material.CLOCK, "&e&lLoading...", 
-                        List.of("&7More items are being loaded")));
-                }
-            }
-        }
-    }
-    
-    /**
-     * Update navigation buttons based on current loading state.
-     */
-    private void updateNavigationButtons() {
-        // Previous page - only show if not on first page
-        if (currentPage > 0) {
-            inventory.setItem(PREV_PAGE_SLOT, createPrevPageItem());
-        } else {
-            inventory.setItem(PREV_PAGE_SLOT, createFiller());
-        }
-        
-        // Next page - only show if there's a next page AND it's loaded
-        int currentMaxPage = Math.max(0, (availableMaterials.size() - 1) / ITEMS_PER_PAGE);
-        boolean hasNextPage = currentPage < currentMaxPage;
-        boolean nextPageLoaded = loadedPages.get() > currentPage + 1 || fullyLoaded.get();
-        
-        if (hasNextPage && nextPageLoaded) {
-            inventory.setItem(NEXT_PAGE_SLOT, createNextPageItem());
-        } else if (hasNextPage && !nextPageLoaded) {
-            // Next page exists but not loaded yet - show loading indicator
-            inventory.setItem(NEXT_PAGE_SLOT, createItem(Material.CLOCK, "&7&lLoading...", 
-                List.of("&7Next page is loading")));
-        } else {
-            inventory.setItem(NEXT_PAGE_SLOT, createFiller());
-        }
-    }
-    
-    private ItemStack createBackItem() {
-        return createItem(Material.ARROW, "&c&lBack", List.of("&7Return without selecting"));
-    }
-    
-    private ItemStack createClearItem() {
-        return createItem(Material.BARRIER, "&e&lClear Icon", List.of("&7Remove custom icon", "&7(use default)"));
-    }
-    
-    private ItemStack createPrevPageItem() {
-        int totalPages = fullyLoaded.get() 
-            ? Math.max(1, (availableMaterials.size() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE)
-            : loadedPages.get();
-        return createItem(Material.ARROW, "&e&l« Previous Page", List.of("&7Page " + currentPage + "/" + totalPages));
-    }
-    
-    private ItemStack createNextPageItem() {
-        int totalPages = fullyLoaded.get() 
-            ? Math.max(1, (availableMaterials.size() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE)
-            : loadedPages.get();
-        String pageInfo = fullyLoaded.get() 
-            ? "&7Page " + (currentPage + 2) + "/" + totalPages
-            : "&7Page " + (currentPage + 2) + "/...";
-        return createItem(Material.ARROW, "&e&lNext Page »", List.of(pageInfo));
-    }
-    
-    private ItemStack createMaterialItem(Material material) {
-        String name = material.name().toLowerCase().replace('_', ' ');
-        // Capitalize each word
-        String[] words = name.split(" ");
-        StringBuilder sb = new StringBuilder();
-        for (String word : words) {
-            if (sb.length() > 0) sb.append(" ");
-            sb.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
-        }
-        
-        List<String> lore = new ArrayList<>();
-        lore.add("&7Click to select as icon");
-        
-        return createItem(material, "&f" + sb.toString(), lore);
+        // This method is required but we won't use it since we create the hopper directly in open()
+        return Bukkit.createInventory(null, 9, "Icon Selection");
     }
     
     @Override
     public void handleClick(InventoryClickEvent event) {
-        int slot = event.getRawSlot();
+        // This method is required but we handle events separately for the hopper
         playClickSound();
+    }
+    
+    public void open() {
+        // Create a hopper inventory for icon selection
+        String title = getString("title", "&6&lSelect Icon - Place item in center");
+        inventory = plugin.getServer().createInventory(this, InventoryType.HOPPER, colorize(title));
         
-        if (slot == BACK_SLOT) {
-            player.closeInventory();
-            if (onCancel != null) {
-                onCancel.run();
-            }
+        // Fill with glass panes, leaving center empty
+        ItemStack filler = createFiller();
+        for (int i = 0; i < 5; i++) {
+            if (i == centerSlot) continue;
+            inventory.setItem(i, filler);
+        }
+        
+        // Add instruction item
+        inventory.setItem(instructionsSlot, createInstructionsItem());
+        
+        // Add back button
+        inventory.setItem(backSlot, createBackItem());
+
+        // Leave center slot empty for selection
+        
+        // Register events and open the hopper
+        plugin.getServer().getPluginManager().registerEvents(this, plugin);
+        player.openInventory(inventory);
+    }
+    
+    private ItemStack createInstructionsItem() {
+        List<String> lore = getStringList("items.instructions.lore");
+        if (lore.isEmpty()) {
+            lore = Arrays.asList(
+                "&7Place any item from your inventory",
+                "&7into the center slot below",
+                "&7to set it as the claim icon.",
+                "",
+                "&7The item will NOT be consumed."
+            );
+        }
+        
+        String materialName = getString("items.instructions.material", "PAPER");
+        Material material;
+        try {
+            material = Material.valueOf(materialName.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            material = Material.PAPER;
+        }
+        
+        String name = getString("items.instructions.name", "&e&lInstructions");
+        
+        return createItem(material, name, lore);
+    }
+    
+    private ItemStack createBackItem() {
+        List<String> lore = getStringList("items.back.lore");
+        if (lore.isEmpty()) {
+            lore = Arrays.asList("&7Return to previous menu");
+        }
+        
+        String materialName = getString("items.back.material", "ARROW");
+        Material material;
+        try {
+            material = Material.valueOf(materialName.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            material = Material.ARROW;
+        }
+        
+        String name = getString("items.back.name", "&c&lCancel");
+        
+        return createItem(material, name, lore);
+    }
+    
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    public void onInventoryClick(InventoryClickEvent event) {
+        if (inventory == null) return;
+        if (!event.getWhoClicked().equals(player)) return;
+
+        if (!isOurSession()) return;
+        Inventory clicked = event.getClickedInventory();
+        ItemStack cursor = event.getCursor();
+        ItemStack current = event.getCurrentItem();
+        int rawSlot = event.getRawSlot();
+        int topSize = inventory.getSize();
+        
+        // Prevent double-click from stealing GUI items
+        if (event.getClick() == ClickType.DOUBLE_CLICK) {
+            event.setCancelled(true);
+            event.setResult(org.bukkit.event.Event.Result.DENY);
             return;
         }
         
-        if (slot == CLEAR_SLOT) {
-            player.closeInventory();
-            if (onSelect != null) {
-                onSelect.accept(null);
-            }
-            return;
-        }
-        
-        if (slot == PREV_PAGE_SLOT && currentPage > 0) {
-            currentPage--;
-            populateInventory();
-            return;
-        }
-        
-        if (slot == NEXT_PAGE_SLOT) {
-            int maxPage = Math.max(0, (availableMaterials.size() - 1) / ITEMS_PER_PAGE);
-            // Only allow navigation if page is loaded
-            boolean nextPageLoaded = loadedPages.get() > currentPage + 1 || fullyLoaded.get();
-            if (currentPage < maxPage && nextPageLoaded) {
-                currentPage++;
-                populateInventory();
-            }
-            return;
-        }
-        
-        // Check if clicked on a material
-        if (slot >= 0 && slot < 45) {
-            int materialIndex = currentPage * ITEMS_PER_PAGE + slot;
-            if (materialIndex < availableMaterials.size()) {
-                Material selected = availableMaterials.get(materialIndex);
+        // Handle back button click
+        if (rawSlot < topSize) {
+            if (rawSlot == backSlot) {
+                event.setCancelled(true);
+                event.setResult(org.bukkit.event.Event.Result.DENY);
+                selectionHandled = true;
                 player.closeInventory();
-                if (onSelect != null) {
-                    onSelect.accept(selected);
+                runLater(onCancel, 1L);
+                return;
+            }
+            
+            // Protect all non-center slots in the hopper
+            if (rawSlot != centerSlot) {
+                event.setCancelled(true);
+                event.setResult(org.bukkit.event.Event.Result.DENY);
+                return;
+            }
+        }
+        
+        // Set icon from a click into the center slot (allowed)
+        if (rawSlot < topSize && rawSlot == centerSlot) {
+            ItemStack offered = null;
+            switch (event.getClick()) {
+                case NUMBER_KEY -> {
+                    int hotbar = event.getHotbarButton();
+                    if (hotbar >= 0) {
+                        offered = player.getInventory().getItem(hotbar);
+                    }
+                }
+                case SWAP_OFFHAND -> offered = player.getInventory().getItemInOffHand();
+                default -> {
+                    if (cursor != null && cursor.getType() != Material.AIR) {
+                        offered = cursor;
+                    }
                 }
             }
+            if (offered != null && offered.getType() != Material.AIR) {
+                selectIcon(offered.getType());
+            }
+            return;
+        }
+
+        // Shift-click from player inventory to set icon (without moving items)
+        if (event.isShiftClick() && clicked != null && clicked != inventory) {
+            // Allow the shift-click to place into the only empty slot (center)
+            runLater(this::checkCenterAndSelect, 1L);
+            return;
         }
     }
+    
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    public void onInventoryDrag(InventoryDragEvent event) {
+        if (inventory == null) return;
+        if (!event.getWhoClicked().equals(player)) return;
+
+        if (!isOurSession()) return;
+
+        for (int slot : event.getInventorySlots()) {
+            if (slot != centerSlot) {
+                event.setCancelled(true);
+                event.setResult(org.bukkit.event.Event.Result.DENY);
+                return;
+            }
+        }
+        
+        // Only dragging into center is allowed
+        runLater(this::checkCenterAndSelect, 1L);
+    }
+    
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onInventoryClose(InventoryCloseEvent event) {
+        if (inventory == null || event.getInventory() != inventory) return;
+        if (!event.getPlayer().equals(player)) return;
+        
+        // Unregister events
+        org.bukkit.event.HandlerList.unregisterAll(this);
+        if (!selectionHandled) {
+            runLater(onCancel, 1L);
+        }
+    }
+
+    private void selectIcon(Material material) {
+        if (material == null || material == Material.AIR) return;
+        selectionHandled = true;
+        if (inventory != null) {
+            inventory.setItem(centerSlot, new ItemStack(material));
+        }
+        player.closeInventory();
+        runLater(() -> onIconSelected.accept(material), 1L);
+    }
+
+    @Override
+    public Inventory getInventory() {
+        return inventory;
+    }
+    
+    private boolean isOurSession() {
+        return inventory != null && inventory.getViewers().contains(player);
+    }
+    
+    private void checkCenterAndSelect() {
+        if (selectionHandled || inventory == null) return;
+        ItemStack inCenter = inventory.getItem(centerSlot);
+        if (inCenter != null && inCenter.getType() != Material.AIR) {
+            selectIcon(inCenter.getType());
+        }
+    }
+    
+    // Helper method to check if item is a filler
+    // No filler check needed; selection uses cursor or shift-click.
 }

@@ -9,6 +9,7 @@ import com.github.retrooper.packetevents.util.Vector3i;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerOpenSignEditor;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
+import dev.towki.gpexpansion.scheduler.SchedulerAdapter;
 import dev.towki.gpexpansion.setup.SetupWizardManager.PendingSignData;
 
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
@@ -141,10 +142,10 @@ public class SignPacketListener extends PacketListenerAbstract {
     }
     
     private void runOnPlayer(Player player, Runnable task) {
-        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runOnEntity(plugin, player, task, null);
+        SchedulerAdapter.runEntity(plugin, player, task, null);
     }
     
     private void runOnPlayerLater(Player player, Runnable task, long delayTicks) {
-        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runOnEntityLater(plugin, player, task, null, delayTicks);
+        SchedulerAdapter.runLaterEntity(plugin, player, task, delayTicks);
     }
 }

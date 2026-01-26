@@ -5,7 +5,6 @@ import dev.towki.gpexpansion.setup.SetupWizardManager.PendingSignData;
 
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -20,17 +19,39 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.inventory.ItemStack;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
 /**
  * Listens for sign creation to auto-fill format from setup wizard.
  * 
- * Fallback mode (no PacketEvents): Cancels BlockPlaceEvent, places sign directly
- * with content, bypassing the sign GUI entirely.
+ * Uses Spigot/Paper API: Places sign, pre-fills with format text, 
+ * opens sign editor for player to edit, then finalizes on completion.
  */
 public class SignAutoPasteListener implements Listener {
     
     private final GPExpansionPlugin plugin;
     private final SetupWizardManager wizardManager;
-    private boolean packetEventsAvailable = false;
+    
+    // Track pending sign edits: player UUID -> sign edit session
+    private final Map<UUID, PendingSignEdit> pendingEdits = new HashMap<>();
+    
+    private static class PendingSignEdit {
+        final Location signLocation;
+        final Material signType;
+        final BlockData blockData;
+        final ItemStack itemUsed;
+        final String[] formatLines;
+        
+        PendingSignEdit(Location loc, Material type, BlockData data, ItemStack item, String[] lines) {
+            this.signLocation = loc;
+            this.signType = type;
+            this.blockData = data;
+            this.itemUsed = item;
+            this.formatLines = lines;
+        }
+    }
     
     public SignAutoPasteListener(GPExpansionPlugin plugin, SetupWizardManager wizardManager) {
         this.plugin = plugin;
@@ -38,26 +59,17 @@ public class SignAutoPasteListener implements Listener {
     }
     
     /**
-     * Set whether PacketEvents is available (called from plugin after PacketEvents is registered).
-     * When true, this listener will NOT intercept BlockPlaceEvent - PacketEvents handles it.
+     * No longer needed - kept for API compatibility but does nothing.
      */
     public void setPacketEventsAvailable(boolean available) {
-        this.packetEventsAvailable = available;
-        plugin.getLogger().info("[AutoPaste] PacketEvents mode: " + (available ? "ENABLED" : "DISABLED (fallback)"));
+        // No longer used - we use pure Spigot/Paper API now
     }
     
     /**
-     * Fallback mode: Cancel sign placement, place sign directly with content.
-     * This bypasses the sign GUI entirely.
-     * Only runs when PacketEvents is NOT available.
+     * Handle sign placement: cancel, place sign with format, open editor.
      */
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onBlockPlace(BlockPlaceEvent event) {
-        // Skip if PacketEvents is handling sign pre-fill
-        if (packetEventsAvailable) {
-            return;
-        }
-        
         Player player = event.getPlayer();
         Block block = event.getBlockPlaced();
         
@@ -71,107 +83,130 @@ public class SignAutoPasteListener implements Listener {
             return;
         }
         
-        // Consume the pending data (one-time use)
-        PendingSignData data = wizardManager.consumePendingAutoPaste(player.getUniqueId());
+        // Get the pending data (don't consume yet - wait for SignChangeEvent)
+        PendingSignData data = wizardManager.getPendingAutoPaste(player.getUniqueId());
         if (data == null) {
             return;
         }
         
         String[] lines = data.getSignLines();
         
-        plugin.getLogger().info("[AutoPaste] Fallback mode: Bypassing sign GUI for " + player.getName());
+        plugin.getLogger().info("[AutoPaste] Intercepting sign placement for " + player.getName());
         
-        // Cancel the event to prevent normal sign placement (which opens GUI)
+        // Cancel the original event
         event.setCancelled(true);
         
-        // Store block info before cancellation takes effect
+        // Store block info
         Location loc = block.getLocation();
         Material signType = block.getType();
         BlockData blockData = block.getBlockData().clone();
-        ItemStack itemInHand = event.getItemInHand();
+        ItemStack itemInHand = event.getItemInHand().clone();
         
-        // Schedule sign placement for next tick (after cancel takes effect)
-        runOnPlayer(player, () -> {
-            // Re-place the sign block manually
+        // Track this pending edit
+        pendingEdits.put(player.getUniqueId(), 
+            new PendingSignEdit(loc, signType, blockData, itemInHand, lines));
+        
+        // Schedule sign placement and editor opening
+        runAtLocation(loc, () -> {
+            // Place the sign block
             Block targetBlock = loc.getBlock();
             targetBlock.setType(signType, false);
             targetBlock.setBlockData(blockData, false);
             
-            // Now set the sign content
             if (targetBlock.getState() instanceof Sign sign) {
+                // Pre-fill with format lines
                 for (int i = 0; i < 4 && i < lines.length; i++) {
-                    plugin.getLogger().info("[AutoPaste]   Line " + i + ": " + lines[i]);
-                    sign.getSide(Side.FRONT).line(i, LegacyComponentSerializer.legacyAmpersand().deserialize(lines[i]));
+                    try {
+                        sign.getSide(Side.FRONT).setLine(i, lines[i] != null ? lines[i] : "");
+                    } catch (NoSuchMethodError | NoClassDefFoundError e) {
+                        sign.setLine(i, lines[i] != null ? lines[i] : "");
+                    }
                 }
-                sign.setWaxed(true); // Prevent further editing
                 sign.update(true, false);
                 
-                // Trigger SignChangeEvent so SignListener processes it
-                SignChangeEvent signEvent = new SignChangeEvent(targetBlock, player, lines);
-                Bukkit.getPluginManager().callEvent(signEvent);
-                
-                // If SignListener modified the lines, update the sign
-                if (!signEvent.isCancelled()) {
-                    for (int i = 0; i < 4; i++) {
-                        var line = signEvent.line(i);
-                        if (line != null) {
-                            sign.getSide(Side.FRONT).line(i, line);
-                        }
+                // Open sign editor for player to edit
+                runOnPlayer(player, () -> {
+                    try {
+                        player.openSign(sign, Side.FRONT);
+                    } catch (NoSuchMethodError | NoClassDefFoundError e) {
+                        player.openSign(sign);
                     }
-                    sign.update(true, false);
-                }
-                
-                // Remove item from player's hand (consume the sign)
-                if (itemInHand.getAmount() > 1) {
-                    itemInHand.setAmount(itemInHand.getAmount() - 1);
-                } else {
-                    player.getInventory().setItemInMainHand(null);
-                }
-                
-                player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
-                    "&a✓ Sign placed with auto-filled format!"
-                ));
+                    
+                    player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
+                        "&e&lSign Auto-Paste: &7Edit if needed, then click Done."));
+                }, 2L);
             } else {
-                plugin.getLogger().warning("[AutoPaste] Failed to get sign state after placement");
+                // Failed to place sign
+                pendingEdits.remove(player.getUniqueId());
                 player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
-                    "&cFailed to auto-fill sign. Please try again."
-                ));
+                    "&cFailed to place sign. Please try again."));
             }
         });
     }
     
     /**
-     * Backup injection if BlockPlaceEvent didn't handle it
-     * (e.g., if PacketEvents is handling sign pre-fill)
+     * Handle sign edit completion: finalize the sign and consume the item.
      */
-    @EventHandler(priority = EventPriority.LOWEST)
+    @EventHandler(priority = EventPriority.LOW)
     public void onSignChange(SignChangeEvent event) {
         Player player = event.getPlayer();
+        UUID playerId = player.getUniqueId();
         
-        // Check if player has pending auto-paste
-        if (!wizardManager.hasPendingAutoPaste(player.getUniqueId())) {
+        // Check if this is a pending edit we're tracking
+        PendingSignEdit pendingEdit = pendingEdits.remove(playerId);
+        if (pendingEdit == null) {
+            // Not our sign edit - check if there's unclaimed auto-paste data
+            if (wizardManager.hasPendingAutoPaste(playerId)) {
+                // Consume it and inject the lines
+                PendingSignData data = wizardManager.consumePendingAutoPaste(playerId);
+                if (data != null) {
+                    String[] lines = data.getSignLines();
+                    for (int i = 0; i < 4 && i < lines.length; i++) {
+                        event.line(i, LegacyComponentSerializer.legacyAmpersand().deserialize(lines[i]));
+                    }
+                    player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
+                        "&a✓ Sign format auto-filled!"));
+                }
+            }
             return;
         }
         
-        // Consume the pending data (one-time use)
-        PendingSignData data = wizardManager.consumePendingAutoPaste(player.getUniqueId());
-        if (data == null) {
+        // Verify this is the sign we placed
+        if (!event.getBlock().getLocation().equals(pendingEdit.signLocation)) {
+            // Wrong sign - put pending edit back
+            pendingEdits.put(playerId, pendingEdit);
             return;
         }
         
-        // Get the sign lines and inject them into the event
-        String[] lines = data.getSignLines();
+        // Consume the auto-paste data now
+        wizardManager.consumePendingAutoPaste(playerId);
         
-        plugin.getLogger().info("[AutoPaste] SignChangeEvent injection for " + player.getName());
-        for (int i = 0; i < 4 && i < lines.length; i++) {
-            plugin.getLogger().info("[AutoPaste]   Line " + i + ": " + lines[i]);
-            event.line(i, LegacyComponentSerializer.legacyAmpersand().deserialize(lines[i]));
+        // Consume the sign item from player's inventory
+        ItemStack itemUsed = pendingEdit.itemUsed;
+        if (itemUsed != null && itemUsed.getType() != Material.AIR) {
+            // Find and remove one sign from inventory
+            ItemStack mainHand = player.getInventory().getItemInMainHand();
+            ItemStack offHand = player.getInventory().getItemInOffHand();
+            
+            if (mainHand.getType() == itemUsed.getType()) {
+                if (mainHand.getAmount() > 1) {
+                    mainHand.setAmount(mainHand.getAmount() - 1);
+                } else {
+                    player.getInventory().setItemInMainHand(null);
+                }
+            } else if (offHand.getType() == itemUsed.getType()) {
+                if (offHand.getAmount() > 1) {
+                    offHand.setAmount(offHand.getAmount() - 1);
+                } else {
+                    player.getInventory().setItemInOffHand(null);
+                }
+            }
         }
         
-        // Send confirmation message
+        plugin.getLogger().info("[AutoPaste] Sign completed by " + player.getName());
+        
         player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
-            "&a✓ Sign format auto-filled and placed!"
-        ));
+            "&a✓ Sign placed successfully!"));
     }
     
     private boolean isSign(Material material) {
@@ -179,7 +214,11 @@ public class SignAutoPasteListener implements Listener {
         return name.endsWith("_SIGN") || name.endsWith("_HANGING_SIGN");
     }
     
-    private void runOnPlayer(Player player, Runnable task) {
-        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runOnEntity(plugin, player, task, null);
+    private void runOnPlayer(Player player, Runnable task, long delayTicks) {
+        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runLaterEntity(plugin, player, task, delayTicks);
+    }
+    
+    private void runAtLocation(Location loc, Runnable task) {
+        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runAtLocation(plugin, loc, task);
     }
 }

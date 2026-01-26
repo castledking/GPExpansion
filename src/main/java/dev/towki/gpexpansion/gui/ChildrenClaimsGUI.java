@@ -83,7 +83,7 @@ public class ChildrenClaimsGUI extends BaseGUI {
             info.is3D = is3DSubdivision(child);
             
             // Get claim details
-            info.name = plugin.getNameStore().get(claimId).orElse("Subdivision #" + claimId);
+            info.name = plugin.getClaimDataStore().getCustomName(claimId).orElse("Subdivision #" + claimId);
             info.area = getClaimArea(child);
             info.location = getClaimLocation(child);
             info.hasChildren = !gp.getSubclaims(child).isEmpty();
@@ -147,7 +147,7 @@ public class ChildrenClaimsGUI extends BaseGUI {
     @Override
     public Inventory createInventory() {
         String title = getString("title", "&e&lSubdivisions - #{id}").replace("{id}", parentClaimId);
-        inventory = createBaseInventory(title, 54);
+        inventory = createBaseInventoryWithTitle(title, 54);
         populateInventory();
         return inventory;
     }
@@ -280,7 +280,7 @@ public class ChildrenClaimsGUI extends BaseGUI {
     private void handleChildClick(InventoryClickEvent event, ChildInfo info) {
         if (isLeftClick(event) && !event.isShiftClick()) {
             if (player.hasPermission("griefprevention.claim.teleport")) {
-                closeAndRun(() -> player.performCommand("claim tp " + info.claimId));
+                closeAndRunOnMainThread("claim tp " + info.claimId);
             } else {
                 plugin.getMessages().send(player, "general.no-permission");
             }
@@ -291,8 +291,8 @@ public class ChildrenClaimsGUI extends BaseGUI {
                     ? info.name : "Unnamed";
                 SignInputGUI.openRename(plugin, player, displayName,
                     newName -> {
-                        plugin.getNameStore().set(info.claimId, newName);
-                        plugin.getNameStore().save();
+                        plugin.getClaimDataStore().setCustomName(info.claimId, newName);
+                        plugin.getClaimDataStore().save();
                         plugin.getMessages().send(player, "gui.claim-renamed", "{id}", info.claimId, "{name}", newName);
                         manager.openChildrenClaims(player, parentClaim, parentClaimId);
                     },

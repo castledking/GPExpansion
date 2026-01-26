@@ -40,3 +40,26 @@ tax:
   # The NPC account name to deposit tax into
   # This account is automatically created if it doesn't exist
   account-name: "Tax"
+
+# Eviction settings
+eviction:
+  # Time in days that a renter has before being evicted after notice is given
+  # Default is 14 days
+  notice-period-days: 14
+
+# Version tracking and update checking
+version:
+  # Current configuration version (DO NOT MODIFY)
+  # Used to handle configuration migrations between versions
+  config-version: "0.1.3a"
+  
+  # Update checking settings
+  update-checker:
+    # Enable checking for updates on SpigotMC
+    enabled: true
+    # How often to check for updates (in hours)
+    check-interval: 24
+    # Notify admins in-game when updates are available
+    notify-admins: true
+    # Log update notifications to console
+    log-to-console: true

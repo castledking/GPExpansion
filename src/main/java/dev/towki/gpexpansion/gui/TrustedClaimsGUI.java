@@ -1,7 +1,7 @@
 package dev.towki.gpexpansion.gui;
 
 import dev.towki.gpexpansion.gp.GPBridge;
-import dev.towki.gpexpansion.storage.RentalStore;
+import dev.towki.gpexpansion.storage.ClaimDataStore;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -92,18 +92,18 @@ public class TrustedClaimsGUI extends BaseGUI {
             // Determine claim type
             info.isRented = isClaimRented(claimId);
             info.isSold = false; // Would need sell sign tracking
-            info.isMailbox = plugin.getMailboxStore().isMailbox(claimId);
+            info.isMailbox = plugin.getClaimDataStore().isMailbox(claimId);
             info.isSubdivision = gp.isSubdivision(claim);
             
             // Get claim details
-            info.name = plugin.getNameStore().get(claimId).orElse("Claim #" + claimId);
+            info.name = plugin.getClaimDataStore().getCustomName(claimId).orElse("Claim #" + claimId);
             info.ownerName = getOwnerName(claim);
             info.area = getClaimArea(claim);
             info.location = getClaimLocation(claim);
             
             // Check if player can renew (is renter)
             if (info.isRented) {
-                RentalStore.Entry entry = plugin.getRentalStore().get(claimId);
+                ClaimDataStore.RentalData entry = plugin.getClaimDataStore().getRental(claimId).orElse(null);
                 info.canRenew = entry != null && entry.renter.equals(player.getUniqueId());
             }
             
@@ -125,7 +125,7 @@ public class TrustedClaimsGUI extends BaseGUI {
     }
     
     private boolean isClaimRented(String claimId) {
-        return plugin.getRentalStore().isRented(claimId);
+        return plugin.getClaimDataStore().isRented(claimId);
     }
     
     private String getOwnerName(Object claim) {
@@ -306,7 +306,7 @@ public class TrustedClaimsGUI extends BaseGUI {
     private void handleClaimClick(InventoryClickEvent event, ClaimInfo info) {
         if (isLeftClick(event) && !event.isShiftClick()) {
             if (player.hasPermission("griefprevention.claim.teleport")) {
-                closeAndRun(() -> player.performCommand("claim tp " + info.claimId));
+                closeAndRunOnMainThread("claim tp " + info.claimId);
             } else {
                 plugin.getMessages().send(player, "general.no-permission");
             }
