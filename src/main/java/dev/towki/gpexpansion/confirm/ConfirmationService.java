@@ -197,8 +197,8 @@ public class ConfirmationService {
                     if (signBlock.getState() instanceof Sign sign) {
                         // Update sign to show owned status
                         sign.getSide(Side.FRONT).line(0, LegacyComponentSerializer.legacyAmpersand().deserialize("&2&l[Owned]"));
-                        sign.getSide(Side.FRONT).line(1, LegacyComponentSerializer.legacyAmpersand().deserialize("&0ID: &6" + claimId));
-                        sign.getSide(Side.FRONT).line(2, LegacyComponentSerializer.legacyAmpersand().deserialize("&0Owner: " + player.getName()));
+                        sign.getSide(Side.FRONT).line(1, LegacyComponentSerializer.legacyAmpersand().deserialize("&0" + player.getName()));
+                        sign.getSide(Side.FRONT).line(2, Component.text("", NamedTextColor.BLACK));
                         sign.getSide(Side.FRONT).line(3, Component.text("", NamedTextColor.BLACK));
                         sign.update(true);
                         plugin.getLogger().info("Updated buy sign at " + signLoc + " after claim purchase by " + player.getName());
@@ -258,21 +258,28 @@ public class ConfirmationService {
             s.getPersistentDataContainer().set(new org.bukkit.NamespacedKey(plugin, "rent.renter"), PersistentDataType.STRING, player.getUniqueId().toString());
             s.getPersistentDataContainer().set(new org.bukkit.NamespacedKey(plugin, "rent.expiry"), PersistentDataType.LONG, newExpiry);
 
-            // Set the sign lines using Adventure components to match the creation format
-            s.getSide(Side.FRONT).line(0, LegacyComponentSerializer.legacyAmpersand().deserialize("&c&l[Rented]"));
-            s.getSide(Side.FRONT).line(1, LegacyComponentSerializer.legacyAmpersand().deserialize("&0ID: &6" + claimId));
+            String ownerName = "Unknown";
+            if (claimOpt.isPresent()) {
+                try {
+                    Object ownerId = claimOpt.get().getClass().getMethod("getOwnerID").invoke(claimOpt.get());
+                    if (ownerId instanceof UUID) {
+                        String name = Bukkit.getOfflinePlayer((UUID) ownerId).getName();
+                        if (name != null) ownerName = name;
+                    }
+                } catch (Exception ignored) {}
+            }
 
-            String ecoAmt = pdc.get(new org.bukkit.NamespacedKey(plugin, "sign.ecoAmt"), PersistentDataType.STRING);
             String per = pdc.get(new org.bukkit.NamespacedKey(plugin, "sign.perClick"), PersistentDataType.STRING);
-            if (ecoAmt == null) ecoAmt = "";
+            String maxCapPdc = pdc.get(new org.bukkit.NamespacedKey(plugin, "sign.maxCap"), PersistentDataType.STRING);
             if (per == null) per = "";
+            if (maxCapPdc == null) maxCapPdc = "";
 
-            String line2Text = "&0" + ecoAmt + "&0/" + per;
-            s.getSide(Side.FRONT).line(2, LegacyComponentSerializer.legacyAmpersand().deserialize(line2Text));
+            String ecoFormatted = formatEcoAmount(kind, ecoAmtRaw);
 
-            long remain = Math.max(0L, newExpiry - System.currentTimeMillis());
-            String line3Text = "&0" + formatDuration(remain);
-            s.getSide(Side.FRONT).line(3, LegacyComponentSerializer.legacyAmpersand().deserialize(line3Text));
+            s.getSide(Side.FRONT).line(0, LegacyComponentSerializer.legacyAmpersand().deserialize("&c&l[Rented]"));
+            s.getSide(Side.FRONT).line(1, LegacyComponentSerializer.legacyAmpersand().deserialize("&0" + ownerName));
+            s.getSide(Side.FRONT).line(2, LegacyComponentSerializer.legacyAmpersand().deserialize("&0" + ecoFormatted + "&0/" + per));
+            s.getSide(Side.FRONT).line(3, LegacyComponentSerializer.legacyAmpersand().deserialize("&0Max: " + maxCapPdc));
 
             s.update(true);
         }
