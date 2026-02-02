@@ -1,6 +1,8 @@
 package dev.towki.gpexpansion.listener;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
+import dev.towki.gpexpansion.gp.GPBridge;
+import dev.towki.gpexpansion.util.EcoKind;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -28,6 +30,7 @@ public class SignDisplayListener implements Listener {
     private final NamespacedKey keyKind;
     private final NamespacedKey keyClaim;
     private final NamespacedKey keyEcoAmt;
+    private final NamespacedKey keyEcoKind;
     private final NamespacedKey keyPerClick;
     private final NamespacedKey keyMaxCap;
     private final NamespacedKey keyItemB64;
@@ -43,6 +46,7 @@ public class SignDisplayListener implements Listener {
         keyKind = new NamespacedKey(plugin, "sign.kind");
         keyClaim = new NamespacedKey(plugin, "sign.claimId");
         keyEcoAmt = new NamespacedKey(plugin, "sign.ecoAmt");
+        keyEcoKind = new NamespacedKey(plugin, "sign.ecoKind");
         keyPerClick = new NamespacedKey(plugin, "sign.perClick");
         keyMaxCap = new NamespacedKey(plugin, "sign.maxCap");
         keyItemB64 = new NamespacedKey(plugin, "sign.itemMeta");
@@ -96,7 +100,7 @@ public class SignDisplayListener implements Listener {
                                     sign.setLine(0, ChatColor.BLUE + "" + ChatColor.BOLD + "[Mailbox]");
                                     sign.setLine(1, ChatColor.GREEN + ownerName);
                                     sign.setLine(2, ChatColor.BLACK + "(Click to open)");
-                                    sign.setLine(3, ChatColor.BLACK + "ID: " + ChatColor.GOLD + claimId);
+                                    sign.setLine(3, "");
                                     sign.update();
                                 }
                             }
@@ -141,14 +145,18 @@ public class SignDisplayListener implements Listener {
                             // Revert to [Rented] if rented, else [Rent Claim] or [Buy Claim]
                             if (isRented) {
                                 sign.setLine(0, ChatColor.RED + "" + ChatColor.BOLD + "[Rented]");
-                                // Restore original lines 2 and 3 from PDC
+                                String ownerName = resolveClaimOwnerName(claimId);
+                                sign.setLine(1, ChatColor.BLACK + ownerName);
                                 String ecoAmt = pdc.get(keyEcoAmt, PersistentDataType.STRING);
+                                String ecoKindStr = pdc.get(keyEcoKind, PersistentDataType.STRING);
                                 String perClick = pdc.get(keyPerClick, PersistentDataType.STRING);
+                                String maxCap = pdc.get(keyMaxCap, PersistentDataType.STRING);
                                 if (ecoAmt == null) ecoAmt = "";
                                 if (perClick == null) perClick = "";
-                                sign.setLine(2, ChatColor.BLACK + ecoAmt + ChatColor.BLACK + "/" + perClick);
-                                long remain = expiry != null ? Math.max(0L, expiry - System.currentTimeMillis()) : 0L;
-                                sign.setLine(3, ChatColor.BLACK + formatDuration(remain));
+                                if (maxCap == null) maxCap = "";
+                                String ecoFormatted = formatEcoForSign(ecoKindStr, ecoAmt);
+                                sign.setLine(2, ChatColor.BLACK + ecoFormatted + ChatColor.BLACK + "/" + perClick);
+                                sign.setLine(3, ChatColor.BLACK + "Max: " + maxCap);
                             } else {
                                 // Check if this is a sell sign by looking at the PDC data
                                 String kind = pdc.get(keyKind, PersistentDataType.STRING);
@@ -249,6 +257,50 @@ public class SignDisplayListener implements Listener {
         return sb.toString().trim();
     }
     
+    private String resolveClaimOwnerName(String claimId) {
+        if (claimId == null || claimId.isEmpty()) return "Unknown";
+        try {
+            GPBridge gpBridge = new GPBridge();
+            java.util.Optional<Object> claimOpt = gpBridge.findClaimById(claimId);
+            if (!claimOpt.isPresent()) return "Unknown";
+            Object ownerId = claimOpt.get().getClass().getMethod("getOwnerID").invoke(claimOpt.get());
+            if (!(ownerId instanceof UUID)) return "Unknown";
+            String name = Bukkit.getOfflinePlayer((UUID) ownerId).getName();
+            return name != null ? name : "Unknown";
+        } catch (Exception e) {
+            return "Unknown";
+        }
+    }
+
+    private String formatEcoForSign(String ecoKindStr, String ecoAmtRaw) {
+        if (ecoAmtRaw == null) return "";
+        if (ecoKindStr == null) ecoKindStr = "MONEY";
+        try {
+            EcoKind kind = EcoKind.valueOf(ecoKindStr.toUpperCase());
+            switch (kind) {
+                case MONEY:
+                    try {
+                        double amount = Double.parseDouble(ecoAmtRaw);
+                        return plugin.formatMoney(amount);
+                    } catch (NumberFormatException ignored) {
+                        return "$" + ecoAmtRaw;
+                    }
+                case EXPERIENCE:
+                    return ecoAmtRaw.toUpperCase().endsWith("L")
+                        ? ecoAmtRaw.substring(0, ecoAmtRaw.length() - 1) + " Levels"
+                        : ecoAmtRaw + " XP";
+                case CLAIMBLOCKS:
+                    return ecoAmtRaw + " blocks";
+                case ITEM:
+                    return ecoAmtRaw + " items";
+                default:
+                    return ecoAmtRaw;
+            }
+        } catch (IllegalArgumentException ignored) {
+            return ecoAmtRaw;
+        }
+    }
+
     private String formatDuration(long millis) {
         if (millis <= 0) return "0s";
         long seconds = millis / 1000;
