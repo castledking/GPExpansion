@@ -1,6 +1,7 @@
 package dev.towki.gpexpansion.config;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
+import dev.towki.gpexpansion.gp.GPBridge;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
@@ -135,8 +136,19 @@ public class VersionManager {
             plugin.getLogger().info("VersionManager: Migration needed, starting...");
             performMigrationToVersion013a(configVersion);
         } else {
-            plugin.getLogger().info("VersionManager: No migration needed");
+            plugin.getLogger().info("VersionManager: No migration needed for 0.1.3a");
         }
+
+        // Migrate self-mailboxes section to defaults.max-self-mailboxes-per-claim
+        migrateSelfMailboxesConfig();
+
+        // If version is older than 0.1.5a, set mailbox-protocol default from GP detection and bump version
+        if (isVersionOlder(currentConfigVersion, "0.1.5a")) {
+            migrateToVersion015a();
+        }
+
+        // Always ensure mailbox-protocol exists (some users may already be on 0.1.5a without this key).
+        ensureMailboxProtocolPresent();
         
         // Schedule update check if enabled
         if (updateCheckerEnabled) {
@@ -282,6 +294,57 @@ public class VersionManager {
             ));
     }
     
+    /**
+     * Migrate deprecated self-mailboxes section to defaults.max-self-mailboxes-per-claim
+     */
+    private void migrateSelfMailboxesConfig() {
+        FileConfiguration config = plugin.getConfig();
+        if (config.contains("self-mailboxes")) {
+            if (config.contains("self-mailboxes.max") && !config.contains("defaults.max-self-mailboxes-per-claim")) {
+                int max = config.getInt("self-mailboxes.max", 1);
+                config.set("defaults.max-self-mailboxes-per-claim", max);
+                plugin.getLogger().info("VersionManager: Migrated self-mailboxes.max to defaults.max-self-mailboxes-per-claim: " + max);
+            }
+            config.set("self-mailboxes", null);
+            plugin.saveConfig();
+            plugin.getLogger().info("VersionManager: Removed deprecated self-mailboxes section");
+        }
+    }
+
+    /**
+     * Migrate to config version 0.1.5a: set mailbox-protocol default from GP detection (first time only).
+     * If GP3D is detected default to "real", otherwise "virtual". Only sets when key is missing.
+     */
+    private void migrateToVersion015a() {
+        FileConfiguration config = plugin.getConfig();
+        if (!config.contains("mailbox-protocol")) {
+            GPBridge gp = new GPBridge();
+            boolean gp3d = gp.isGP3D();
+            String defaultProtocol = gp3d ? "real" : "virtual";
+            config.set("mailbox-protocol", defaultProtocol);
+            plugin.getLogger().info("VersionManager: Set mailbox-protocol to " + defaultProtocol + " (detected " + (gp3d ? "GP3D" : "regular GP") + "). You can change this in config.yml.");
+        }
+        config.set("version.config-version", "0.1.5a");
+        plugin.saveConfig();
+        currentConfigVersion = "0.1.5a";
+        plugin.getLogger().info("VersionManager: Config version updated to 0.1.5a");
+    }
+
+    /**
+     * Ensure mailbox-protocol exists without overwriting user choice.
+     * Used for cases where config-version is already 0.1.5a but the key is missing.
+     */
+    private void ensureMailboxProtocolPresent() {
+        FileConfiguration config = plugin.getConfig();
+        if (config.contains("mailbox-protocol")) return;
+        GPBridge gp = new GPBridge();
+        boolean gp3d = gp.isGP3D();
+        String defaultProtocol = gp3d ? "real" : "virtual";
+        config.set("mailbox-protocol", defaultProtocol);
+        plugin.saveConfig();
+        plugin.getLogger().info("VersionManager: Added missing mailbox-protocol=" + defaultProtocol + " (detected " + (gp3d ? "GP3D" : "regular GP") + ").");
+    }
+
     /**
      * Schedule update checking
      */

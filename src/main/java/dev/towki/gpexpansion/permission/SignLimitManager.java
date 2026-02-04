@@ -18,11 +18,13 @@ public class SignLimitManager {
     private final Map<UUID, Integer> sellLimits = new ConcurrentHashMap<>();
     private final Map<UUID, Integer> rentLimits = new ConcurrentHashMap<>();
     private final Map<UUID, Integer> mailboxLimits = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> selfMailboxLimits = new ConcurrentHashMap<>();
     private final Map<UUID, Integer> globalClaimLimits = new ConcurrentHashMap<>();
     private final Map<UUID, Boolean> permissionOverride = new ConcurrentHashMap<>();
     private int defaultSellLimit;
     private int defaultRentLimit;
     private int defaultMailboxLimit;
+    private int defaultSelfMailboxLimit;
     private int defaultGlobalClaimLimit;
     
     public SignLimitManager(GPExpansionPlugin plugin) {
@@ -39,6 +41,7 @@ public class SignLimitManager {
         defaultSellLimit = config.getInt("defaults.max-sell-signs", 5);
         defaultRentLimit = config.getInt("defaults.max-rent-signs", 5);
         defaultMailboxLimit = config.getInt("defaults.max-mailbox-signs", 5);
+        defaultSelfMailboxLimit = config.getInt("defaults.max-self-mailboxes-per-claim", 1);
         defaultGlobalClaimLimit = config.getInt("defaults.max-global-claims", 5);
     }
     
@@ -51,6 +54,7 @@ public class SignLimitManager {
         sellLimits.clear();
         rentLimits.clear();
         mailboxLimits.clear();
+        selfMailboxLimits.clear();
         globalClaimLimits.clear();
     }
     
@@ -276,6 +280,36 @@ public class SignLimitManager {
         int current = getMailboxLimit(player);
         setMailboxLimit(player, Math.max(0, current - amount));
     }
+
+    /**
+     * Get the maximum number of self mailboxes per claim a player can create
+     */
+    public int getSelfMailboxLimit(Player player) {
+        return selfMailboxLimits.getOrDefault(player.getUniqueId(), defaultSelfMailboxLimit);
+    }
+
+    /**
+     * Set a player's self mailbox limit (used for admin commands)
+     */
+    public void setSelfMailboxLimit(Player player, int limit) {
+        selfMailboxLimits.put(player.getUniqueId(), Math.max(0, limit));
+    }
+
+    /**
+     * Add to a player's self mailbox limit
+     */
+    public void addSelfMailboxLimit(Player player, int amount) {
+        int current = getSelfMailboxLimit(player);
+        setSelfMailboxLimit(player, current + amount);
+    }
+
+    /**
+     * Take from a player's self mailbox limit
+     */
+    public void takeSelfMailboxLimit(Player player, int amount) {
+        int current = getSelfMailboxLimit(player);
+        setSelfMailboxLimit(player, Math.max(0, current - amount));
+    }
     
     /**
      * Get the maximum number of global claims a player can have
@@ -395,6 +429,7 @@ public class SignLimitManager {
         sellLimits.clear();
         rentLimits.clear();
         mailboxLimits.clear();
+        selfMailboxLimits.clear();
         globalClaimLimits.clear();
         permissionOverride.clear();
     }

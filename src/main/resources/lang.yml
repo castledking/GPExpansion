@@ -204,6 +204,14 @@ mailbox:
   economy-not-available: "&cEconomy not available. Please ensure Vault and an economy provider are installed."
   not-enough-money: "&cYou don't have enough money."
   not-enough-experience: "&cYou don't have enough experience."
+  items-returned: "&eSome items were returned - the mailbox was updated since you opened it."
+  must-own-or-rent: "&cYou must own or rent this claim to create a self mailbox."
+  self-limit-reached: "&cYou have reached the self mailbox limit ({max}) for this claim."
+  instant-creation-failed: "&cCould not create subdivision. GP3D with AllowNestedSubclaims may be required."
+  self-created: "&aSelf mailbox created!"
+  buyable-created: "&aBuyable mailbox sign created! Others can click to purchase."
+  self-deleted: "&aSelf mailbox and subdivision removed."
+  self-deleted-virtual: "&aSelf mailbox removed."
 
 # =============================================================================
 # CLAIM TELEPORT MESSAGES
@@ -269,12 +277,12 @@ commands:
   
   # Mailbox command
   mailbox-help-title: "&6Mailbox Usage:"
-  mailbox-help-step1: "&71. Create a 1x1x1 3D subdivision claim"
-  mailbox-help-step2: "&72. Place a container (chest/barrel) inside it"
-  mailbox-help-step3: "&73. Run /mailbox <claimId> to start the setup wizard"
-  mailbox-help-step4: "&74. Or create a [Mailbox] sign manually"
+  mailbox-help-step1: "&71. Place a container (chest/barrel) in a claim you own or rent"
+  mailbox-help-step2: "&72. Run &e/mailbox&7 to start the setup wizard (choose self or buyable)"
+  mailbox-help-step3: "&73. Or create a [Mailbox] sign manually: line 0 &e[Mailbox]&7, line 1 empty or &ekind;amount&7 for buyable"
+  mailbox-help-step4: "&74. Put the sign on the container as a wall sign"
   mailbox-commands-title: "&eCommands:"
-  mailbox-cmd-setup: "&7/mailbox <id> - Start setup wizard"
+  mailbox-cmd-setup: "&7/mailbox - Start setup wizard (no claim ID needed)"
   mailbox-cmd-help: "&7/mailbox help - Show this help"
   
   # Rent claim command
@@ -290,8 +298,8 @@ commands:
   sellclaim-cmd-hint: "&7(If no ID provided, uses current claim)"
   
   # GPX max command
-  gpx-max-usage: "&cUsage: /gpx max <sell|rent|mailbox|globals> <add|take|set> <player> <amount>"
-  gpx-max-invalid-type: "&cInvalid type. Use 'sell', 'rent', 'mailbox', or 'globals'."
+  gpx-max-usage: "&cUsage: /gpx max <sell|rent|mailbox|self-mailboxes|globals> <add|take|set> <player> <amount>"
+  gpx-max-invalid-type: "&cInvalid type. Use 'sell', 'rent', 'mailbox', 'self-mailboxes', or 'globals'."
   gpx-max-invalid-action: "&cInvalid action. Use 'add', 'take', or 'set'."
   gpx-max-amount-required: "&cPlease specify an amount."
   gpx-max-amount-positive: "&cAmount must be positive."
@@ -306,6 +314,7 @@ commands:
   gpx-max-current-sell: "&b  Sell signs: {count}"
   gpx-max-current-rent: "&b  Rent signs: {count}"
   gpx-max-current-mailbox: "&b  Mailbox signs: {count}"
+  gpx-max-current-self-mailbox: "&b  Self mailboxes per claim: {count}"
   gpx-max-current-globals: "&b  Global claims: {count}"
   gpx-max-desync-warning: "&eWarning: Permission desync detected for {player}!"
   gpx-max-desync-cleanup: "&aPermissions will be automatically cleaned up using {plugin}."
@@ -366,7 +375,9 @@ wizard:
   # Mailbox wizard
   mailbox-start: "&aSetting up mailbox for claim &6{id}&a..."
   mailbox-start-no-claim: "&a&l=== Mailbox Sign Setup ==="
-  mailbox-enter-claim-id: "&eEnter the 1x1x1 subdivision claim ID:"
+  mailbox-choose-type: "&eSelf mailbox or buyable? Type &aself&e or &abuyable&e."
+  mailbox-self-or-buyable-hint: "&7Self = instant mailbox for you (place [Mailbox] on container). Buyable = others pay to get the mailbox."
+  mailbox-enter-claim-id: "&eEnter the claim ID:"
   mailbox-enter-claim-id-hint: "&7(Quick tip: do &6/claimlist&7 to view your claim IDs)"
   mailbox-enter-economy: "&eWhat payment type?"
   mailbox-enter-economy-hint: "&7Options: &emoney&7, &eexp&7, &eclaimblocks&7, &eitem"

@@ -79,6 +79,8 @@ public class ClaimDataStore {
     public static class MailboxData {
         public UUID owner;
         public Location signLocation;
+        /** For virtual protocol mailboxes (no subdivision): container block location. Null for real-protocol mailboxes. */
+        public Location containerLocation;
         
         public MailboxData(UUID owner) {
             this.owner = owner;
@@ -242,6 +244,17 @@ public class ClaimDataStore {
                             data.mailbox.signLocation = new Location(world, x, y, z);
                         }
                     }
+                    // Load container location (virtual protocol)
+                    String contWorld = config.getString(mailboxPath + "containerWorld");
+                    if (contWorld != null) {
+                        World world = Bukkit.getWorld(contWorld);
+                        if (world != null) {
+                            int x = config.getInt(mailboxPath + "containerX");
+                            int y = config.getInt(mailboxPath + "containerY");
+                            int z = config.getInt(mailboxPath + "containerZ");
+                            data.mailbox.containerLocation = new Location(world, x, y, z);
+                        }
+                    }
                 } catch (IllegalArgumentException ignored) {}
             }
         }
@@ -345,6 +358,12 @@ public class ClaimDataStore {
                     config.set(mailboxPath + "signX", data.mailbox.signLocation.getBlockX());
                     config.set(mailboxPath + "signY", data.mailbox.signLocation.getBlockY());
                     config.set(mailboxPath + "signZ", data.mailbox.signLocation.getBlockZ());
+                }
+                if (data.mailbox.containerLocation != null && data.mailbox.containerLocation.getWorld() != null) {
+                    config.set(mailboxPath + "containerWorld", data.mailbox.containerLocation.getWorld().getName());
+                    config.set(mailboxPath + "containerX", data.mailbox.containerLocation.getBlockX());
+                    config.set(mailboxPath + "containerY", data.mailbox.containerLocation.getBlockY());
+                    config.set(mailboxPath + "containerZ", data.mailbox.containerLocation.getBlockZ());
                 }
             }
             
@@ -850,6 +869,17 @@ public class ClaimDataStore {
         MailboxData mailbox = get(claimId).mailbox;
         if (mailbox != null) {
             mailbox.signLocation = location;
+        }
+    }
+    
+    public Optional<Location> getMailboxContainerLocation(String claimId) {
+        return getMailbox(claimId).map(mailbox -> mailbox.containerLocation).filter(loc -> loc != null);
+    }
+    
+    public void setMailboxContainerLocation(String claimId, Location location) {
+        MailboxData mailbox = get(claimId).mailbox;
+        if (mailbox != null) {
+            mailbox.containerLocation = location;
         }
     }
     

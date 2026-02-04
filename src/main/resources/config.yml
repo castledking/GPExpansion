@@ -10,6 +10,11 @@ messages:
   # Show detailed permission info when player lacks permission (e.g., "Missing: griefprevention.sign.rent.exp")
   show-permission-details: true
 
+# Mailbox protocol (first-time default is set from GP: GP3D -> real, regular GP -> virtual; change below as desired):
+# real = create subdivision + container trust public (non-owner opens real chest with dynamic updates)
+# virtual = no subdivision, virtual view, non-updating (useful for non-GP3D users who want stackable mailboxes)
+mailbox-protocol: virtual
+
 # Default limits for sign creation (can be overridden by permissions)
 defaults:
   # Default maximum number of sell signs a player can create
@@ -18,6 +23,8 @@ defaults:
   max-rent-signs: 5
   # Default maximum number of mailbox signs a player can create
   max-mailbox-signs: 5
+  # Max self mailboxes per claim (for claims owned or rented by the player)
+  max-self-mailboxes-per-claim: 1
 
 # Permission tracking settings
 permission-tracking:
@@ -51,7 +58,7 @@ eviction:
 version:
   # Current configuration version (DO NOT MODIFY)
   # Used to handle configuration migrations between versions
-  config-version: "0.1.3a"
+  config-version: "0.1.5a"
   
   # Update checking settings
   update-checker:

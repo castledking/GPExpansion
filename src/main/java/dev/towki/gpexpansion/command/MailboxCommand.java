@@ -48,11 +48,11 @@ public class MailboxCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         
-        // Check permission
-        if (!player.hasPermission("griefprevention.sign.create.mailbox")) {
+        // Check permission (wizard supports both buyable and self mailbox)
+        if (!player.hasPermission("griefprevention.sign.create.mailbox") && !player.hasPermission("griefprevention.sign.create.self-mailbox")) {
             Messages messages = plugin.getMessages();
             messages.send(player, "permissions.create-sign-denied", "signtype", "mailbox");
-            messages.send(player, "permissions.create-sign-denied-detail", "permission", "griefprevention.sign.create.mailbox");
+            messages.send(player, "permissions.create-sign-denied-detail", "permission", "griefprevention.sign.create.mailbox or griefprevention.sign.create.self-mailbox");
             return true;
         }
         

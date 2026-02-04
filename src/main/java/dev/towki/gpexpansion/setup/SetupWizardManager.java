@@ -46,6 +46,8 @@ public class SetupWizardManager {
         public final EcoKind ecoKind;
         public final String price;
         
+        public final boolean mailboxSelf;
+
         public PendingSignData(SetupSession session) {
             this.type = session.getType();
             this.claimId = session.getClaimId();
@@ -53,8 +55,9 @@ public class SetupWizardManager {
             this.maxTime = session.getMaxTime();
             this.ecoKind = session.getEcoKind();
             this.price = session.getPrice();
+            this.mailboxSelf = session.getType() == SetupType.MAILBOX && session.isMailboxSelf();
         }
-        
+
         public String[] getSignLines() {
             switch (type) {
                 case RENT:
@@ -72,11 +75,14 @@ public class SetupWizardManager {
                         price
                     };
                 case MAILBOX:
+                    if (mailboxSelf) {
+                        return new String[] { "[Mailbox]", "", "", "" };
+                    }
                     return new String[] {
-                        "[mailbox]",
-                        claimId,
-                        ecoKind.name().toLowerCase(),
-                        price
+                        "[Mailbox]",
+                        (ecoKind != null ? ecoKind.name().toLowerCase() : "money") + ";" + (price != null ? price : "100"),
+                        "",
+                        ""
                     };
                 default:
                     return new String[] {"", "", "", ""};
@@ -115,7 +121,15 @@ public class SetupWizardManager {
         }
         
         SetupSession session = new SetupSession(playerId, type);
-        
+
+        // Mailbox: no claim ID needed — start at "self or buyable" step
+        if (type == SetupType.MAILBOX) {
+            session.setCurrentStep(SetupStep.AWAITING_MAILBOX_TYPE);
+            activeSessions.put(playerId, session);
+            sendCurrentStepPrompt(player, session);
+            return true;
+        }
+
         // If claim ID is provided, validate and skip to step 2
         if (claimId != null && !claimId.isEmpty()) {
             // Validate claim exists
@@ -124,37 +138,17 @@ public class SetupWizardManager {
                 plugin.getMessages().send(player, "wizard.claim-not-found", "{id}", claimId);
                 return false;
             }
-            
+
             // Validate ownership
             Object claim = claimOpt.get();
             if (!gp.isOwner(claim, playerId) && !player.hasPermission("griefprevention.admin")) {
                 plugin.getMessages().send(player, "wizard.not-claim-owner");
                 return false;
             }
-            
-            // For mailbox, validate it's a 1x1x1 3D subdivision
-            if (type == SetupType.MAILBOX) {
-                if (!gp.isGP3D()) {
-                    plugin.getMessages().send(player, "wizard.gp3d-required");
-                    return false;
-                }
-                if (!gp.isSubdivision(claim) || !gp.is3DClaim(claim)) {
-                    plugin.getMessages().send(player, "wizard.mailbox-must-be-subdivision");
-                    return false;
-                }
-                int[] dims = gp.getClaimDimensions(claim);
-                if (dims[0] != 1 || dims[1] != 1 || dims[2] != 1) {
-                    plugin.getMessages().send(player, "wizard.mailbox-wrong-size",
-                        "{width}", String.valueOf(dims[0]),
-                        "{height}", String.valueOf(dims[1]),
-                        "{depth}", String.valueOf(dims[2]));
-                    return false;
-                }
-            }
-            
+
             session.setClaimId(claimId);
             session.setIdPreResolved(true);
-            
+
             // Advance to next step based on type
             if (type == SetupType.RENT) {
                 session.setCurrentStep(SetupStep.AWAITING_RENEWAL_TIME);
@@ -162,7 +156,7 @@ public class SetupWizardManager {
                 session.setCurrentStep(SetupStep.AWAITING_ECO_TYPE);
             }
         }
-        
+
         activeSessions.put(playerId, session);
         sendCurrentStepPrompt(player, session);
         return true;
@@ -248,6 +242,8 @@ public class SetupWizardManager {
         switch (session.getCurrentStep()) {
             case AWAITING_CLAIM_ID:
                 return handleClaimIdInput(player, session, trimmed);
+            case AWAITING_MAILBOX_TYPE:
+                return handleMailboxTypeInput(player, session, trimmed);
             case AWAITING_RENEWAL_TIME:
                 return handleRenewalTimeInput(player, session, trimmed);
             case AWAITING_MAX_TIME:
@@ -285,28 +281,7 @@ public class SetupWizardManager {
             plugin.getMessages().send(player, "wizard.not-claim-owner");
             return true;
         }
-        
-        // For mailbox, validate it's a 1x1x1 3D subdivision
-        if (session.getType() == SetupType.MAILBOX) {
-            if (!gp.isGP3D()) {
-                plugin.getMessages().send(player, "wizard.gp3d-required");
-                activeSessions.remove(player.getUniqueId());
-                return true;
-            }
-            if (!gp.isSubdivision(claim) || !gp.is3DClaim(claim)) {
-                plugin.getMessages().send(player, "wizard.mailbox-must-be-subdivision");
-                return true;
-            }
-            int[] dims = gp.getClaimDimensions(claim);
-            if (dims[0] != 1 || dims[1] != 1 || dims[2] != 1) {
-                plugin.getMessages().send(player, "wizard.mailbox-wrong-size",
-                    "{width}", String.valueOf(dims[0]),
-                    "{height}", String.valueOf(dims[1]),
-                    "{depth}", String.valueOf(dims[2]));
-                return true;
-            }
-        }
-        
+
         session.setClaimId(input);
         session.incrementStep();
         
@@ -320,7 +295,30 @@ public class SetupWizardManager {
         sendCurrentStepPrompt(player, session);
         return true;
     }
-    
+
+    private boolean handleMailboxTypeInput(Player player, SetupSession session, String input) {
+        String lower = input.trim().toLowerCase();
+        boolean self;
+        if (lower.equals("self") || lower.equals("1") || lower.equals("s")) {
+            self = true;
+        } else if (lower.equals("buyable") || lower.equals("2") || lower.equals("b") || lower.equals("buy")) {
+            self = false;
+        } else {
+            plugin.getMessages().send(player, "wizard.mailbox-choose-type");
+            plugin.getMessages().send(player, "wizard.mailbox-self-or-buyable-hint");
+            return true;
+        }
+        session.setMailboxSelf(self);
+        session.incrementStep();
+        if (self) {
+            session.setCurrentStep(SetupStep.AWAITING_AUTO_PASTE);
+        } else {
+            session.setCurrentStep(SetupStep.AWAITING_ECO_TYPE);
+        }
+        sendCurrentStepPrompt(player, session);
+        return true;
+    }
+
     private boolean handleRenewalTimeInput(Player player, SetupSession session, String input) {
         if (!isValidDuration(input)) {
             plugin.getMessages().send(player, "wizard.invalid-duration");
@@ -468,11 +466,14 @@ public class SetupWizardManager {
                 signFormat.append("&f").append(session.getPrice());
                 break;
             case MAILBOX:
-                header = "[mailbox]";
-                signFormat.append("&9").append(header).append("\n");
-                signFormat.append("&f").append(session.getClaimId()).append("\n");
-                signFormat.append("&f").append(session.getEcoKind().name().toLowerCase()).append("\n");
-                signFormat.append("&f").append(session.getPrice());
+                header = "[Mailbox]";
+                if (session.isMailboxSelf()) {
+                    signFormat.append("&9").append(header).append("\n");
+                    signFormat.append("&7(empty or player names for shared access)\n\n");
+                } else {
+                    signFormat.append("&9").append(header).append("\n");
+                    signFormat.append("&f").append(session.getEcoKind().name().toLowerCase()).append(";").append(session.getPrice()).append("\n\n");
+                }
                 break;
             default:
                 return;
@@ -493,17 +494,23 @@ public class SetupWizardManager {
         sendMessage(player, "&8─────────────────────");
         sendMessage(player, "");
         
-        if (session.getEcoKind() == EcoKind.ITEM) {
-            sendMessage(player, "&e⚠ Remember to hold the payment item in your offhand when placing the sign!");
-        }
-        
-        // Give summary
-        sendMessage(player, "&7Summary:");
-        sendMessage(player, "&8• &7Claim ID: &e" + session.getClaimId());
-        sendMessage(player, "&8• &7Payment: &e" + formatPayment(session));
-        if (session.getType() == SetupType.RENT) {
-            sendMessage(player, "&8• &7Rental period: &e" + session.getRenewalTime());
-            sendMessage(player, "&8• &7Max duration: &e" + session.getMaxTime());
+        if (session.getType() == SetupType.MAILBOX && session.isMailboxSelf()) {
+            sendMessage(player, "&7Place a &ewall sign&7 on a container (chest, barrel, etc.) in a claim you own or rent.");
+            sendMessage(player, "&7Line 0: &e[Mailbox]&7. Lines 1–3: empty, or player names for shared full access.");
+        } else if (session.getType() == SetupType.MAILBOX) {
+            sendMessage(player, "&7Place a &ewall sign&7 on a container in a claim you own. Others can click to buy.");
+            sendMessage(player, "&8• &7Payment: &e" + formatPayment(session));
+        } else {
+            if (session.getEcoKind() == EcoKind.ITEM) {
+                sendMessage(player, "&e⚠ Remember to hold the payment item in your offhand when placing the sign!");
+            }
+            sendMessage(player, "&7Summary:");
+            sendMessage(player, "&8• &7Claim ID: &e" + session.getClaimId());
+            sendMessage(player, "&8• &7Payment: &e" + formatPayment(session));
+            if (session.getType() == SetupType.RENT) {
+                sendMessage(player, "&8• &7Rental period: &e" + session.getRenewalTime());
+                sendMessage(player, "&8• &7Max duration: &e" + session.getMaxTime());
+            }
         }
     }
     
@@ -548,7 +555,13 @@ public class SetupWizardManager {
                 plugin.getMessages().send(player, "wizard." + typePrefix + "-enter-claim-id");
                 plugin.getMessages().send(player, "wizard." + typePrefix + "-enter-claim-id-hint");
                 break;
-                
+
+            case AWAITING_MAILBOX_TYPE:
+                sendMessage(player, "&aStep 1: ");
+                plugin.getMessages().send(player, "wizard.mailbox-choose-type");
+                plugin.getMessages().send(player, "wizard.mailbox-self-or-buyable-hint");
+                break;
+
             case AWAITING_RENEWAL_TIME:
                 plugin.getMessages().send(player, "wizard.step-prompt", "{step}", String.valueOf(step), "{prompt}", "");
                 plugin.getMessages().send(player, "wizard.rent-enter-duration");
@@ -598,17 +611,28 @@ public class SetupWizardManager {
             case AWAITING_CONFIRM:
                 sendMessage(player, "&aStep " + step + ": &eConfirm your settings");
                 sendMessage(player, "");
-                sendMessage(player, "&7Claim ID: &e" + session.getClaimId());
-                sendMessage(player, "&7Payment: &e" + formatPayment(session));
-                if (session.getType() == SetupType.RENT) {
-                    sendMessage(player, "&7Rental period: &e" + session.getRenewalTime());
-                    sendMessage(player, "&7Max duration: &e" + session.getMaxTime());
+                if (session.getType() == SetupType.MAILBOX && session.isMailboxSelf()) {
+                    sendMessage(player, "&7Type: &eSelf mailbox &7(instant, for you)");
+                    sendMessage(player, "&7Place a wall sign on a container in a claim you own or rent.");
+                } else if (session.getType() == SetupType.MAILBOX) {
+                    sendMessage(player, "&7Type: &eBuyable mailbox");
+                    sendMessage(player, "&7Payment: &e" + formatPayment(session));
+                } else {
+                    sendMessage(player, "&7Claim ID: &e" + session.getClaimId());
+                    sendMessage(player, "&7Payment: &e" + formatPayment(session));
+                    if (session.getType() == SetupType.RENT) {
+                        sendMessage(player, "&7Rental period: &e" + session.getRenewalTime());
+                        sendMessage(player, "&7Max duration: &e" + session.getMaxTime());
+                    }
                 }
                 sendMessage(player, "");
                 plugin.getMessages().send(player, "wizard.confirm-prompt");
                 break;
+
+            case COMPLETED:
+                break;
         }
-        
+
         plugin.getMessages().send(player, "wizard.cancel-hint");
     }
     

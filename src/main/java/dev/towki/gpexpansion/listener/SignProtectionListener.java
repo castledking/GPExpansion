@@ -226,7 +226,7 @@ public class SignProtectionListener implements Listener {
                 if (prev != null && (now - prev) <= 10000L) {
                     // Execute confirmation - clear rental and remove sign
                     confirmMap.remove(key);
-                    performDelete(block);
+                    performDelete(block, player);
                     player.sendMessage(ChatColor.GREEN + plugin.getMessages().getRaw("eviction.rental-sign-removed"));
                     event.setCancelled(true);
                     return;
@@ -261,36 +261,42 @@ public class SignProtectionListener implements Listener {
 
     private boolean handleBreakOfManagedSign(Block signBlock, Player p, BlockBreakEvent event) {
         Sign sign = (Sign) signBlock.getState();
+        String signKind = sign.getPersistentDataContainer().get(keyKind, PersistentDataType.STRING);
         String claimId = sign.getPersistentDataContainer().get(keyClaim, PersistentDataType.STRING);
         if (claimId == null) claimId = "";
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
         Optional<Object> claimOpt = gp.findClaimById(claimId);
         boolean adminBypass = canAdminister(p);
         boolean owner = false;
-        if (claimOpt.isPresent()) {
-            try {
-                Object claim = claimOpt.get();
-                Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
-                owner = ownerId != null && ownerId.equals(p.getUniqueId());
-            } catch (ReflectiveOperationException ignored) {}
+        boolean isSelfMailbox = "MAILBOX".equals(signKind) && !claimId.isEmpty() && dataStore.isMailbox(claimId);
+        if (isSelfMailbox) {
+            // Self-mailbox: only the true mailbox creator/owner can sneak+break; claim owner (e.g. landlord) cannot
+            UUID mailboxOwner = dataStore.getMailboxOwner(claimId).orElse(null);
+            owner = p.getUniqueId().equals(mailboxOwner);
+        } else {
+            if (claimOpt.isPresent()) {
+                try {
+                    Object claim = claimOpt.get();
+                    Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
+                    owner = ownerId != null && ownerId.equals(p.getUniqueId());
+                } catch (ReflectiveOperationException ignored) {}
+            }
         }
         if (!(owner || adminBypass)) {
-            p.sendMessage(ChatColor.RED + plugin.getMessages().getRaw("eviction.cannot-break-sign"));
+            plugin.getMessages().send(p, "eviction.cannot-break-sign");
             return false;
         }
         
-        // Check if this rental sign has an active renter - require eviction process (unless player has bypass permission)
-        boolean evictionBypass = p.hasPermission("griefprevention.eviction.bypass");
+        // Self-mailbox: no eviction flow; go straight to sneak+break confirmation
         String renterStr = sign.getPersistentDataContainer().get(keyRenter, PersistentDataType.STRING);
         
-        // DEBUG: Log eviction check conditions
-        plugin.getLogger().info("[DEBUG] evictionBypass=" + evictionBypass + ", renterStr=" + renterStr + ", claimId=" + claimId);
+        // Check if this rental sign has an active renter - require eviction process (unless player has bypass permission)
+        boolean evictionBypass = p.hasPermission("griefprevention.eviction.bypass");
         
-        if (!evictionBypass && renterStr != null && !renterStr.isEmpty() && !claimId.isEmpty()) {
+        if (!isSelfMailbox && !evictionBypass && renterStr != null && !renterStr.isEmpty() && !claimId.isEmpty()) {
             // Sign has a renter in PDC - always require eviction to protect the renter
             // This applies regardless of RentalStore state (could be expired, missing, or data mismatch)
             {
-                ClaimDataStore dataStore = plugin.getClaimDataStore();
-                
                 // If no eviction process started, or eviction is not yet effective, block the break
                 ClaimDataStore.EvictionData eviction = dataStore.getEviction(claimId).orElse(null);
                 if (eviction == null) {
@@ -373,33 +379,52 @@ public class SignProtectionListener implements Listener {
         }
         // Second break within window: allow; cleanup via event listener for command also
         confirmMap.remove(key);
-        // Proceed with delete handling here: clear rental + revoke trust
-        performDelete(signBlock);
+        performDelete(signBlock, p);
         return true; // allow break
     }
 
-    private void performDelete(Block signBlock) {
+    private void performDelete(Block signBlock, Player player) {
         try {
             Sign sign = (Sign) signBlock.getState();
+            String signKind = sign.getPersistentDataContainer().get(keyKind, PersistentDataType.STRING);
             String claimId = sign.getPersistentDataContainer().get(keyClaim, PersistentDataType.STRING);
             String renterStr = sign.getPersistentDataContainer().get(keyRenter, PersistentDataType.STRING);
-            // Clear store
-            if (claimId != null) {
-                ClaimDataStore dataStore = plugin.getClaimDataStore();
-                dataStore.clearRental(claimId);
+
+            ClaimDataStore dataStore = plugin.getClaimDataStore();
+
+            // Self-mailbox sign: delete subdivision (real protocol only) and clear mailbox data
+            if ("MAILBOX".equals(signKind) && claimId != null && dataStore.isMailbox(claimId)) {
+                if (!claimId.startsWith("v:")) {
+                    Optional<Object> claimOpt = gp.findClaimById(claimId);
+                    if (claimOpt.isPresent()) {
+                        gp.deleteClaim(claimOpt.get());
+                    }
+                }
+                dataStore.clearMailbox(claimId);
                 dataStore.save();
+                if (player != null) {
+                    boolean virtualMailbox = claimId != null && claimId.startsWith("v:");
+                    plugin.getMessages().send(player, virtualMailbox ? "mailbox.self-deleted-virtual" : "mailbox.self-deleted");
+                }
+                return;
             }
-            // Revoke trust if any
-            if (claimId != null && renterStr != null) {
-                Optional<Object> claimOpt = gp.findClaimById(claimId);
-                if (claimOpt.isPresent()) {
-                    UUID renter = UUID.fromString(renterStr);
-                    String renterName = Bukkit.getOfflinePlayer(renter).getName();
-                    if (renterName != null) {
-                        // Use GPBridge to untrust from this specific claim only
-                        boolean untrusted = gp.untrust(renterName, claimOpt.get());
-                        if (untrusted) {
-                            plugin.getLogger().info("Removed trust for " + renterName + " from claim " + claimId);
+
+            // Rental sign only: clear rental and revoke trust (do not run for SELL or unpurchased MAILBOX signs)
+            if ("RENT".equals(signKind)) {
+                if (claimId != null) {
+                    dataStore.clearRental(claimId);
+                    dataStore.save();
+                }
+                if (claimId != null && renterStr != null) {
+                    Optional<Object> claimOpt = gp.findClaimById(claimId);
+                    if (claimOpt.isPresent()) {
+                        UUID renter = UUID.fromString(renterStr);
+                        String renterName = Bukkit.getOfflinePlayer(renter).getName();
+                        if (renterName != null) {
+                            boolean untrusted = gp.untrust(renterName, claimOpt.get());
+                            if (untrusted) {
+                                plugin.getLogger().info("Removed trust for " + renterName + " from claim " + claimId);
+                            }
                         }
                     }
                 }

@@ -145,8 +145,8 @@ public class SignDisplayListener implements Listener {
                             // Revert to [Rented] if rented, else [Rent Claim] or [Buy Claim]
                             if (isRented) {
                                 sign.setLine(0, ChatColor.RED + "" + ChatColor.BOLD + "[Rented]");
-                                String ownerName = resolveClaimOwnerName(claimId);
-                                sign.setLine(1, ChatColor.BLACK + ownerName);
+                                String renterName = resolveRenterName(renterStr);
+                                sign.setLine(1, ChatColor.BLACK + renterName);
                                 String ecoAmt = pdc.get(keyEcoAmt, PersistentDataType.STRING);
                                 String ecoKindStr = pdc.get(keyEcoKind, PersistentDataType.STRING);
                                 String perClick = pdc.get(keyPerClick, PersistentDataType.STRING);
@@ -272,6 +272,17 @@ public class SignDisplayListener implements Listener {
         }
     }
 
+    private String resolveRenterName(String renterUuidStr) {
+        if (renterUuidStr == null || renterUuidStr.isEmpty()) return "Unknown";
+        try {
+            UUID renterId = UUID.fromString(renterUuidStr);
+            String name = Bukkit.getOfflinePlayer(renterId).getName();
+            return name != null ? name : "Unknown";
+        } catch (Exception e) {
+            return "Unknown";
+        }
+    }
+
     private String formatEcoForSign(String ecoKindStr, String ecoAmtRaw) {
         if (ecoAmtRaw == null) return "";
         if (ecoKindStr == null) ecoKindStr = "MONEY";
@@ -281,7 +292,7 @@ public class SignDisplayListener implements Listener {
                 case MONEY:
                     try {
                         double amount = Double.parseDouble(ecoAmtRaw);
-                        return plugin.formatMoney(amount);
+                        return plugin.formatMoneyForSign(amount);
                     } catch (NumberFormatException ignored) {
                         return "$" + ecoAmtRaw;
                     }
