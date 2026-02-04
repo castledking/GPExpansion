@@ -96,46 +96,87 @@ public class GPBridge {
     }
     
     /**
-     * Check if running on GP3D fork
+     * Check if the Claim class has 3D (Y-level) methods (getMinY/getMaxY or getMinimumY/getMaximumY).
+     */
+    private static boolean claimClassHas3DMethods(Class<?> claimCls) {
+        if (claimCls == null) return false;
+        String[] minNames = {"getMinY", "getMinimumY", "getMinHeight"};
+        String[] maxNames = {"getMaxY", "getMaximumY", "getMaxHeight"};
+        for (String minName : minNames) {
+            for (String maxName : maxNames) {
+                try {
+                    claimCls.getMethod(minName);
+                    claimCls.getMethod(maxName);
+                    return true;
+                } catch (NoSuchMethodException ignored) {}
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if running on GP3D fork (3D subdivisions, Y-level boundaries).
      */
     public boolean isGP3D() {
         if (!gp3dChecked) {
             gp3dChecked = true;
-            if (gpClass != null) {
-                // Try to detect GP3D by checking if we can find a claim with 3D methods
-                // This is more reliable than checking class existence at startup
+            if (gpInstance != null || gpClass != null) {
+                // 1) Check Claim class from the actual loaded plugin (fork uses same package name)
                 try {
-                    // Try to get any claim to test for 3D support
+                    ClassLoader loader = gpInstance != null ? gpInstance.getClass().getClassLoader() : (gpClass != null ? gpClass.getClassLoader() : null);
+                    if (loader != null) {
+                        for (String claimName : new String[]{"me.ryanhamshire.GriefPrevention.Claim", "me.ryanhamshire.griefprevention.Claim"}) {
+                            try {
+                                Class<?> loadedClaim = loader.loadClass(claimName);
+                                if (claimClassHas3DMethods(loadedClaim)) {
+                                    isGP3D = true;
+                                    if (DEBUG) Bukkit.getLogger().info("[GPBridge] GP3D detected: Claim class has 3D methods (" + claimName + ")");
+                                    return true;
+                                }
+                            } catch (ClassNotFoundException ignored) {}
+                        }
+                    }
+                } catch (Exception e) {
+                    if (DEBUG) Bukkit.getLogger().info("[GPBridge] GP3D plugin classloader check: " + e.getMessage());
+                }
+
+                // 2) Check claimClass we already have (from Class.forName)
+                if (claimClass != null && claimClassHas3DMethods(claimClass)) {
+                    isGP3D = true;
+                    if (DEBUG) Bukkit.getLogger().info("[GPBridge] GP3D detected: claimClass has 3D methods");
+                    return true;
+                }
+
+                // 3) Try to get any claim instance and check its class
+                try {
                     if (dataStore != null) {
                         Method getClaims = dataStore.getClass().getMethod("getClaims");
                         Object claims = getClaims.invoke(dataStore);
                         if (claims instanceof Collection && !((Collection<?>) claims).isEmpty()) {
                             Object firstClaim = ((Collection<?>) claims).iterator().next();
-                            // Test if this claim has 3D methods
-                            try {
-                                firstClaim.getClass().getMethod("getMinY");
-                                firstClaim.getClass().getMethod("getMaxY");
+                            if (claimClassHas3DMethods(firstClaim.getClass())) {
                                 isGP3D = true;
-                                if (DEBUG) Bukkit.getLogger().info("[GPBridge] GP3D detected: found claim with 3D methods");
+                                if (DEBUG) Bukkit.getLogger().info("[GPBridge] GP3D detected: claim instance has 3D methods");
                                 return true;
-                            } catch (NoSuchMethodException e) {
-                                // Not a 3D claim
                             }
                         }
                     }
                 } catch (Exception e) {
-                    if (DEBUG) Bukkit.getLogger().info("[GPBridge] Error checking claims for GP3D: " + e.getMessage());
+                    if (DEBUG) Bukkit.getLogger().info("[GPBridge] GP3D getClaims check: " + e.getMessage());
                 }
-                
-                // Fallback: check package name
-                String packageName = gpClass.getPackage().getName();
-                isGP3D = packageName.contains("gp3d") || 
-                         packageName.contains("3d") ||
-                         gpClass.getSimpleName().contains("3D");
-                
+
+                // 4) Fallback: package or class name hints
+                Class<?> c = gpInstance != null ? gpInstance.getClass() : gpClass;
+                if (c != null) {
+                    String packageName = c.getPackage().getName();
+                    if (packageName.contains("gp3d") || packageName.contains("3d") || c.getSimpleName().contains("3D")) {
+                        isGP3D = true;
+                        if (DEBUG) Bukkit.getLogger().info("[GPBridge] GP3D detected: package/class name hint");
+                    }
+                }
+
                 if (DEBUG) {
-                    Bukkit.getLogger().info("[GPBridge] GP3D detection: " + isGP3D + 
-                        " (package: " + packageName + ", class: " + gpClass.getSimpleName() + ")");
+                    Bukkit.getLogger().info("[GPBridge] GP3D detection result: " + isGP3D);
                 }
             }
         }
@@ -1041,6 +1082,49 @@ public class GPBridge {
         return false;
     }
 
+    /**
+     * Grant container/inventory trust to "public" on the claim (everyone can use containers).
+     * Used for real mailbox protocol so non-owners can deposit via the real chest.
+     */
+    public boolean containerTrustPublic(Object claim) {
+        if (!isAvailable() || claim == null) return false;
+        try {
+            Class<?> claimClass = claim.getClass();
+            // Try setPermission("public", ClaimPermission.Inventory) - GP commands use "public" as string
+            ClassLoader gpClassLoader = claimClass.getClassLoader();
+            String[] permCandidates = new String[]{
+                "me.ryanhamshire.GriefPrevention.ClaimPermission",
+                "me.ryanhamshire.griefprevention.ClaimPermission"
+            };
+            for (String cname : permCandidates) {
+                try {
+                    Class<?> claimPermClass = gpClassLoader.loadClass(cname);
+                    Object inventoryPerm = null;
+                    for (Object enumConst : claimPermClass.getEnumConstants()) {
+                        if (enumConst.toString().equalsIgnoreCase("Inventory")) {
+                            inventoryPerm = enumConst;
+                            break;
+                        }
+                    }
+                    if (inventoryPerm != null) {
+                        Method setPermission = claimClass.getMethod("setPermission", String.class, claimPermClass);
+                        setPermission.invoke(claim, "public", inventoryPerm);
+                        if (DEBUG) Bukkit.getLogger().info("[GPBridge] containerTrustPublic: setPermission(public, Inventory) succeeded");
+                        return true;
+                    }
+                } catch (ClassNotFoundException ignored) {}
+            }
+            // Fallback: try grantInventoryTrust with "public" (may resolve to special UUID in some forks)
+            if (grantInventoryTrust(null, "public", claim)) {
+                if (DEBUG) Bukkit.getLogger().info("[GPBridge] containerTrustPublic: grantInventoryTrust(public) succeeded");
+                return true;
+            }
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) Bukkit.getLogger().info("[GPBridge] containerTrustPublic: " + e.getMessage());
+        }
+        return false;
+    }
+
     public boolean ban(Player executor, String target, Object claim) {
         // TODO: Implement ban via enter-deny or claim permissions if available
         return false;
@@ -1185,6 +1269,41 @@ public class GPBridge {
                 return;
             }
         }
+    }
+
+    /**
+     * Persist claim changes to disk (e.g. after modifying trust).
+     * Call this after trust() to ensure the renter's trust is saved.
+     */
+    public void saveClaim(Object claim) {
+        if (claim == null || dataStore == null) return;
+        persistClaim(claim, claim.getClass());
+    }
+
+    /**
+     * Delete a claim or subdivision from GriefPrevention.
+     * Used when removing self-mailbox 1x1x1 subdivisions.
+     */
+    public boolean deleteClaim(Object claim) {
+        if (claim == null || dataStore == null) return false;
+        try {
+            Class<?> claimCls = claim.getClass();
+            Method deleteClaim = dataStore.getClass().getMethod("deleteClaim", claimCls);
+            deleteClaim.invoke(dataStore, claim);
+            return true;
+        } catch (NoSuchMethodException e) {
+            for (Method m : dataStore.getClass().getMethods()) {
+                if (!"deleteClaim".equals(m.getName()) || m.getParameterCount() != 1) continue;
+                if (m.getParameterTypes()[0].isAssignableFrom(claim.getClass())) {
+                    try {
+                        m.invoke(dataStore, claim);
+                        return true;
+                    } catch (ReflectiveOperationException ignored) { }
+                    break;
+                }
+            }
+        } catch (ReflectiveOperationException ignored) { }
+        return false;
     }
     
     public int getClaimArea(Object claim) {
@@ -1367,6 +1486,181 @@ public class GPBridge {
     }
     
     /**
+     * Check if a player has build or inventory trust in a claim.
+     */
+    public boolean hasBuildOrInventoryTrust(Object claim, UUID playerId) {
+        if (claim == null || playerId == null) return false;
+        if (isTrusted(claim, playerId, "build")) return true;
+        if (isTrusted(claim, playerId, "inventory")) return true;
+        if (isTrusted(claim, playerId, "access")) return true;
+        return false;
+    }
+
+    /**
+     * Create a 1x1x1 subdivision at the given location (GP3D).
+     * Returns the new claim ID if successful, empty otherwise.
+     */
+    public Optional<String> create1x1SubdivisionAt(Location loc, UUID ownerId, Object parentClaim) {
+        if (!isAvailable() || !isGP3D() || parentClaim == null || loc == null) return Optional.empty();
+        try {
+            int x = loc.getBlockX();
+            int y = loc.getBlockY();
+            int z = loc.getBlockZ();
+            org.bukkit.World world = loc.getWorld();
+            if (world == null) return Optional.empty();
+
+            Class<?> dsClass = dataStore.getClass();
+            Object[] args = new Object[]{world, x, x, y, y, z, z, ownerId, parentClaim, null, null, false};
+
+            // Find and invoke createClaim(World, int, int, int, int, int, int, UUID, Claim, Long, Player, boolean)
+            for (Method m : dsClass.getMethods()) {
+                if (!"createClaim".equals(m.getName()) || m.getParameterCount() != 12) continue;
+                Class<?>[] params = m.getParameterTypes();
+                if (params[0] != org.bukkit.World.class || params[7] != UUID.class || params[9] != Long.class
+                    || params[10] != org.bukkit.entity.Player.class || params[11] != boolean.class) continue;
+                if (params[1] != int.class || params[2] != int.class || params[3] != int.class
+                    || params[4] != int.class || params[5] != int.class || params[6] != int.class) continue;
+                if (!params[8].isAssignableFrom(parentClaim.getClass())) continue;
+                try {
+                    Object result = m.invoke(dataStore, args);
+                    if (result != null) {
+                        boolean ok = false;
+                        try { ok = Boolean.TRUE.equals(result.getClass().getField("succeeded").get(result)); } catch (Exception e1) {
+                            try { ok = Boolean.TRUE.equals(result.getClass().getMethod("succeeded").invoke(result)); } catch (Exception e2) {
+                                try { ok = Boolean.TRUE.equals(result.getClass().getMethod("getSucceeded").invoke(result)); } catch (Exception ignored) {}
+                            }
+                        }
+                        if (ok) {
+                            Object newClaim = null;
+                            try { newClaim = result.getClass().getField("claim").get(result); } catch (Exception e1) {
+                                try { newClaim = result.getClass().getMethod("getClaim").invoke(result); } catch (Exception ignored) {}
+                            }
+                            if (newClaim != null) {
+                                Optional<String> id = getClaimId(newClaim);
+                                if (id.isPresent()) return id;
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    if (DEBUG) Bukkit.getLogger().info("[GPBridge] createClaim invoke: " + e.getMessage());
+                }
+                break; // Only try the first matching method
+            }
+
+            // Fallback: try various reflective patterns
+            for (Method m : dsClass.getMethods()) {
+                String name = m.getName().toLowerCase();
+                if (!name.contains("create") && !name.contains("sub")) continue;
+                if (m.getParameterCount() < 6) continue;
+                Class<?>[] params = m.getParameterTypes();
+                try {
+                    Object newClaim = null;
+                    if (params.length >= 9 && params[0] == org.bukkit.World.class && params[8] == UUID.class) {
+                        newClaim = m.invoke(dataStore, world, x, y, z, x, y, z, ownerId, parentClaim);
+                    } else if (params.length >= 8 && params[0] == org.bukkit.World.class) {
+                        if (params[7] == UUID.class) {
+                            newClaim = m.invoke(dataStore, world, x, y, z, x, y, z, ownerId);
+                        } else {
+                            newClaim = m.invoke(dataStore, world, x, y, z, x, y, z, ownerId.toString(), parentClaim);
+                        }
+                    } else if (params.length >= 7 && params[0] == org.bukkit.World.class) {
+                        if (params[6] == UUID.class) {
+                            newClaim = m.invoke(dataStore, world, x, y, z, x, y, z, ownerId);
+                        } else {
+                            newClaim = m.invoke(dataStore, world, x, y, z, x, y, z, ownerId.toString());
+                        }
+                    }
+                    if (newClaim != null) {
+                        Optional<String> id = getClaimId(newClaim);
+                        if (id.isPresent()) return id;
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            // Try claim.createSubclaim / addSubClaim / createChild etc. on parent (6 ints: x1,y1,z1,x2,y2,z2)
+            for (Method m : parentClaim.getClass().getMethods()) {
+                String name = m.getName().toLowerCase();
+                if (!name.contains("create") && !name.contains("add") && !name.contains("sub")) continue;
+                if (m.getParameterCount() != 6) continue;
+                Class<?>[] params = m.getParameterTypes();
+                boolean allInt = true;
+                for (Class<?> p : params) { if (p != int.class && p != Integer.class) { allInt = false; break; } }
+                if (!allInt) continue;
+                try {
+                    Object newClaim = m.invoke(parentClaim, x, y, z, x, y, z);
+                    if (newClaim != null) {
+                        Optional<String> id = getClaimId(newClaim);
+                        if (id.isPresent()) return id;
+                    }
+                } catch (Exception ignored) {}
+            }
+        } catch (Exception e) {
+            if (DEBUG) e.printStackTrace();
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Create a 1x1 (one block XZ) 2D subdivision at the given location for regular (non-GP3D) GP.
+     * Returns the new claim ID or empty if not available or not GP3D (use create1x1SubdivisionAt for 3D).
+     */
+    public Optional<String> create1x1Subdivision2DAt(Location loc, UUID ownerId, Object parentClaim) {
+        if (!isAvailable() || isGP3D() || parentClaim == null || loc == null) return Optional.empty();
+        org.bukkit.World world = loc.getWorld();
+        if (world == null) return Optional.empty();
+        int x = loc.getBlockX();
+        int z = loc.getBlockZ();
+        try {
+            Class<?> dsClass = dataStore.getClass();
+            // Try 2D-style createClaim(World, x1, z1, x2, z2, UUID, Claim, ...)
+            for (Method m : dsClass.getMethods()) {
+                if (!"createClaim".equals(m.getName())) continue;
+                Class<?>[] p = m.getParameterTypes();
+                if (p.length < 6 || p[0] != org.bukkit.World.class) continue;
+                try {
+                    Object result = null;
+                    if (p.length == 8 && p[1] == int.class && p[2] == int.class && p[3] == int.class && p[4] == int.class
+                        && p[5] == UUID.class && p[6].isAssignableFrom(parentClaim.getClass())) {
+                        result = m.invoke(dataStore, world, x, z, x, z, ownerId, parentClaim);
+                    } else if (p.length == 7 && p[5] == UUID.class && p[6].isAssignableFrom(parentClaim.getClass())) {
+                        result = m.invoke(dataStore, world, x, z, x, z, ownerId, parentClaim);
+                    } else if (p.length == 11 && p[5] == int.class && p[6] == int.class) {
+                        // (World, x1, x2, y1, y2, z1, z2, UUID, Claim, Long, Player) - use full height for 2D
+                        int y1 = world.getMinHeight();
+                        int y2 = world.getMaxHeight() - 1;
+                        result = m.invoke(dataStore, world, x, x, y1, y2, z, z, ownerId, parentClaim, null, null);
+                    } else if (p.length == 12 && p[11] == boolean.class) {
+                        int y1 = world.getMinHeight();
+                        int y2 = world.getMaxHeight() - 1;
+                        result = m.invoke(dataStore, world, x, x, y1, y2, z, z, ownerId, parentClaim, null, null, false);
+                    }
+                    if (result != null) {
+                        boolean ok = false;
+                        try { ok = Boolean.TRUE.equals(result.getClass().getField("succeeded").get(result)); } catch (Exception e1) {
+                            try { ok = Boolean.TRUE.equals(result.getClass().getMethod("succeeded").invoke(result)); } catch (Exception e2) {
+                                try { ok = Boolean.TRUE.equals(result.getClass().getMethod("getSucceeded").invoke(result)); } catch (Exception ignored) {}
+                            }
+                        }
+                        if (ok) {
+                            Object newClaim = null;
+                            try { newClaim = result.getClass().getField("claim").get(result); } catch (Exception e1) {
+                                try { newClaim = result.getClass().getMethod("getClaim").invoke(result); } catch (Exception ignored) {}
+                            }
+                            if (newClaim != null) {
+                                Optional<String> id = getClaimId(newClaim);
+                                if (id.isPresent()) return id;
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+        } catch (Exception e) {
+            if (DEBUG) Bukkit.getLogger().info("[GPBridge] create1x1Subdivision2DAt: " + e.getMessage());
+        }
+        return Optional.empty();
+    }
+
+    /**
      * Check if a player has any trust level in a claim
      */
     private boolean hasAnyTrust(Object claim, UUID playerId) {
@@ -1387,6 +1681,45 @@ public class GPBridge {
         return false;
     }
     
+    /**
+     * Check if GP3D allows nested subclaims (subdivisions inside subdivisions).
+     * Returns false if not GP3D or if the setting cannot be determined.
+     */
+    public boolean getAllowNestedSubclaims() {
+        if (!isGP3D() || gpInstance == null) return false;
+        try {
+            // Try to get the config value for AllowNestedSubclaims
+            // Common paths: GriefPrevention.instance.config.claims.allowNestedSubclaims
+            Object config = gpInstance.getClass().getMethod("getConfig").invoke(gpInstance);
+            if (config != null) {
+                // Try direct field access
+                try {
+                    java.lang.reflect.Field field = config.getClass().getDeclaredField("allowNestedSubclaims");
+                    field.setAccessible(true);
+                    Object value = field.get(config);
+                    if (value instanceof Boolean) return (Boolean) value;
+                } catch (NoSuchFieldException ignored) {}
+                
+                // Try getter method
+                try {
+                    Method getter = config.getClass().getMethod("getAllowNestedSubclaims");
+                    Object value = getter.invoke(config);
+                    if (value instanceof Boolean) return (Boolean) value;
+                } catch (NoSuchMethodException ignored) {}
+                
+                // Try isAllowNestedSubclaims
+                try {
+                    Method getter = config.getClass().getMethod("isAllowNestedSubclaims");
+                    Object value = getter.invoke(config);
+                    if (value instanceof Boolean) return (Boolean) value;
+                } catch (NoSuchMethodException ignored) {}
+            }
+        } catch (Exception e) {
+            if (DEBUG) e.printStackTrace();
+        }
+        return false; // Default to false if we can't determine
+    }
+
     /**
      * Check if a claim is a subdivision
      */

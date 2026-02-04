@@ -8,9 +8,12 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.logging.Level;
+import dev.towki.gpexpansion.gp.GPBridge;
 
 /**
  * Configuration manager with dynamic default handling.
@@ -37,6 +40,9 @@ public class Config {
         DEFAULTS.put("defaults.max-sell-signs", 5);
         DEFAULTS.put("defaults.max-rent-signs", 5);
         DEFAULTS.put("defaults.max-mailbox-signs", 5);
+        DEFAULTS.put("defaults.max-self-mailboxes-per-claim", 1);
+        
+        // mailbox-protocol is not in DEFAULTS: set by VersionManager migration from GP detection (GP3D -> real, else virtual)
         
         // Permission tracking
         DEFAULTS.put("permission-tracking.enabled", true);
@@ -74,6 +80,115 @@ public class Config {
             save();
             plugin.getLogger().info("Config updated with new default values.");
         }
+
+        // Ensure mailbox-protocol block (with comments) is placed correctly in the file.
+        // Do this AFTER any save() above, because Bukkit's YAML writer doesn't preserve ordering/comments.
+        // Startup-only: reload() is read-only and won't call this.
+        if (ensureMailboxProtocolBlockInFile()) {
+            // Reload config from disk so in-memory values reflect the patched file
+            config = YamlConfiguration.loadConfiguration(configFile);
+        }
+    }
+
+    /**
+     * Ensure `mailbox-protocol` exists and is located near the top of the config with its comment block.
+     * If it's missing, we insert it with a GP-aware default (GP3D -> real, otherwise virtual).
+     * If it's present elsewhere (e.g. appended at bottom), we move it to the intended spot.
+     *
+     * Returns true if the file was modified.
+     */
+    private boolean ensureMailboxProtocolBlockInFile() {
+        try {
+            String content = Files.readString(configFile.toPath());
+
+            // Determine desired value: preserve existing, otherwise default from GP
+            String existing = config.getString("mailbox-protocol", null);
+            if (existing != null) existing = existing.trim();
+            if (existing == null || existing.isEmpty()) {
+                boolean gp3d = false;
+                try { gp3d = new GPBridge().isGP3D(); } catch (Throwable ignored) {}
+                existing = gp3d ? "real" : "virtual";
+            }
+
+            String[] lines = content.split("\\R", -1);
+            java.util.List<String> out = new java.util.ArrayList<>(lines.length + 8);
+
+            // Remove any existing mailbox-protocol line, capturing value if present.
+            // Also remove an immediately-adjacent comment block that looks like our mailbox section.
+            String foundValue = null;
+            for (int i = 0; i < lines.length; i++) {
+                String line = lines[i];
+                String trimmed = line.trim();
+                if (trimmed.startsWith("mailbox-protocol:")) {
+                    String v = trimmed.substring("mailbox-protocol:".length()).trim();
+                    if (!v.isEmpty()) foundValue = v;
+
+                    // Drop preceding mailbox-protocol comment block if present in output tail
+                    while (!out.isEmpty()) {
+                        String prev = out.get(out.size() - 1).trim();
+                        if (prev.startsWith("#") &&
+                            (prev.toLowerCase(Locale.ROOT).contains("mailbox protocol")
+                                || prev.toLowerCase(Locale.ROOT).startsWith("# real =")
+                                || prev.toLowerCase(Locale.ROOT).startsWith("# virtual ="))) {
+                            out.remove(out.size() - 1);
+                            // also remove a single blank line above comments if any
+                            if (!out.isEmpty() && out.get(out.size() - 1).trim().isEmpty()) {
+                                out.remove(out.size() - 1);
+                            }
+                            continue;
+                        }
+                        break;
+                    }
+                    // Skip this mailbox-protocol line
+                    continue;
+                }
+                out.add(line);
+            }
+
+            String valueToWrite = (foundValue != null && !foundValue.isEmpty()) ? foundValue : existing;
+
+            // If mailbox-protocol already exists in the correct spot with comments, no-op (best-effort).
+            // We'll always (re)insert our canonical block once.
+            java.util.List<String> block = java.util.List.of(
+                "# Mailbox protocol (first-time default is set from GP: GP3D -> real, regular GP -> virtual; change below as desired):",
+                "# real = create subdivision + container trust public (non-owner opens real chest with dynamic updates)",
+                "# virtual = no subdivision, virtual view, non-updating (useful for non-GP3D users who don't want a 1x1 2D subdivision)",
+                "mailbox-protocol: " + valueToWrite,
+                ""
+            );
+
+            // Insert before the "defaults:" section header if present; otherwise insert near top (after messages: section).
+            int insertAt = -1;
+            for (int i = 0; i < out.size(); i++) {
+                if (out.get(i).trim().equalsIgnoreCase("defaults:")) { insertAt = i; break; }
+            }
+            if (insertAt == -1) {
+                // fallback: before the "# Default limits" comment
+                for (int i = 0; i < out.size(); i++) {
+                    if (out.get(i).toLowerCase(Locale.ROOT).contains("default limits for sign creation")) { insertAt = i; break; }
+                }
+            }
+            if (insertAt == -1) insertAt = Math.min(12, out.size()); // very early fallback
+
+            // If there is already a blank line at insert point, keep one.
+            java.util.List<String> finalLines = new java.util.ArrayList<>(out.size() + block.size());
+            finalLines.addAll(out.subList(0, insertAt));
+            if (!finalLines.isEmpty() && !finalLines.get(finalLines.size() - 1).trim().isEmpty()) {
+                finalLines.add("");
+            }
+            finalLines.addAll(block);
+            finalLines.addAll(out.subList(insertAt, out.size()));
+
+            String newContent = String.join(System.lineSeparator(), finalLines);
+            if (newContent.equals(content)) return false;
+
+            Files.writeString(configFile.toPath(), newContent);
+            plugin.getLogger().info("Config updated: placed mailbox-protocol near top with comments.");
+            return true;
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to place mailbox-protocol block in config.yml: " + e.getMessage());
+            return false;
+        }
     }
     
     /**
@@ -100,6 +215,8 @@ public class Config {
                 plugin.getLogger().info("Added missing config option: " + path + " = " + defaultValue);
             }
         }
+
+        // mailbox-protocol is handled via ensureMailboxProtocolBlockInFile() so it is inserted with comments/ordering preserved.
         
         return modified;
     }
@@ -119,7 +236,12 @@ public class Config {
      * Reload the configuration from disk.
      */
     public void reload() {
-        load();
+        // Read-only reload: do NOT inject new keys on /gpx reload.
+        // Key injection/migrations should happen on startup load or explicit migration steps.
+        if (!configFile.exists()) {
+            plugin.saveDefaultConfig();
+        }
+        config = YamlConfiguration.loadConfiguration(configFile);
     }
     
     /**
@@ -149,6 +271,19 @@ public class Config {
     
     public int getMaxMailboxSigns() {
         return config.getInt("defaults.max-mailbox-signs", 5);
+    }
+    
+    public int getMaxSelfMailboxesPerClaim() {
+        return config.getInt("defaults.max-self-mailboxes-per-claim", 1);
+    }
+    
+    /** "real" = create subdivision + container trust public, owner opens real container; "virtual" = no subdivision, virtual view only */
+    public String getMailboxProtocol() {
+        return config.getString("mailbox-protocol", "virtual").trim().toLowerCase(Locale.ROOT);
+    }
+    
+    public boolean isMailboxProtocolReal() {
+        return "real".equals(getMailboxProtocol());
     }
     
     public boolean isPermissionTrackingEnabled() {

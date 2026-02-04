@@ -137,7 +137,9 @@ public class Messages {
         // Wizard - Mailbox
         DEFAULTS.put("wizard.mailbox-start", "&aSetting up mailbox for claim &6{id}&a...");
         DEFAULTS.put("wizard.mailbox-start-no-claim", "&a&l=== Mailbox Sign Setup ===");
-        DEFAULTS.put("wizard.mailbox-enter-claim-id", "&eEnter the 1x1x1 subdivision claim ID:");
+        DEFAULTS.put("wizard.mailbox-choose-type", "&eSelf mailbox or buyable? Type &aself&e or &abuyable&e.");
+        DEFAULTS.put("wizard.mailbox-self-or-buyable-hint", "&7Self = instant mailbox for you (place [Mailbox] on container). Buyable = others pay to get the mailbox.");
+        DEFAULTS.put("wizard.mailbox-enter-claim-id", "&eEnter the claim ID:");
         DEFAULTS.put("wizard.mailbox-enter-claim-id-hint", "&7(Quick tip: do &6/claimlist&7 to view your claim IDs)");
         
         // Wizard - Auto-paste
@@ -222,8 +224,8 @@ public class Messages {
         DEFAULTS.put("commands.exec-failed", "&cCommand failed to execute: {command}");
         DEFAULTS.put("commands.exec-error", "&cAn error occurred while executing the command: {error}");
         DEFAULTS.put("commands.player-not-online", "&cPlayer '{player}' is not online.");
-        DEFAULTS.put("commands.gpx-max-usage", "&cUsage: /gpx max <sell|rent|mailbox|globals> <add|take|set> <player> <amount>");
-        DEFAULTS.put("commands.gpx-max-invalid-type", "&cInvalid type. Use 'sell', 'rent', 'mailbox', or 'globals'.");
+        DEFAULTS.put("commands.gpx-max-usage", "&cUsage: /gpx max <sell|rent|mailbox|self-mailboxes|globals> <add|take|set> <player> <amount>");
+        DEFAULTS.put("commands.gpx-max-invalid-type", "&cInvalid type. Use 'sell', 'rent', 'mailbox', 'self-mailboxes', or 'globals'.");
         DEFAULTS.put("commands.gpx-max-invalid-action", "&cInvalid action. Use 'add', 'take', or 'set'.");
         DEFAULTS.put("commands.gpx-max-amount-required", "&cPlease specify an amount.");
         DEFAULTS.put("commands.gpx-max-amount-positive", "&cAmount must be positive.");
@@ -238,6 +240,7 @@ public class Messages {
         DEFAULTS.put("commands.gpx-max-current-sell", "&b  Sell signs: {count}");
         DEFAULTS.put("commands.gpx-max-current-rent", "&b  Rent signs: {count}");
         DEFAULTS.put("commands.gpx-max-current-mailbox", "&b  Mailbox signs: {count}");
+        DEFAULTS.put("commands.gpx-max-current-self-mailbox", "&b  Self mailboxes per claim: {count}");
         DEFAULTS.put("commands.gpx-max-current-globals", "&b  Global claims: {count}");
         DEFAULTS.put("commands.gpx-max-desync-warning", "&eWarning: Permission desync detected for {player}!");
         DEFAULTS.put("commands.gpx-max-desync-cleanup", "&aPermissions will be automatically cleaned up using {plugin}.");
@@ -268,6 +271,17 @@ public class Messages {
         DEFAULTS.put("mailbox.economy-not-available", "&cEconomy not available. Please ensure Vault and an economy provider are installed.");
         DEFAULTS.put("mailbox.not-enough-money", "&cYou don't have enough money.");
         DEFAULTS.put("mailbox.not-enough-experience", "&cYou don't have enough experience.");
+        DEFAULTS.put("mailbox.items-returned", "&eSome items were returned - the mailbox was updated since you opened it.");
+        DEFAULTS.put("mailbox.must-own-or-rent", "&cYou must own or rent this claim to create an instant mailbox.");
+        DEFAULTS.put("mailbox.self-limit-reached", "&cYou have reached the self mailbox limit ({max}) for this claim.");
+        DEFAULTS.put("mailbox.instant-creation-failed", "&cCould not create subdivision. GP3D with AllowNestedSubclaims may be required.");
+        DEFAULTS.put("mailbox.self-created", "&aSelf mailbox created!");
+        DEFAULTS.put("mailbox.buyable-created", "&aBuyable mailbox sign created! Others can click to purchase.");
+        DEFAULTS.put("mailbox.self-deleted", "&aSelf mailbox and subdivision removed.");
+        DEFAULTS.put("mailbox.self-deleted-virtual", "&aSelf mailbox removed.");
+        DEFAULTS.put("mailbox.in-use-by-other", "&cSomeone else is currently using this mailbox. Try again later.");
+        DEFAULTS.put("mailbox.auto-kicked", "&eYou were removed from the mailbox for staying too long. Your items were saved. You cannot use mailboxes for 30 minutes.");
+        DEFAULTS.put("mailbox.cooldown", "&cYou cannot use mailboxes for a while (removed for staying too long). Try again later.");
         
         // Sign creation / interaction extras
         DEFAULTS.put("sign-creation.sign-created", "&aSign created for claim &6{id}&a.");

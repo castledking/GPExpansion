@@ -26,7 +26,8 @@ public class SetupSession {
     }
     
     public enum SetupStep {
-        AWAITING_CLAIM_ID,      // Step 1: Need claim ID
+        AWAITING_CLAIM_ID,      // Step 1: Need claim ID (rent/sell only)
+        AWAITING_MAILBOX_TYPE,  // Step 1 (mailbox only): Self vs buyable
         AWAITING_RENEWAL_TIME,  // Step 2.1 (rent only): Renewal duration
         AWAITING_MAX_TIME,      // Step 2.2 (rent only): Max rental duration
         AWAITING_ECO_TYPE,      // Step 3: Economy type
@@ -50,7 +51,9 @@ public class SetupSession {
     private EcoKind ecoKind;
     private String price;
     private boolean wantsAutoPaste;  // Whether to auto-paste format on next sign
-    
+    /** For mailbox: true = self mailbox (instant), false = buyable (others pay). */
+    private boolean mailboxSelf = true;
+
     // Whether the ID was resolved from command arg or player location
     private boolean idPreResolved;
     
@@ -138,7 +141,15 @@ public class SetupSession {
     public void setWantsAutoPaste(boolean wantsAutoPaste) {
         this.wantsAutoPaste = wantsAutoPaste;
     }
-    
+
+    public boolean isMailboxSelf() {
+        return mailboxSelf;
+    }
+
+    public void setMailboxSelf(boolean mailboxSelf) {
+        this.mailboxSelf = mailboxSelf;
+    }
+
     public boolean isIdPreResolved() {
         return idPreResolved;
     }

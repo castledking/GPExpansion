@@ -540,7 +540,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
         reloadConfig();
         messages.loadLanguageFile();
         
-        // Reload config (adds any missing defaults)
+        // Reload config (read-only; missing keys are only injected on startup/migration)
         configManager.reload();
         
         // Reload consolidated claim data store
@@ -578,6 +578,44 @@ public final class GPExpansionPlugin extends JavaPlugin {
             }
         } catch (Throwable ignored) { }
         return String.format(java.util.Locale.US, "%,.2f", amount);
+    }
+
+    private static final String CURRENCY_SYMBOLS = "$€£¥₩₽₹₺₫₴₦₱₪₡₲₵₸₭₮₨";
+
+    /** Currency symbols used for formatting and for parsing sign input (e.g. $100 or 100$). */
+    public static String getCurrencySymbolsForParsing() {
+        return CURRENCY_SYMBOLS;
+    }
+
+    /**
+     * Format money for sign display using Vault's economy.format().
+     * Respects the provider's currency symbol and position (prefix or suffix).
+     * Trims trailing .00 for cleaner sign display when appropriate.
+     * Falls back to "$" prefix when the economy returns a plain number with no symbol.
+     */
+    public String formatMoneyForSign(double amount) {
+        String formatted = formatMoney(amount);
+        if (formatted == null || formatted.isEmpty()) return "$" + compactAmount(amount);
+        // Trim trailing .00 for whole numbers (e.g. "100.00" -> "100", "$1,000.00" -> "$1,000")
+        if (amount == Math.floor(amount) && formatted.contains(".00")) {
+            formatted = formatted.replace(".00", "");
+        }
+        // If economy format has no currency symbol, use $ prefix as fallback
+        boolean hasSymbol = false;
+        for (int i = 0; i < CURRENCY_SYMBOLS.length(); i++) {
+            if (formatted.indexOf(CURRENCY_SYMBOLS.charAt(i)) >= 0) {
+                hasSymbol = true;
+                break;
+            }
+        }
+        if (!hasSymbol) return "$" + compactAmount(amount);
+        return formatted;
+    }
+
+    private String compactAmount(double amount) {
+        return amount == Math.floor(amount)
+            ? String.format(java.util.Locale.US, "%,.0f", amount)
+            : String.format(java.util.Locale.US, "%,.2f", amount);
     }
 
     public boolean hasMoney(OfflinePlayer player, double amount) {

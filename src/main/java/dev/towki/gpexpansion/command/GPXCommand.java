@@ -83,7 +83,7 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         String action = args[2].toLowerCase();
         String playerName = args[3];
         
-        if (!type.equals("sell") && !type.equals("rent") && !type.equals("mailbox") && !type.equals("globals")) {
+        if (!type.equals("sell") && !type.equals("rent") && !type.equals("mailbox") && !type.equals("self-mailboxes") && !type.equals("globals")) {
             sender.sendMessage(plugin.getMessages().get("commands.gpx-max-invalid-type"));
             return true;
         }
@@ -121,9 +121,10 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         boolean sell = type.equals("sell");
         boolean rent = type.equals("rent");
         boolean globals = type.equals("globals");
+        boolean selfMailboxes = type.equals("self-mailboxes");
         
         // Process the command
-        String limitType = sell ? "sell sign" : (rent ? "rent sign" : (globals ? "global claim" : "mailbox sign"));
+        String limitType = sell ? "sell sign" : (rent ? "rent sign" : (globals ? "global claim" : (type.equals("self-mailboxes") ? "self mailbox" : "mailbox sign")));
         
         switch (action) {
             case "add":
@@ -133,6 +134,8 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                     signLimitManager.addRentLimit(target, amount);
                 } else if (globals) {
                     signLimitManager.addGlobalClaimLimit(target, amount);
+                } else if (selfMailboxes) {
+                    signLimitManager.addSelfMailboxLimit(target, amount);
                 } else {
                     signLimitManager.addMailboxLimit(target, amount);
                 }
@@ -152,6 +155,8 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                     signLimitManager.takeRentLimit(target, amount);
                 } else if (globals) {
                     signLimitManager.takeGlobalClaimLimit(target, amount);
+                } else if (selfMailboxes) {
+                    signLimitManager.takeSelfMailboxLimit(target, amount);
                 } else {
                     signLimitManager.takeMailboxLimit(target, amount);
                 }
@@ -171,6 +176,8 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                     signLimitManager.setRentLimit(target, amount);
                 } else if (globals) {
                     signLimitManager.setGlobalClaimLimit(target, amount);
+                } else if (selfMailboxes) {
+                    signLimitManager.setSelfMailboxLimit(target, amount);
                 } else {
                     signLimitManager.setMailboxLimit(target, amount);
                 }
@@ -188,6 +195,7 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         int currentSell = signLimitManager.getSellLimit(target);
         int currentRent = signLimitManager.getRentLimit(target);
         int currentMailbox = signLimitManager.getMailboxLimit(target);
+        int currentSelfMailbox = signLimitManager.getSelfMailboxLimit(target);
         int currentGlobals = signLimitManager.getGlobalClaimLimit(target);
         sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-header",
             "{player}", target.getName()));
@@ -197,6 +205,8 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
             "{count}", String.valueOf(currentRent)));
         sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-mailbox",
             "{count}", String.valueOf(currentMailbox)));
+        sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-self-mailbox",
+            "{count}", String.valueOf(currentSelfMailbox)));
         sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-globals",
             "{count}", String.valueOf(currentGlobals)));
         
@@ -241,8 +251,8 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                 }
             }
         } else if (args.length == 2 && args[0].equalsIgnoreCase("max")) {
-            // Second argument: "sell", "rent", "mailbox", or "globals"
-            for (String type : Arrays.asList("sell", "rent", "mailbox", "globals")) {
+            // Second argument: "sell", "rent", "mailbox", "self-mailboxes", or "globals"
+            for (String type : Arrays.asList("sell", "rent", "mailbox", "self-mailboxes", "globals")) {
                 if (type.startsWith(args[1].toLowerCase())) {
                     completions.add(type);
                 }

@@ -10,9 +10,9 @@
 <a href="#support"><img alt="Get Help" src="https://img.shields.io/badge/Get%20Help-yellow?logo=amazoncloudwatch&logoColor=white" height="70px"></a>
 </p>
 
-GPExpansion adds powerful features to [GriefPrevention](https://github.com/GriefPrevention/GriefPrevention) including **rental signs**, **claim mailboxes**, **sign protection**, and more — all while maintaining the self-service philosophy.
+GPExpansion adds powerful features to [GriefPrevention](https://github.com/GriefPrevention/GriefPrevention) including **rental signs**, **claim mailboxes**, **global claims** **sign protection**, and more — all while maintaining the self-service philosophy.
 
-Haven't heard of GriefPrevention 3D Subdivisions? Get it [here](https://github.com/castledking/GriefPrevention3D) to enable mailbox support. This is a fork that replaces the GriefPrevention jar.
+Mailboxes work with **regular GriefPrevention** or the [GriefPrevention3D](https://github.com/castledking/GriefPrevention3D) fork. With regular GP you can use the **virtual** mailbox protocol (no subdivisions). With GP3D you can use **real** (1x1x1 subdivision + container trust) or **virtual**; the config option `mailbox-protocol` defaults based on which GP you have installed.
 
 ---
 
@@ -21,7 +21,7 @@ Haven't heard of GriefPrevention 3D Subdivisions? Get it [here](https://github.c
 
 Requires [GriefPrevention](https://github.com/GriefPrevention/GriefPrevention) and optionally [Vault](https://github.com/MilkBowl/Vault) for economy features.
 
-Optionally, replace GriefPrevention with [GriefPrevention3D](https://github.com/castledking/GriefPrevention3D) for mailbox support.
+Optionally, use [GriefPrevention3D](https://github.com/castledking/GriefPrevention3D) for seamless mailboxes (1x1x1 subdivisions and public container trust). Mailboxes will work with regular GP and there is a config setting called mailbox-protocol: virtual that helps if you want to be able to stack mailboxes on top of eachother.
 
 ---
 
@@ -37,10 +37,20 @@ Allow claim owners to rent out their claims to other players using signs.
 ### 📬 Claim Mailboxes
 Give each claim a mailbox where other players can deposit items.
 - Owners have full access to retrieve items
-- Non-owners can only deposit, not withdraw
+- Non-owners see a virtual inventory (snapshot at open time)
+  - Changes save only when the menu closes
+  - Can take back items before closing (reversible deposits)
+  - Items returned if mailbox fills up while viewing
+- Chest opening sound/animation on sign click
 - Storage warnings when mailbox is nearly full
 - Purchasable via signs with configurable prices
 - Interactive setup wizard with `/mailbox` command
+
+**Self Mailboxes (Instant Creation):**
+- Owners and renters can place `[Mailbox]` wall signs directly on containers in claims they own or rent
+- **Real protocol** (config `mailbox-protocol: real`): creates a 1x1x1 subdivision (GP3D) or 1x1 2D subdivision (regular GP) and grants public container trust so non-owners see the real chest with live updates
+- **Virtual protocol** (config `mailbox-protocol: virtual`): no subdivision; non-owners get a virtual snapshot, no live updates. Allows for stackable mailboxes on regular GP.
+- Configurable limit via `defaults.max-self-mailboxes-per-claim`
 
 ### 🏷️ Sell Signs
 Allow claim owners to sell their claims to other players using signs.
@@ -196,16 +206,29 @@ OR with explicit eco type:
 
 ### Mailbox Signs
 
-**Condensed Format** (outside claim):
+All mailbox signs are placed as **wall signs** attached to a container (chest, barrel, hopper, shulker box, etc.) inside a claim. No claim ID is required on the sign.
+
+**Buyable Mailbox** (instant creation — claim owner only):
 ```
-[mailbox]
-<id>;<ecoAmt>
+[Mailbox]
+money;100
 ```
-OR with explicit eco type:
+- Line 0: `[Mailbox]`
+- Line 1: `kind;amount` — e.g. `money;100`, `xp;50`, `experience;50`, `claimblocks;10`
+- Kind aliases: `money` or `$`, `xp` / `experience` / `exp`, `claimblocks` / `blocks` / `cb`
+Place the sign on a container in a claim you own. Others can click the sign or the container to purchase the mailbox (subdivision or virtual slot is created on purchase).
+
+**Self Mailbox** (instant creation for owners/renters):
 ```
-[mailbox]
-<id>;<ecoType>;<ecoAmt>
+[Mailbox]
+ze_flash
+anotherPlayer
 ```
+- Line 0: `[Mailbox]`
+- Lines 1–3: empty, or player names for **shared full access** (multi-way mailbox). Only the mailbox owner and players listed on the sign get full access; others get deposit-only (real) or virtual view (virtual).
+Place the sign on a container in a claim you own or rent. Behavior depends on `mailbox-protocol`: **real** creates a subdivision and public container trust; **virtual** creates no subdivision (works with regular GP).
+
+> **Note:** The container must be inside a claim. With **real** protocol a 1x1 (2D) or 1x1x1 (GP3D) subdivision is created around the container on creation or purchase; with **virtual** protocol no subdivision is created.
 
 ### Global Signs
 **Player** (inside claim):
@@ -219,12 +242,7 @@ OR with explicit eco type:
 <id>
 ```
 
-- `<id>` - Do `/claimlist` to get this
-- `<ecoType>` - Accepts `money`, `claimblocks`, `exp` or `item` (optional, defaults to `money`)
-  - Also accepts aliases: `$` (money), `xp`/`experience` (exp), `blocks`/`cb` (claimblocks)
-- `<ecoAmt>` - The mailbox purchase price
-
-> **Note:** You need to create a 1x1x1 3D subdivision in your claim with a supported container type (barrel, hopper, chest, etc.). Requires [GriefPrevention3D](https://github.com/castledking/GriefPrevention3D) fork. The sign can be placed anywhere - it doesn't need to be in the mailbox claim.
+- `<id>` - Do `/claimlist` to get this (for global admin sign)
 
 ### Setup Wizards
 
@@ -262,7 +280,12 @@ The plugin creates `config.yml` and `lang.yml` with sensible defaults. Key optio
 debug:
   # Enable debug logging for GPBridge to troubleshoot claim/subclaim detection
   enabled: true
-  
+
+# Mailbox protocol (first-time default is set from GP: GP3D -> real, regular GP -> virtual)
+# real = create subdivision + container trust public (non-owner opens real chest with live updates)
+# virtual = no subdivision, virtual view for non-owners (works with regular GP, no extra subdivisions)
+mailbox-protocol: virtual
+
 # Default limits for sign creation (can be overridden by permissions)
 defaults:
   # Default maximum number of sell signs a player can create
@@ -271,7 +294,9 @@ defaults:
   max-rent-signs: 5
   # Default maximum number of mailbox signs a player can create
   max-mailbox-signs: 5
-  
+  # Max self mailboxes per claim (for claims owned or rented by the player)
+  max-self-mailboxes-per-claim: 1
+
 # Permission tracking settings
 permission-tracking:
   # Enable tracking of player permissions for sign limits
@@ -422,7 +447,7 @@ filler:
 | `griefprevention.sign.create.buy` | Create buy signs (alias for sell) |
 | `griefprevention.sign.create.buy.anywhere` | Create buy signs outside the target claim |
 | `griefprevention.sign.create.mailbox` | Create mailbox signs |
-| `griefprevention.sign.create.mailbox.anywhere` | Create mailbox signs outside the target claim |
+| `griefprevention.sign.create.self-mailbox` | Create self mailbox signs |
 
 ### Sign Usage
 | Permission | Description |
@@ -453,6 +478,7 @@ filler:
 | `griefprevention.sign.limit.rent.<number>` | Limit to <number> rental signs |
 | `griefprevention.sign.limit.buy.<number>` | Limit to <number> sell signs |
 | `griefprevention.sign.limit.mailbox.<number>` | Limit to <number> mailbox signs |
+| `griefprevention.sign.create.self-mailbox.<number>` | Limit to <number> self mailboxes per claim |
 
 ### Claim Management
 | Permission | Description |

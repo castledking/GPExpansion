@@ -244,6 +244,7 @@ public class ConfirmationService {
             // Grant build trust to the player for this claim using GPBridge direct method
             boolean trusted = gpBridge.trust(player, player.getName(), claim);
             if (trusted) {
+                gpBridge.saveClaim(claim); // Persist so trust survives server restarts
                 plugin.getLogger().info("Granted trust permissions to " + player.getName() + " for claim " + claimId);
             } else {
                 plugin.getLogger().warning("Failed to grant trust permissions to " + player.getName() + " for claim " + claimId);
@@ -258,16 +259,9 @@ public class ConfirmationService {
             s.getPersistentDataContainer().set(new org.bukkit.NamespacedKey(plugin, "rent.renter"), PersistentDataType.STRING, player.getUniqueId().toString());
             s.getPersistentDataContainer().set(new org.bukkit.NamespacedKey(plugin, "rent.expiry"), PersistentDataType.LONG, newExpiry);
 
-            String ownerName = "Unknown";
-            if (claimOpt.isPresent()) {
-                try {
-                    Object ownerId = claimOpt.get().getClass().getMethod("getOwnerID").invoke(claimOpt.get());
-                    if (ownerId instanceof UUID) {
-                        String name = Bukkit.getOfflinePlayer((UUID) ownerId).getName();
-                        if (name != null) ownerName = name;
-                    }
-                } catch (Exception ignored) {}
-            }
+            // Show current renter's name on line 1 (the player who just rented)
+            String renterName = player.getName();
+            if (renterName == null) renterName = "Unknown";
 
             String per = pdc.get(new org.bukkit.NamespacedKey(plugin, "sign.perClick"), PersistentDataType.STRING);
             String maxCapPdc = pdc.get(new org.bukkit.NamespacedKey(plugin, "sign.maxCap"), PersistentDataType.STRING);
@@ -277,7 +271,7 @@ public class ConfirmationService {
             String ecoFormatted = formatEcoAmount(kind, ecoAmtRaw);
 
             s.getSide(Side.FRONT).line(0, LegacyComponentSerializer.legacyAmpersand().deserialize("&c&l[Rented]"));
-            s.getSide(Side.FRONT).line(1, LegacyComponentSerializer.legacyAmpersand().deserialize("&0" + ownerName));
+            s.getSide(Side.FRONT).line(1, LegacyComponentSerializer.legacyAmpersand().deserialize("&0" + renterName));
             s.getSide(Side.FRONT).line(2, LegacyComponentSerializer.legacyAmpersand().deserialize("&0" + ecoFormatted + "&0/" + per));
             s.getSide(Side.FRONT).line(3, LegacyComponentSerializer.legacyAmpersand().deserialize("&0Max: " + maxCapPdc));
 
@@ -417,7 +411,7 @@ public class ConfirmationService {
             case "MONEY":
                 try {
                     double amount = Double.parseDouble(ecoAmtRaw);
-                    return plugin.formatMoney(amount);
+                    return plugin.formatMoneyForSign(amount);
                 } catch (NumberFormatException e) {
                     return "$" + ecoAmtRaw;
                 }

@@ -15,6 +15,7 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import org.apache.commons.lang.StringUtils;
 import org.bukkit.*;
+import org.bukkit.block.Block;
 import org.bukkit.block.Sign;
 import org.bukkit.block.sign.SignSide;
 import org.bukkit.event.EventHandler;
@@ -276,6 +277,25 @@ public class SignListener implements Listener {
             return; // Not a rent/sell/mailbox/global claim sign, ignore
         }
 
+        // Instant [Mailbox] creation: wall sign on container, empty lines - handled by MailboxListener
+        if (mailbox) {
+            String l1 = stripLegacyColors(safeLine(event, 1)).trim();
+            String l2 = stripLegacyColors(safeLine(event, 2)).trim();
+            String l3 = stripLegacyColors(safeLine(event, 3)).trim();
+            if (l1.isEmpty() && l2.isEmpty() && l3.isEmpty()) {
+                Block signBlock = event.getBlock();
+                if (signBlock.getType().name().contains("WALL_SIGN") && signBlock.getBlockData() instanceof org.bukkit.block.data.Directional dir) {
+                    Block attached = signBlock.getRelative(dir.getFacing().getOppositeFace());
+                    if (isContainerBlock(attached.getType())) {
+                        if (plugin.getConfigManager().isDebugEnabled()) {
+                            plugin.getLogger().info("[mailbox-instant] SignListener yielding to MailboxListener for [Mailbox] on " + attached.getType());
+                        }
+                        return; // MailboxListener handles instant creation
+                    }
+                }
+            }
+        }
+
         // Debug logging
         plugin.getLogger().info("Creating sign with content:");
         for (int i = 0; i < 4; i++) {
@@ -286,7 +306,7 @@ public class SignListener implements Listener {
 
         boolean hasPerm = rent ? player.hasPermission("griefprevention.sign.create.rent") : 
                        (sell ? player.hasPermission("griefprevention.sign.create.buy") : 
-                               player.hasPermission("griefprevention.sign.create.mailbox"));
+                               (player.hasPermission("griefprevention.sign.create.mailbox") || player.hasPermission("griefprevention.sign.create.self-mailbox")));
         if (!hasPerm) {
             String signType = rent ? "rent" : (sell ? "sell" : "mailbox");
             plugin.getMessages().send(player, "permissions.create-sign-denied", "{signtype}", signType);
@@ -308,8 +328,28 @@ public class SignListener implements Listener {
                 targetClaimId = gp.getClaimId(targetClaim).orElse(null);
             }
             if (targetClaimId == null) {
-                plugin.getMessages().send(player, "sign-creation.not-in-claim");
-                return;
+                // Allow condensed format anywhere if the user has the anywhere permission
+                String anywherePermission = rent ? "griefprevention.sign.create.rent.anywhere"
+                                                 : (sell ? "griefprevention.sign.create.buy.anywhere" : null);
+                if (anywherePermission != null && player.hasPermission(anywherePermission)) {
+                    // Try to parse claim ID from line 1 (condensed format)
+                    if (line1Raw.contains(";")) {
+                        String[] parts = line1Raw.split(";");
+                        if (parts.length > 0) {
+                            targetClaimId = parts[0].trim();
+                            if (!targetClaimId.isEmpty()) {
+                                Optional<Object> claimOpt = gp.findClaimById(targetClaimId);
+                                if (claimOpt.isPresent()) {
+                                    targetClaim = claimOpt.get();
+                                }
+                            }
+                        }
+                    }
+                }
+                if (targetClaimId == null || targetClaim == null) {
+                    plugin.getMessages().send(player, "sign-creation.not-in-claim");
+                    return;
+                }
             }
             
             // Handle global claim sign
@@ -389,6 +429,13 @@ public class SignListener implements Listener {
             claimId = targetClaimId;
             
             if (rent) {
+                // When we resolved claim via anywhere/condensed, line1 is "<claimId>;<ecoAmt>;<renewTime>" or "<claimId>;<renewTime>;<ecoAmt>"
+                // Strip the leading claimId so we parse the rest as short format
+                String rentLine1 = line1;
+                if (targetClaimId != null && line1.startsWith(targetClaimId + ";")) {
+                    rentLine1 = line1.substring((targetClaimId + ";").length()).trim();
+                }
+                
                 // Rent short format - support both space-separated and semicolon-delimited:
                 // Option 1: <renewTime> on line 1, <ecoAmt> on line 2 (no max time)
                 // Option 2: <renewTime> <maxTime> on line 1, <ecoAmt> on line 2
@@ -401,8 +448,8 @@ public class SignListener implements Listener {
                 String renewTime, maxTime, ecoAmt;
                 
                 // Check if line 1 contains semicolons (new format)
-                if (line1.contains(";")) {
-                    String[] parts = line1.split(";");
+                if (rentLine1.contains(";")) {
+                    String[] parts = rentLine1.split(";");
                     if (parts.length == 2) {
                         // Format: <renewTime>;<ecoAmt> OR <ecoAmt>;<renewTime>
                         String part1 = parts[0].trim();
@@ -453,7 +500,7 @@ public class SignListener implements Listener {
                     
                 } else {
                     // Original space-separated format
-                    String[] durations = line1.split("\\s+");
+                    String[] durations = rentLine1.split("\\s+");
                     renewTime = durations[0].trim();
                     maxTime = durations.length > 1 ? durations[1].trim() : renewTime; // Default maxTime to renewTime if not specified
                     
@@ -583,36 +630,45 @@ public class SignListener implements Listener {
             plugin.getMessages().send(player, "sign-creation.invalid-format", "{details}", "Line 2 must be a ClaimID.");
             return;
         }
+        // Mailbox signs must be physically attached to the target container (wall sign) or placed on top of it (standing sign).
+        // This prevents "remote" mailbox access via signs placed elsewhere in the claim.
+        if (mailbox) {
+            Block signBlock = event.getBlock();
+            Block containerBlock = null;
+
+            // Wall sign attached to container
+            if (signBlock.getType().name().contains("WALL_SIGN")
+                && signBlock.getBlockData() instanceof org.bukkit.block.data.Directional dir) {
+                Block attached = signBlock.getRelative(dir.getFacing().getOppositeFace());
+                if (isContainerBlock(attached.getType())) {
+                    containerBlock = attached;
+                }
+            } else {
+                // Standing sign on top of container (block below is container)
+                Block below = signBlock.getRelative(org.bukkit.block.BlockFace.DOWN);
+                if (isContainerBlock(below.getType())) {
+                    containerBlock = below;
+                }
+            }
+
+            if (containerBlock == null) {
+                plugin.getMessages().send(player, "sign-creation.invalid-format",
+                    "{details}", "Mailbox signs must be a wall sign attached to the container, or a sign placed on top of the container.");
+                return;
+            }
+
+            Optional<Object> claimAtContainer = gp.getClaimAt(containerBlock.getLocation());
+            String containerClaimId = claimAtContainer.flatMap(gp::getClaimId).orElse(null);
+            if (containerClaimId == null || !containerClaimId.equals(claimId)) {
+                plugin.getMessages().send(player, "sign-creation.invalid-format",
+                    "{details}", "Mailbox sign must be attached to a container inside the mailbox claim (ID mismatch).");
+                return;
+            }
+        }
+
         if (!gp.findClaimById(claimId).isPresent()) {
             plugin.getMessages().send(player, "sign-creation.invalid-claim-id", "{id}", claimId);
             return;
-        }
-
-        // For mailbox signs, validate that the claim is a 1x1x1 3D subdivision
-        // Note: The sign can be placed anywhere, but it must reference a valid 1x1x1 claim
-        if (mailbox) {
-            // Check if we're running on GP3D fork
-            if (!gp.isGP3D()) {
-                plugin.getMessages().send(player, "sign-creation.gp3d-required");
-                return;
-            }
-            
-            Object claim = gp.findClaimById(claimId).get();
-            
-            // Check if it's a subdivision and 3D claim
-            if (!gp.isSubdivision(claim) || !gp.is3DClaim(claim)) {
-                plugin.getMessages().send(player, "sign-creation.mailbox-must-be-subdivision");
-                return;
-            }
-            
-            int[] dimensions = gp.getClaimDimensions(claim);
-            if (dimensions[0] != 1 || dimensions[1] != 1 || dimensions[2] != 1) {
-                plugin.getMessages().send(player, "sign-creation.mailbox-wrong-size", 
-                    "{width}", String.valueOf(dimensions[0]), 
-                    "{height}", String.valueOf(dimensions[1]), 
-                    "{depth}", String.valueOf(dimensions[2]));
-                return;
-            }
         }
 
         // Validate eco tag and amount format
@@ -1224,11 +1280,7 @@ public class SignListener implements Listener {
     private String formatMoneyForSign(String raw) {
         try {
             double amount = Double.parseDouble(raw);
-            String formatted = sanitizeMoney(plugin.formatMoney(amount), amount);
-            if (formatted.endsWith(".00")) {
-                return formatted.substring(0, formatted.length() - 3);
-            }
-            return formatted;
+            return plugin.formatMoneyForSign(amount);
         } catch (NumberFormatException e) {
             return raw;
         }
@@ -1241,7 +1293,7 @@ public class SignListener implements Listener {
             case MONEY: {
                 try {
                     double amount = Double.parseDouble(ecoAmtRaw);
-                    return sanitizeMoney(plugin.formatMoney(amount), amount);
+                    return plugin.formatMoneyForSign(amount);
                 } catch (NumberFormatException e) {
                     return ecoAmtRaw;
                 }
@@ -1265,36 +1317,6 @@ public class SignListener implements Listener {
         }
     }
 
-    // Money formatting: keep only a currency symbol, strip names. Respects prefix/suffix from Vault provider.
-    private String sanitizeMoney(String providerFormatted, double amount) {
-        String numeric = String.format(java.util.Locale.US, "%,.2f", amount);
-        if (providerFormatted == null || providerFormatted.isEmpty()) return "$" + numeric;
-        String s = providerFormatted.trim();
-        if (s.isEmpty()) return "$" + numeric;
-        
-        char lead = s.charAt(0);
-        char trail = s.charAt(s.length() - 1);
-        
-        // Check if symbol is at the end (suffix) - return as suffix
-        if (isCurrencySymbol(trail)) return numeric + trail;
-        
-        // Check if symbol is at the start (prefix) - return as prefix
-        if (isCurrencySymbol(lead)) return lead + numeric;
-        
-        // If provider included a short symbol near start like "$ 1,000.00" or "€1,000.00"
-        for (int i = 0; i < Math.min(3, s.length()); i++) {
-            if (isCurrencySymbol(s.charAt(i))) return s.charAt(i) + numeric;
-        }
-        
-        // Check near end for suffix symbols like "1,000.00 €"
-        for (int i = s.length() - 1; i >= Math.max(0, s.length() - 3); i--) {
-            if (isCurrencySymbol(s.charAt(i))) return numeric + s.charAt(i);
-        }
-        
-        // As a last resort, just use '$' as prefix
-        return "$" + numeric;
-    }
-    
     /**
      * Handle [global claim] sign creation - toggles global listing and sets spawn point
      */
@@ -1419,6 +1441,14 @@ public class SignListener implements Listener {
     /**
      * Check if a block is passable (player can move through)
      */
+    private boolean isContainerBlock(org.bukkit.Material material) {
+        return material == Material.CHEST || material == Material.TRAPPED_CHEST ||
+               material == Material.BARREL || material == Material.SHULKER_BOX ||
+               material.name().endsWith("_SHULKER_BOX") ||
+               material == Material.DISPENSER || material == Material.DROPPER ||
+               material == Material.HOPPER;
+    }
+
     private boolean isPassableBlock(org.bukkit.Material material) {
         if (material.isAir()) {
             return true;
@@ -1442,13 +1472,4 @@ public class SignListener implements Listener {
                material.name().contains("BAMBOO");
     }
     
-    private boolean isCurrencySymbol(char c) {
-        // Common currency symbols
-        switch (c) {
-            case '$': case '€': case '£': case '¥': case '₩': case '₽': case '₹': case '₺': case '₫': case '₴': case '₦': case '₱': case '₪': case '₡': case '₲': case '₵': case '₸': case '₭': case '₮': case '₨':
-                return true;
-            default:
-                return false;
-        }
-    }
 }

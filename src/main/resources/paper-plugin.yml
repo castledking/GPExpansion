@@ -289,10 +289,6 @@ permissions:
     description: Allows using mailbox signs
     default: true
 
-  griefprevention.sign.create.mailbox.anywhere:
-    description: Allows creating mailbox signs outside own claims
-    default: op
-
   griefprevention.sign.mailbox.money:
     description: Allows using money economy for mailbox signs
     default: true
@@ -331,6 +327,27 @@ permissions:
 
   griefprevention.sign.create.mailbox.100:
     description: Allows creating 100 mailbox signs
+    default: false
+
+  # === SELF MAILBOX PERMISSIONS ===
+  griefprevention.sign.create.self-mailbox:
+    description: Allows creating instant self mailboxes (wall sign on container)
+    default: true
+
+  griefprevention.sign.create.self-mailbox.1:
+    description: Allows creating 1 self mailbox per claim
+    default: false
+
+  griefprevention.sign.create.self-mailbox.2:
+    description: Allows creating 2 self mailboxes per claim
+    default: false
+
+  griefprevention.sign.create.self-mailbox.5:
+    description: Allows creating 5 self mailboxes per claim
+    default: false
+
+  griefprevention.sign.create.self-mailbox.10:
+    description: Allows creating 10 self mailboxes per claim
     default: false
 
   griefprevention.sign.admin:
