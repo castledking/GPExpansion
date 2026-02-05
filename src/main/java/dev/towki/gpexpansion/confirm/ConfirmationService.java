@@ -50,6 +50,8 @@ public class ConfirmationService {
     private final GPExpansionPlugin plugin;
     private final SignListener signListener;
     private final Map<String, Pending> pending = new ConcurrentHashMap<>();
+    /** Latest token per player for tokenless /gpxconfirm accept (Bedrock-friendly). */
+    private final Map<UUID, String> latestTokenByPlayer = new ConcurrentHashMap<>();
 
     public ConfirmationService(GPExpansionPlugin plugin) {
         this.plugin = plugin;
@@ -60,6 +62,7 @@ public class ConfirmationService {
         cleanup();
         String token = UUID.randomUUID().toString().replace("-", "");
         pending.put(token, new Pending(player.getUniqueId(), action, claimId, kind, ecoAmtRaw, perClick, maxCap, signLoc));
+        latestTokenByPlayer.put(player.getUniqueId(), token);
         String time = perClick; // display per click duration
 
         // Always use chat-based confirmation
@@ -109,12 +112,26 @@ public class ConfirmationService {
         player.sendMessage(header);
         player.sendMessage(plugin.getMessages().get("general.empty-line"));
         player.sendMessage(buttons);
+        player.sendMessage(plugin.getMessages().get("sign-interaction.confirmation-command-hint"));
         player.sendMessage(headerLine);
     }
 
+    /** Get the latest pending confirmation token for a player (for tokenless /gpxconfirm). */
+    public String getLatestToken(UUID playerId) {
+        String t = latestTokenByPlayer.get(playerId);
+        if (t != null && pending.containsKey(t)) return t;
+        return null;
+    }
+
     public boolean handle(Player player, String token, boolean accept) {
+        // If token is null/empty, use latest for this player
+        if (token == null || token.isEmpty()) {
+            token = getLatestToken(player.getUniqueId());
+            if (token == null) return false;
+        }
         Pending p = pending.remove(token);
         if (p == null) return false;
+        latestTokenByPlayer.remove(player.getUniqueId(), token);
         if (!p.player.equals(player.getUniqueId())) return false;
         if (!accept) {
             plugin.getMessages().send(player, "sign-interaction.confirmation-cancelled");
@@ -431,7 +448,13 @@ public class ConfirmationService {
 
     private void cleanup() {
         long now = System.currentTimeMillis();
-        pending.entrySet().removeIf(e -> now - e.getValue().createdAt > 60_000L);
+        pending.entrySet().removeIf(e -> {
+            boolean expired = now - e.getValue().createdAt > 60_000L;
+            if (expired) {
+                latestTokenByPlayer.entrySet().removeIf(ev -> ev.getValue().equals(e.getKey()));
+            }
+            return expired;
+        });
     }
 
     // Build inline JSON for minecraft:confirmation dialog with run_command actions

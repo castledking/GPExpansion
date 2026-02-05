@@ -192,7 +192,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
                     this,
                     "gpxconfirm",
                     "Confirm GPExpansion actions",
-                    "/gpxconfirm <token> <accept|cancel>",
+                    "/gpxconfirm [accept|cancel]",
                     Collections.emptyList(),
                     confirm,
                     confirm

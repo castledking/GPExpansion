@@ -63,13 +63,12 @@ public class SignProtectionListener implements Listener {
         }
 
         // Check if this is a [Sell] sign (permanent transfer)
-        // [Sell] signs are labeled as "[Buy Claim]" while [Rent] signs are "[Rent Claim]"
+        // [Sell] signs are labeled as "[Buy Claim]" or "[Sell]" (hanging) while [Rent] signs are "[Rent Claim]" or "[Rent]" (hanging)
         Component signTextComponent = sign.getSide(org.bukkit.block.sign.Side.FRONT).line(0);
         if (signTextComponent != null) {
             String plainText = net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().serialize(signTextComponent);
-            if (plainText.contains("[Buy Claim]")) {
+            if (plainText.contains("[Buy Claim]") || plainText.contains("[Sell]")) {
                 // [Sell] signs represent permanent transfers and should not be protected
-                // Once purchased, they should be removable by anyone
                 return false;
             }
         }
