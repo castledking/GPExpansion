@@ -183,6 +183,14 @@ sign-interaction:
   confirmation-hover-confirm-purchase: "&aClick to confirm purchase"
   confirmation-hover-cancel: "&cClick to cancel"
   confirmation-cancelled: "&eCancelled."
+  # Shown in confirmation prompt so players can type the command instead of clicking (helps Bedrock users)
+  confirmation-command-hint: "&7Type &e/gpxconfirm accept&7 to confirm."
+
+  # Sign line 0 display (hanging signs have less space; use shortened text)
+  sign-display-rent-full: "&a&l[Rent Claim]"
+  sign-display-rent-hanging: "&a&l[Rent]"
+  sign-display-buy-full: "&a&l[Buy Claim]"
+  sign-display-buy-hanging: "&a&l[Sell]"
 
 # =============================================================================
 # MAILBOX MESSAGES

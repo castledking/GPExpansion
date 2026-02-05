@@ -159,12 +159,14 @@ public class SignDisplayListener implements Listener {
                                 sign.setLine(3, ChatColor.BLACK + "Max: " + maxCap);
                             } else {
                                 // Check if this is a sell sign by looking at the PDC data
+                                // Hanging signs have less space; use shortened text [Rent]/[Sell]
+                                boolean hanging = isHangingSign(type);
                                 String kind = pdc.get(keyKind, PersistentDataType.STRING);
-                                if ("RENT".equals(kind)) {
-                                    sign.setLine(0, ChatColor.GREEN + "" + ChatColor.BOLD + "[Rent Claim]");
-                                } else {
-                                    sign.setLine(0, ChatColor.GREEN + "" + ChatColor.BOLD + "[Buy Claim]");
-                                }
+                                String displayKey = "RENT".equals(kind)
+                                    ? (hanging ? "sign-interaction.sign-display-rent-hanging" : "sign-interaction.sign-display-rent-full")
+                                    : (hanging ? "sign-interaction.sign-display-buy-hanging" : "sign-interaction.sign-display-buy-full");
+                                String display = ChatColor.translateAlternateColorCodes('&', plugin.getMessages().getRaw(displayKey));
+                                sign.setLine(0, display);
                             }
                             sign.update();
                         }
@@ -244,6 +246,11 @@ public class SignDisplayListener implements Listener {
         pdc.set(keyScrollIdx, PersistentDataType.INTEGER, idx + 1);
         sign.setLine(2, ChatColor.BLACK + view + ChatColor.BLACK + "/" + perClick);
         sign.update();
+    }
+
+    /** Hanging signs (OAK_HANGING_SIGN, OAK_WALL_HANGING_SIGN, etc.) have less display space. */
+    private boolean isHangingSign(Material material) {
+        return material != null && material.name().contains("HANGING_SIGN");
     }
 
     private String prettifyItemName(String enumName) {

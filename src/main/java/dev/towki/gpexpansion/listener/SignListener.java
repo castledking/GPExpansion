@@ -731,10 +731,19 @@ public class SignListener implements Listener {
             return;
         }
 
-        // Format output lines per spec
-        String displayName = sell ? "Buy Claim" : (rent ? "Rent Claim" : "Mailbox");
-        String colorCode = mailbox ? "&9&l" : "&a&l"; // Blue for mailbox, green for rent/sell
-        event.line(0, LegacyComponentSerializer.legacyAmpersand().deserialize(colorCode + "[" + displayName + "]"));
+        // Format output lines per spec (hanging signs have less space; use shortened [Rent]/[Sell])
+        boolean hanging = event.getBlock().getType().name().contains("HANGING_SIGN");
+        String displayLine0;
+        if (mailbox) {
+            displayLine0 = "&9&l[Mailbox]";
+        } else if (rent) {
+            displayLine0 = hanging ? plugin.getMessages().getRaw("sign-interaction.sign-display-rent-hanging")
+                : plugin.getMessages().getRaw("sign-interaction.sign-display-rent-full");
+        } else {
+            displayLine0 = hanging ? plugin.getMessages().getRaw("sign-interaction.sign-display-buy-hanging")
+                : plugin.getMessages().getRaw("sign-interaction.sign-display-buy-full");
+        }
+        event.line(0, LegacyComponentSerializer.legacyAmpersand().deserialize(displayLine0));
         event.line(1, LegacyComponentSerializer.legacyAmpersand().deserialize("&0ID: &6" + claimId));
         
         // Determine formatted amount
@@ -847,8 +856,8 @@ public class SignListener implements Listener {
         final org.bukkit.Location signLocation = event.getClickedBlock().getLocation();
 
         String line0Plain = stripLegacyColors(LegacyComponentSerializer.legacySection().serialize(line0Comp)).trim();
-        boolean rentSign = line0Plain.equalsIgnoreCase("[Rent Claim]") || line0Plain.equalsIgnoreCase("[Rented]") || line0Plain.equalsIgnoreCase("[Renew]");
-        boolean sellSign = line0Plain.equalsIgnoreCase("[Buy Claim]") || line0Plain.equalsIgnoreCase("[Sell Claim]");
+        boolean rentSign = line0Plain.equalsIgnoreCase("[Rent Claim]") || line0Plain.equalsIgnoreCase("[Rent]") || line0Plain.equalsIgnoreCase("[Rented]") || line0Plain.equalsIgnoreCase("[Renew]");
+        boolean sellSign = line0Plain.equalsIgnoreCase("[Buy Claim]") || line0Plain.equalsIgnoreCase("[Sell Claim]") || line0Plain.equalsIgnoreCase("[Sell]") || line0Plain.equalsIgnoreCase("[Buy]");
         boolean mailboxSign = line0Plain.equalsIgnoreCase("[Mailbox]");
         boolean globalClaimSign = line0Plain.equalsIgnoreCase("[Global Claim]") || line0Plain.equalsIgnoreCase("[Global]") || line0Plain.equalsIgnoreCase("[global claim]");
 

@@ -70,6 +70,11 @@ public class Messages {
         DEFAULTS.put("sign-interaction.confirmation-hover-confirm-purchase", "&aClick to confirm purchase");
         DEFAULTS.put("sign-interaction.confirmation-hover-cancel", "&cClick to cancel");
         DEFAULTS.put("sign-interaction.confirmation-cancelled", "&eCancelled.");
+        DEFAULTS.put("sign-interaction.confirmation-command-hint", "&7Type &e/gpxconfirm accept&7 to confirm.");
+        DEFAULTS.put("sign-interaction.sign-display-rent-full", "&a&l[Rent Claim]");
+        DEFAULTS.put("sign-interaction.sign-display-rent-hanging", "&a&l[Rent]");
+        DEFAULTS.put("sign-interaction.sign-display-buy-full", "&a&l[Buy Claim]");
+        DEFAULTS.put("sign-interaction.sign-display-buy-hanging", "&a&l[Sell]");
         
         // Claim teleport
         DEFAULTS.put("claim.teleport-usage", "&cUsage: /claim tp <claimId> [player]");

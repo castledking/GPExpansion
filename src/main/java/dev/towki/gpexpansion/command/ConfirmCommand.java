@@ -32,35 +32,56 @@ public class ConfirmCommand implements CommandExecutor, TabCompleter {
         }
         Player player = (Player) sender;
 
-        if (args.length < 2) {
-            sender.sendMessage(ChatColor.YELLOW + "Usage: /" + label + " <token> <accept|cancel>");
-            return true;
-        }
-
-        String token = args[0];
-        String action = args[1].toLowerCase(Locale.ROOT);
-        boolean accept;
-        if (action.equals("accept") || action.equals("confirm") || action.equals("yes")) {
-            accept = true;
-        } else if (action.equals("cancel") || action.equals("deny") || action.equals("no")) {
-            accept = false;
-        } else {
-            sender.sendMessage(ChatColor.RED + "Second argument must be 'accept' or 'cancel'.");
-            return true;
-        }
-
         ConfirmationService svc = plugin.getConfirmationService();
-        if (svc == null || !svc.handle(player, token, accept)) {
-            sender.sendMessage(ChatColor.RED + "Invalid or expired confirmation token.");
+        if (svc == null) {
+            sender.sendMessage(ChatColor.RED + "Confirmation service unavailable.");
             return true;
         }
 
-        // Success path handled by ConfirmationService; nothing else to say here.
+        String token;
+        boolean accept;
+        if (args.length == 0) {
+            // No args = accept latest (Bedrock-friendly)
+            token = null;
+            accept = true;
+        } else if (args.length == 1) {
+            String arg = args[0].toLowerCase(Locale.ROOT);
+            if (arg.equals("accept") || arg.equals("confirm") || arg.equals("yes")) {
+                token = null;
+                accept = true;
+            } else if (arg.equals("cancel") || arg.equals("deny") || arg.equals("no")) {
+                token = null;
+                accept = false;
+            } else {
+                sender.sendMessage(ChatColor.YELLOW + "Usage: /" + label + " [accept|cancel] or /" + label + " <token> <accept|cancel>");
+                return true;
+            }
+        } else {
+            token = args[0];
+            String action = args[1].toLowerCase(Locale.ROOT);
+            if (action.equals("accept") || action.equals("confirm") || action.equals("yes")) {
+                accept = true;
+            } else if (action.equals("cancel") || action.equals("deny") || action.equals("no")) {
+                accept = false;
+            } else {
+                sender.sendMessage(ChatColor.RED + "Second argument must be 'accept' or 'cancel'.");
+                return true;
+            }
+        }
+
+        if (!svc.handle(player, token, accept)) {
+            sender.sendMessage(ChatColor.RED + "No pending confirmation or invalid/expired token.");
+            return true;
+        }
+
         return true;
     }
 
     @Override
     public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
+        if (args.length == 1) {
+            return Arrays.asList("accept", "cancel");
+        }
         if (args.length == 2) {
             return Arrays.asList("accept", "cancel");
         }
