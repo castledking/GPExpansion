@@ -231,28 +231,26 @@ public class SignListener implements Listener {
     
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onSignCreate(@NotNull SignChangeEvent event) {
-        // Log basic sign creation info
-        plugin.getLogger().info("===== SIGN PLACEMENT DETECTED =====");
-        plugin.getLogger().info("Player: " + event.getPlayer().getName());
-        plugin.getLogger().info("Block Type: " + event.getBlock().getType());
-        plugin.getLogger().info("Location: " + event.getBlock().getLocation());
-        
-        // Log all sign lines
-        plugin.getLogger().info("Sign Content:");
-        for (int i = 0; i < 4; i++) {
-            Component line = event.line(i);
-            String lineText = line != null ? line.toString() : "";
-            plugin.getLogger().info(String.format("  Line %d: '%s' (Type: %s)", 
-                i, 
-                lineText,
-                line != null ? line.getClass().getSimpleName() : "null"
-            ));
+        if (plugin.getConfigManager().isDebugEnabled()) {
+            plugin.getLogger().info("===== SIGN PLACEMENT DETECTED =====");
+            plugin.getLogger().info("Player: " + event.getPlayer().getName());
+            plugin.getLogger().info("Block Type: " + event.getBlock().getType());
+            plugin.getLogger().info("Location: " + event.getBlock().getLocation());
+            plugin.getLogger().info("Sign Content:");
+            for (int i = 0; i < 4; i++) {
+                Component line = event.line(i);
+                String lineText = line != null ? line.toString() : "";
+                plugin.getLogger().info(String.format("  Line %d: '%s' (Type: %s)",
+                    i, lineText, line != null ? line.getClass().getSimpleName() : "null"));
+            }
         }
-                            
+
         Player player = event.getPlayer();
         Component line0 = event.line(0);
         if (line0 == null) {
-            plugin.getLogger().info("Sign creation aborted: Line 0 is null");
+            if (plugin.getConfigManager().isDebugEnabled()) {
+                plugin.getLogger().info("Sign creation aborted: Line 0 is null");
+            }
             return;
         }
         
@@ -296,12 +294,13 @@ public class SignListener implements Listener {
             }
         }
 
-        // Debug logging
-        plugin.getLogger().info("Creating sign with content:");
-        for (int i = 0; i < 4; i++) {
-            Component line = event.line(i);
-            String lineText = line != null ? line.toString() : "";
-            plugin.getLogger().info("Line " + i + ": '" + lineText + "'");
+        if (plugin.getConfigManager().isDebugEnabled()) {
+            plugin.getLogger().info("Creating sign with content:");
+            for (int i = 0; i < 4; i++) {
+                Component line = event.line(i);
+                String lineText = line != null ? line.toString() : "";
+                plugin.getLogger().info("Line " + i + ": '" + lineText + "'");
+            }
         }
 
         boolean hasPerm = rent ? player.hasPermission("griefprevention.sign.create.rent") : 
@@ -416,8 +415,10 @@ public class SignListener implements Listener {
         String line1 = stripLegacyColors(safeLine(event, 1)).trim();
         String line2 = stripLegacyColors(safeLine(event, 2)).trim();
         String line3 = stripLegacyColors(safeLine(event, 3)).trim();
-        
-        plugin.getLogger().info("Processing sign creation - Line1: " + line1 + ", Line2: " + line2 + ", Line3: " + line3);
+
+        if (plugin.getConfigManager().isDebugEnabled()) {
+            plugin.getLogger().info("Processing sign creation - Line1: " + line1 + ", Line2: " + line2 + ", Line3: " + line3);
+        }
         
         String claimId;
         String ecoKindStr;
@@ -782,7 +783,9 @@ public class SignListener implements Listener {
         }
         
         String logInfo = sell ? amountDisplay : (amountDisplay + "/" + renewal.perClick + ", Max: " + renewal.maxCap);
-        plugin.getLogger().info("Formatted sign - ClaimID: " + claimId + ", Type: " + kind + ", Price: " + logInfo);
+        if (plugin.getConfigManager().isDebugEnabled()) {
+            plugin.getLogger().info("Formatted sign - ClaimID: " + claimId + ", Type: " + kind + ", Price: " + logInfo);
+        }
 
         // Persist metadata on the sign
         org.bukkit.block.BlockState state = event.getBlock().getState();
@@ -1367,11 +1370,12 @@ public class SignListener implements Listener {
         // Send success message
         plugin.getMessages().send(player, "gui.claim-listed", "{id}", claimId);
         
-        // Log the action
-        plugin.getLogger().info("Global claim sign created for claim " + claimId + 
-            " by " + player.getName() + " at " + 
-            signLocation.getWorld().getName() + " " + 
-            signLocation.getBlockX() + "," + signLocation.getBlockY() + "," + signLocation.getBlockZ());
+        if (plugin.getConfigManager().isDebugEnabled()) {
+            plugin.getLogger().info("Global claim sign created for claim " + claimId +
+                " by " + player.getName() + " at " +
+                signLocation.getWorld().getName() + " " +
+                signLocation.getBlockX() + "," + signLocation.getBlockY() + "," + signLocation.getBlockZ());
+        }
     }
     
     /**

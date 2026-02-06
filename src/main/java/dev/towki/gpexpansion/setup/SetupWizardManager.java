@@ -103,6 +103,37 @@ public class SetupWizardManager {
     public GPExpansionPlugin getPlugin() {
         return plugin;
     }
+
+    /**
+     * Returns true only if the player is allowed to create this sign type at this location.
+     * Used by auto-paste to prevent placing/injecting signs in claims the player doesn't own or rent.
+     */
+    public boolean canCreateSignAtLocation(org.bukkit.entity.Player player, org.bukkit.Location location, PendingSignData data) {
+        java.util.Optional<Object> claimOpt = gp.getClaimAt(location);
+        if (!claimOpt.isPresent()) {
+            return false;
+        }
+        Object claim = claimOpt.get();
+        String claimId = gp.getClaimId(claim).orElse(null);
+        if (claimId == null || claimId.isEmpty()) {
+            return false;
+        }
+        java.util.UUID playerId = player.getUniqueId();
+        boolean admin = player.hasPermission("griefprevention.admin");
+        if (data.type == SetupType.RENT || data.type == SetupType.SELL) {
+            return gp.isOwner(claim, playerId) || admin;
+        }
+        if (data.type == SetupType.MAILBOX) {
+            if (data.mailboxSelf) {
+                if (gp.isOwner(claim, playerId) || admin) return true;
+                return plugin.getClaimDataStore().getRental(claimId)
+                    .filter(r -> r.renter != null && r.renter.equals(playerId))
+                    .isPresent();
+            }
+            return gp.isOwner(claim, playerId) || admin;
+        }
+        return false;
+    }
     
     /**
      * Start a new setup wizard session for a player.
