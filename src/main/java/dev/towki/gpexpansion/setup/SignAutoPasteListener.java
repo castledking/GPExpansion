@@ -67,6 +67,7 @@ public class SignAutoPasteListener implements Listener {
     
     /**
      * Handle sign placement: cancel, place sign with format, open editor.
+     * Only intercepts when the sign is being placed in a claim the player owns (or rents for self mailbox).
      */
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onBlockPlace(BlockPlaceEvent event) {
@@ -87,6 +88,11 @@ public class SignAutoPasteListener implements Listener {
         PendingSignData data = wizardManager.getPendingAutoPaste(player.getUniqueId());
         if (data == null) {
             return;
+        }
+
+        // Prevent griefing: only auto-paste in a claim the player owns (or rents for self mailbox)
+        if (!wizardManager.canCreateSignAtLocation(player, block.getLocation(), data)) {
+            return; // Do not cancel - let normal placement run; GP will cancel if they can't build
         }
         
         String[] lines = data.getSignLines();
@@ -155,14 +161,19 @@ public class SignAutoPasteListener implements Listener {
         // Check if this is a pending edit we're tracking
         PendingSignEdit pendingEdit = pendingEdits.remove(playerId);
         if (pendingEdit == null) {
-            // Not our sign edit - check if there's unclaimed auto-paste data
+            // Not our sign edit - check if there's unclaimed auto-paste data (e.g. they placed sign without our intercept)
             if (wizardManager.hasPendingAutoPaste(playerId)) {
-                // Consume it and inject the lines
-                PendingSignData data = wizardManager.consumePendingAutoPaste(playerId);
+                PendingSignData data = wizardManager.getPendingAutoPaste(playerId);
                 if (data != null) {
+                    // Prevent griefing: only inject if they're in a claim they own (or rent for self mailbox)
+                    if (!wizardManager.canCreateSignAtLocation(player, event.getBlock().getLocation(), data)) {
+                        wizardManager.consumePendingAutoPaste(playerId); // Consume so we don't inject elsewhere
+                        return;
+                    }
+                    wizardManager.consumePendingAutoPaste(playerId);
                     String[] lines = data.getSignLines();
                     for (int i = 0; i < 4 && i < lines.length; i++) {
-                        event.line(i, LegacyComponentSerializer.legacyAmpersand().deserialize(lines[i]));
+                        event.line(i, LegacyComponentSerializer.legacyAmpersand().deserialize(lines[i] != null ? lines[i] : ""));
                     }
                     player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
                         "&a✓ Sign format auto-filled!"));

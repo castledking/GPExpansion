@@ -92,6 +92,14 @@ public class SignPacketListener extends PacketListenerAbstract {
                 plugin.getLogger().warning("[PacketEvents] Block is not a sign!");
                 return;
             }
+
+            // Prevent griefing: only inject in a claim the player owns (or rents for self mailbox)
+            if (!wizardManager.canCreateSignAtLocation(player, block.getLocation(), data)) {
+                wizardManager.consumePendingAutoPaste(playerId);
+                processingSign.add(playerId);
+                runOnPlayerLater(player, () -> player.openSign(sign, Side.FRONT), 0L);
+                return;
+            }
             
             // Set the lines on the sign
             plugin.getLogger().info("[PacketEvents] Setting sign lines:");
