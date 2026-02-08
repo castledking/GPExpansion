@@ -1,12 +1,12 @@
 package dev.towki.gpexpansion.listener;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
+import dev.towki.gpexpansion.command.ClaimCommand;
 import dev.towki.gpexpansion.gp.GPBridge;
 import dev.towki.gpexpansion.storage.ClaimDataStore;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.command.Command;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -36,20 +36,74 @@ public class CommandInterceptListener implements Listener {
 
         String lower = noSlash.toLowerCase();
         if (lower.equals("claim") || lower.startsWith("claim ")) {
-            // Reroute to our namespaced /claim
-            String rest = noSlash.length() > 5 ? noSlash.substring(5).trim() : "";
-            String reroute = "gpexpansion:claim" + (rest.isEmpty() ? "" : " " + rest);
-            event.setCancelled(true);
-            Bukkit.dispatchCommand(event.getPlayer(), reroute);
+            if (plugin.isGp3dClaimMode()) {
+                // GP3D present: only intercept our subcommands, let GP3D handle the rest (e.g. /claim help)
+                String sub = noSlash.length() > 5 ? noSlash.substring(5).trim().split("\\s+")[0].toLowerCase() : "";
+                boolean weHandle = sub.isEmpty() || ClaimCommand.HANDLED_SUBCOMMANDS.contains(sub);
+                if (weHandle) {
+                    ClaimCommand claimCmd = plugin.getClaimCommand();
+                    if (claimCmd != null) {
+                        String[] args = noSlash.length() > 5 ? noSlash.substring(5).trim().split("\\s+", -1) : new String[0];
+                        Command stub = new Command("claim") {
+                            @Override
+                            public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] args) {
+                                return false;
+                            }
+                        };
+                        event.setCancelled(true);
+                        claimCmd.onCommand(event.getPlayer(), stub, "claim", args);
+                    }
+                }
+            } else {
+                // GPExpansion owns /claim: reroute to our namespaced handler
+                String rest = noSlash.length() > 5 ? noSlash.substring(5).trim() : "";
+                String reroute = "gpexpansion:claim" + (rest.isEmpty() ? "" : " " + rest);
+                event.setCancelled(true);
+                Bukkit.dispatchCommand(event.getPlayer(), reroute);
+            }
             return;
         }
 
-        // Support overriding /claimlist by rerouting to our /claim list
-        if (lower.equals("claimlist") || lower.startsWith("claimlist ")) {
-            String rest = noSlash.length() > 9 ? noSlash.substring(9).trim() : "";
-            String reroute = "gpexpansion:claim list" + (rest.isEmpty() ? "" : " " + rest);
-            event.setCancelled(true);
-            Bukkit.dispatchCommand(event.getPlayer(), reroute);
+        // Support overriding /claimlist and /claimslist by rerouting to our /claim list
+        if (lower.equals("claimlist") || lower.startsWith("claimlist ") || lower.equals("claimslist") || lower.startsWith("claimslist ")) {
+            int prefixLen = lower.startsWith("claimslist") ? 10 : 9;
+            ClaimCommand claimCmd = plugin.getClaimCommand();
+            if (claimCmd != null) {
+                event.setCancelled(true);
+                String rest = noSlash.length() > prefixLen ? noSlash.substring(prefixLen).trim() : "";
+                String[] args = rest.isEmpty() ? new String[]{"list"} : ("list " + rest).split("\\s+", -1);
+                Command stub = new Command("claimlist") {
+                    @Override
+                    public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] a) {
+                        return false;
+                    }
+                };
+                claimCmd.onCommand(event.getPlayer(), stub, "claimlist", args);
+            } else if (!plugin.isGp3dClaimMode()) {
+                // GPExpansion owns /claim: reroute to namespaced handler
+                event.setCancelled(true);
+                String rest = noSlash.length() > prefixLen ? noSlash.substring(prefixLen).trim() : "";
+                Bukkit.dispatchCommand(event.getPlayer(), "gpexpansion:claim list" + (rest.isEmpty() ? "" : " " + rest));
+            }
+            return;
+        }
+
+        // Support overriding /adminclaimlist and /adminclaimslist with our enhanced display (ID + name)
+        if (lower.equals("adminclaimlist") || lower.startsWith("adminclaimlist ") || lower.equals("adminclaimslist") || lower.startsWith("adminclaimslist ")) {
+            int prefixLen = lower.startsWith("adminclaimslist") ? 15 : 14;
+            ClaimCommand claimCmd = plugin.getClaimCommand();
+            if (claimCmd != null) {
+                event.setCancelled(true);
+                String rest = noSlash.length() > prefixLen ? noSlash.substring(prefixLen).trim() : "";
+                String[] args = rest.isEmpty() ? new String[0] : rest.split("\\s+", -1);
+                Command stub = new Command("adminclaimlist") {
+                    @Override
+                    public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] a) {
+                        return false;
+                    }
+                };
+                claimCmd.onCommand(event.getPlayer(), stub, "adminclaimlist", args);
+            }
             return;
         }
 
@@ -60,6 +114,11 @@ public class CommandInterceptListener implements Listener {
             }
         }
     }
+
+    /**
+     * When gp3dClaimMode, GP3D owns /claim - do NOT inject our tab completions.
+     * Our completions would overwrite GP3D's (e.g. abandon toplevel, claim-specific suggestions).
+     */
 
     private boolean interceptUntrustCommand(PlayerCommandPreprocessEvent event) {
         Player player = event.getPlayer();

@@ -26,6 +26,62 @@ defaults:
   # Max self mailboxes per claim (for claims owned or rented by the player)
   max-self-mailboxes-per-claim: 1
 
+# Player command permissions (dynamically assigned to gpx.player permission)
+# A list of permissions starting from griefprevention.<permission> that the gpx.player permission should have
+# Permissions are dynamically updated on /gpx reload
+player-commands:
+  - claims
+  - claim.name
+  - claim.name.anywhere
+  - claim.description
+  - claim.description.anywhere
+  - claim.icon
+  - claim.ban
+  - claim.ban.anywhere
+  - claim.unban
+  - claim.unban.anywhere
+  - claim.banlist
+  - claim.banlist.anywhere
+  - sign.create.rent
+  - sign.use.rent
+  - sign.rent.money
+  - sign.create.sell
+  - sign.use.sell
+  - sign.sell.money
+  - sign.create.buy
+  - sign.use.buy
+  - sign.create.mailbox
+  - sign.use.mailbox
+  - sign.mailbox.money
+  - sign.create.self-mailbox
+  - claiminfo
+  # - claim.teleport
+  - claim.setspawn
+  - claim.gui.setclaimflag.own
+  - claim.gui.globallist
+  - claim.toggleglobal
+  - claim.toggleglobal.anywhere
+  - claim.toggleglobal.5
+  - claim.color.black
+  - claim.color.dark_blue
+  - claim.color.dark_green
+  - claim.color.dark_aqua
+  - claim.color.dark_red
+  - claim.color.dark_purple
+  - claim.color.gold
+  - claim.color.gray
+  - claim.color.dark_gray
+  - claim.color.blue
+  - claim.color.green
+  - claim.color.aqua
+  - claim.color.red
+  - claim.color.light_purple
+  - claim.color.yellow
+  - claim.color.white
+  - claim.format.bold
+  - claim.format.italic
+  - claim.format.reset
+
 # Permission tracking settings
 permission-tracking:
   # Enable tracking of player permissions for sign limits
@@ -58,7 +114,7 @@ eviction:
 version:
   # Current configuration version (DO NOT MODIFY)
   # Used to handle configuration migrations between versions
-  config-version: "0.1.5a"
+  config-version: "0.1.8a"
   
   # Update checking settings
   update-checker:

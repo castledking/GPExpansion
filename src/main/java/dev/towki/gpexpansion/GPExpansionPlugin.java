@@ -51,7 +51,10 @@ public final class GPExpansionPlugin extends JavaPlugin {
     private Messages messages;
     private dev.towki.gpexpansion.util.Config configManager;
     private VersionManager versionManager;
-    
+    private dev.towki.gpexpansion.permission.PermissionManager permissionManager;
+    private ClaimCommand claimCommand;
+    private boolean gp3dClaimMode;
+
     // Tax settings
     private double taxPercent = 5.0;
     private String taxAccountName = "Tax";
@@ -95,6 +98,9 @@ public final class GPExpansionPlugin extends JavaPlugin {
         
         // Initialize sign limit manager
         signLimitManager = new dev.towki.gpexpansion.permission.SignLimitManager(this);
+        
+        // Initialize permission manager (handles dynamic gpx.player permissions)
+        permissionManager = new dev.towki.gpexpansion.permission.PermissionManager(this);
 
         // Start reminder service
         reminderService = new dev.towki.gpexpansion.reminder.RentalReminderService(this);
@@ -105,14 +111,30 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
         // Delay until server tick using Folia global scheduler when available
         runGlobal(() -> {
-            try {
-                unregisterExistingClaimCommands();
-            } catch (Exception e) {
-                getLogger().warning("Failed to proactively unregister existing /claim: " + e.getMessage());
+            ClaimCommand claimCommand = new ClaimCommand(this);
+            boolean gp3dPresent = new dev.towki.gpexpansion.gp.GPBridge().isGP3D();
+            if (gp3dPresent) {
+                // GP3D present: keep GP3D's /claim (tab completion etc). Only take over claimlist/claimslist for enhanced ID+name display.
+                try {
+                    unregisterClaimlistCommands();
+                } catch (Exception e) {
+                    getLogger().warning("Failed to unregister claimlist for takeover: " + e.getMessage());
+                }
+                dev.towki.gpexpansion.gp.ClaimCommandAddonImpl.register(this);
+                getLogger().info("GP3D detected: GPExpansion takes claimslist/claimlist for enhanced display, intercepts /claim list");
+            } else {
+                try {
+                    unregisterExistingClaimCommands();
+                } catch (Exception e) {
+                    getLogger().warning("Failed to proactively unregister existing /claim: " + e.getMessage());
+                }
             }
 
-            // Register command programmatically (Paper requires this)
-            ClaimCommand claimCommand = new ClaimCommand(this);
+            // Store claim command for CommandInterceptListener (used when GP3D present)
+            this.claimCommand = claimCommand;
+            this.gp3dClaimMode = gp3dPresent;
+
+            // Register command programmatically (Paper requires this) - only when NOT sharing with GP3D
             Command wrapper = new PaperCommandWrapper(
                     this, // Pass plugin instance
                     "claim",
@@ -152,6 +174,16 @@ public final class GPExpansionPlugin extends JavaPlugin {
                     claimCommand,
                     claimCommand
             );
+            // Standalone globalclaim command - /globalclaim [true|false] [claimId]
+            Command globalClaimWrapper = new PaperCommandWrapper(
+                    this,
+                    "globalclaim",
+                    "Toggle or set global listing for a claim",
+                    "/globalclaim [true|false] [claimId]",
+                    java.util.Arrays.asList("toggleglobal"),
+                    claimCommand,
+                    claimCommand
+            );
             // Get CommandMap for registering commands
             CommandMap map = null;
             try {
@@ -169,18 +201,21 @@ public final class GPExpansionPlugin extends JavaPlugin {
             }
             
             // Register core commands - try Paper's registerCommand first, fallback to CommandMap
+            // When GP3D present, don't register our claim - GP3D keeps /claim (tab completion for abandon all/toplevel etc)
             try {
                 java.lang.reflect.Method reg = JavaPlugin.class.getMethod("registerCommand", Command.class);
-                reg.invoke(this, wrapper);
+                if (!gp3dPresent) reg.invoke(this, wrapper);
                 reg.invoke(this, trustlistWrapper);
                 reg.invoke(this, adminClaimListWrapper);
                 reg.invoke(this, claimsListWrapper);
+                reg.invoke(this, globalClaimWrapper);
             } catch (NoSuchMethodException missing) {
                 // Paper registerCommand not available, use CommandMap
-                map.register("gpexpansion", wrapper);
+                if (!gp3dPresent) map.register("gpexpansion", wrapper);
                 map.register("gpexpansion", trustlistWrapper);
                 map.register("gpexpansion", adminClaimListWrapper);
                 map.register("gpexpansion", claimsListWrapper);
+                map.register("gpexpansion", globalClaimWrapper);
             } catch (ReflectiveOperationException e) {
                 getLogger().severe("Failed to register core commands: " + e.getMessage());
             }
@@ -419,8 +454,43 @@ public final class GPExpansionPlugin extends JavaPlugin {
         }
     }
 
+    /** Unregister claimlist and adminclaimlist so our enhanced display takes over (used when sharing /claim with GP3D) */
+    @SuppressWarnings("unchecked")
+    private void unregisterClaimlistCommands() throws ReflectiveOperationException {
+        Object mapObj = getServer().getClass().getMethod("getCommandMap").invoke(getServer());
+        if (!(mapObj instanceof CommandMap)) return;
+        CommandMap map = (CommandMap) mapObj;
+        Class<?> cls = map.getClass();
+        java.lang.reflect.Field f = null;
+        while (cls != null && f == null) {
+            try {
+                f = cls.getDeclaredField("knownCommands");
+            } catch (NoSuchFieldException ignored) {
+                cls = cls.getSuperclass();
+            }
+        }
+        if (f == null) return;
+        f.setAccessible(true);
+        Object raw = f.get(map);
+        if (!(raw instanceof java.util.Map)) return;
+        java.util.Map<String, Command> known = (java.util.Map<String, Command>) raw;
+        for (String label : new String[]{
+            "claimlist", "claimslist", "griefprevention:claimlist", "griefprevention:claimslist", "gpexpansion:claimlist", "gpexpansion:claimslist",
+            "adminclaimlist", "adminclaimslist", "griefprevention:adminclaimlist", "griefprevention:adminclaimslist", "gpexpansion:adminclaimlist", "gpexpansion:adminclaimslist"
+        }) {
+            Command existing = known.get(label);
+            if (existing != null) {
+                try { existing.unregister(map); } catch (Throwable ignored) {}
+                known.remove(label);
+            }
+        }
+    }
+
     @Override
     public void onDisable() {
+        if (gp3dClaimMode) {
+            dev.towki.gpexpansion.gp.ClaimCommandAddonImpl.unregister();
+        }
         if (reminderService != null) {
             reminderService.stop();
         }
@@ -554,6 +624,11 @@ public final class GPExpansionPlugin extends JavaPlugin {
         
         // Reload tax settings
         loadTaxSettings();
+        
+        // Reload permission manager (updates gpx.player children)
+        if (permissionManager != null) {
+            permissionManager.reload();
+        }
     }
 
     // Economy bridge methods to support both legacy Vault and Vault 2 without a hard compile dependency on v2
@@ -677,6 +752,16 @@ public final class GPExpansionPlugin extends JavaPlugin {
      */
     public dev.towki.gpexpansion.storage.ClaimDataStore getClaimDataStore() {
         return claimDataStore;
+    }
+
+    /** Claim command handler (for CommandInterceptListener when sharing with GP3D) */
+    public ClaimCommand getClaimCommand() {
+        return claimCommand;
+    }
+
+    /** True when GP3D is present and we share /claim - only intercept our subcommands */
+    public boolean isGp3dClaimMode() {
+        return gp3dClaimMode;
     }
     
     public dev.towki.gpexpansion.gui.GUIManager getGUIManager() {

@@ -107,12 +107,12 @@ public class VersionManager {
         plugin.getLogger().info("VersionManager: Current version: " + configVersion);
         
         // Check actual file content for old format indicators
-        File configFile = new File(dataFolder, "config.yml");
+        File configFileForFormat = new File(dataFolder, "config.yml");
         boolean isOldFormat = false;
         
-        if (configFile.exists()) {
+        if (configFileForFormat.exists()) {
             try {
-                String configContent = Files.readString(configFile.toPath());
+                String configContent = Files.readString(configFileForFormat.toPath());
                 plugin.getLogger().info("VersionManager: Contains 'messages:': " + configContent.contains("messages:"));
                 plugin.getLogger().info("VersionManager: Contains 'show-permission-details: true': " + configContent.contains("show-permission-details: true"));
                 plugin.getLogger().info("VersionManager: Contains 'eviction:': " + configContent.contains("eviction:"));
@@ -150,9 +150,103 @@ public class VersionManager {
         // Always ensure mailbox-protocol exists (some users may already be on 0.1.5a without this key).
         ensureMailboxProtocolPresent();
         
+        // Migrate to 0.1.8a: add player-commands section
+        // Always check if section exists by reading file directly (more reliable than config.contains)
+        File configFileCheck = new File(dataFolder, "config.yml");
+        boolean playerCommandsExists = false;
+        
+        if (configFileCheck.exists()) {
+            try {
+                String configContent = Files.readString(configFileCheck.toPath());
+                // Check for player-commands section in file
+                playerCommandsExists = configContent.contains("player-commands:") || 
+                                      configContent.contains("player-commands");
+                plugin.getLogger().info("VersionManager: Checked file for player-commands: " + playerCommandsExists);
+            } catch (IOException e) {
+                plugin.getLogger().warning("Failed to read config file to check for player-commands: " + e.getMessage());
+                // Fallback to in-memory config check
+                playerCommandsExists = plugin.getConfig().contains("player-commands");
+            }
+        }
+        
+        // Run migration if version is old OR if section is missing (even if version is already 0.1.8a)
+        if (isVersionOlder(currentConfigVersion, "0.1.8a") || !playerCommandsExists) {
+            if (!playerCommandsExists) {
+                plugin.getLogger().info("VersionManager: player-commands section missing" + 
+                    (isVersionOlder(currentConfigVersion, "0.1.8a") ? " (version " + currentConfigVersion + " < 0.1.8a)" : " (version " + currentConfigVersion + " but migration not applied)") + 
+                    ", applying 0.1.8a migration");
+            }
+            migrateToVersion018a();
+            // Reload config after migration to get updated version
+            loadConfig();
+        }
+        
+        // Auto-bump version if no migrations needed and version is older than project version
+        // Only auto-bump if player-commands section exists (to avoid bumping before migration)
+        String projectVersion = getProjectVersion();
+        if (isVersionOlder(currentConfigVersion, projectVersion)) {
+            // Double-check section exists before auto-bumping
+            boolean sectionExists = false;
+            if (configFileCheck.exists()) {
+                try {
+                    String configContent = Files.readString(configFileCheck.toPath());
+                    sectionExists = configContent.contains("player-commands:");
+                } catch (IOException e) {
+                    sectionExists = plugin.getConfig().contains("player-commands");
+                }
+            }
+            
+            if (sectionExists) {
+                autoBumpConfigVersion(projectVersion);
+            } else {
+                plugin.getLogger().warning("VersionManager: Skipping auto-bump - player-commands section still missing after migration check.");
+            }
+        }
+        
         // Schedule update check if enabled
         if (updateCheckerEnabled) {
             scheduleUpdateCheck();
+        }
+    }
+    
+    /**
+     * Get the project version from plugin.yml
+     * Falls back to reading from pom.properties or hardcoded version
+     */
+    private String getProjectVersion() {
+        String version = plugin.getDescription().getVersion();
+        // Remove any ${project.version} placeholders if present
+        if (version.contains("${") || version.isEmpty()) {
+            // Try to read from Maven properties file
+            try {
+                java.io.InputStream is = plugin.getClass().getClassLoader().getResourceAsStream("META-INF/maven/dev.towki.gpexpansion/gpexpansion/pom.properties");
+                if (is != null) {
+                    java.util.Properties props = new java.util.Properties();
+                    props.load(is);
+                    version = props.getProperty("version", "0.1.8a");
+                    is.close();
+                } else {
+                    version = "0.1.8a"; // Fallback to current version
+                }
+            } catch (Exception e) {
+                version = "0.1.8a"; // Fallback to current version
+            }
+        }
+        return version;
+    }
+    
+    /**
+     * Auto-bump config version to project version (when no migrations are needed)
+     */
+    private void autoBumpConfigVersion(String targetVersion) {
+        FileConfiguration config = plugin.getConfig();
+        String currentVersion = config.getString("version.config-version", currentConfigVersion);
+        
+        if (isVersionOlder(currentVersion, targetVersion)) {
+            config.set("version.config-version", targetVersion);
+            plugin.saveConfig();
+            currentConfigVersion = targetVersion;
+            plugin.getLogger().info("VersionManager: Auto-bumped config version from " + currentVersion + " to " + targetVersion + " (no migrations needed)");
         }
     }
     
@@ -344,6 +438,207 @@ public class VersionManager {
         plugin.saveConfig();
         plugin.getLogger().info("VersionManager: Added missing mailbox-protocol=" + defaultProtocol + " (detected " + (gp3d ? "GP3D" : "regular GP") + ").");
     }
+    
+    /**
+     * Migrate to config version 0.1.8a: add player-commands section
+     * This method writes directly to the file to avoid issues with config defaults
+     */
+    private void migrateToVersion018a() {
+        File configFile = new File(dataFolder, "config.yml");
+        if (!configFile.exists()) {
+            plugin.getLogger().warning("VersionManager: config.yml does not exist, cannot migrate");
+            return;
+        }
+        
+        try {
+            String configContent = Files.readString(configFile.toPath());
+            
+            // Check if player-commands already exists in the actual file (not just defaults)
+            if (configContent.contains("player-commands:")) {
+                plugin.getLogger().info("VersionManager: player-commands section already exists in file, skipping addition");
+                // Still update version if needed
+                FileConfiguration config = plugin.getConfig();
+                String currentVersion = config.getString("version.config-version", currentConfigVersion);
+                if (isVersionOlder(currentVersion, "0.1.8a")) {
+                    config.set("version.config-version", "0.1.8a");
+                    plugin.saveConfig();
+                    currentConfigVersion = "0.1.8a";
+                }
+                return;
+            }
+            
+            // Build the player-commands section
+            StringBuilder playerCommandsSection = new StringBuilder();
+            playerCommandsSection.append("\n# Player command permissions (dynamically assigned to gpx.player permission)\n");
+            playerCommandsSection.append("# A list of permissions starting from griefprevention.<permission> that the gpx.player permission should have\n");
+            playerCommandsSection.append("# Permissions are dynamically updated on /gpx reload\n");
+            playerCommandsSection.append("player-commands:\n");
+            playerCommandsSection.append("  - claims\n");
+            playerCommandsSection.append("  - claim.name\n");
+            playerCommandsSection.append("  - claim.name.anywhere\n");
+            playerCommandsSection.append("  - claim.description\n");
+            playerCommandsSection.append("  - claim.description.anywhere\n");
+            playerCommandsSection.append("  - claim.icon\n");
+            playerCommandsSection.append("  - claim.ban\n");
+            playerCommandsSection.append("  - claim.ban.anywhere\n");
+            playerCommandsSection.append("  - claim.unban\n");
+            playerCommandsSection.append("  - claim.unban.anywhere\n");
+            playerCommandsSection.append("  - claim.banlist\n");
+            playerCommandsSection.append("  - claim.banlist.anywhere\n");
+            playerCommandsSection.append("  - sign.create.rent\n");
+            playerCommandsSection.append("  - sign.use.rent\n");
+            playerCommandsSection.append("  - sign.rent.money\n");
+            playerCommandsSection.append("  - sign.create.sell\n");
+            playerCommandsSection.append("  - sign.use.sell\n");
+            playerCommandsSection.append("  - sign.sell.money\n");
+            playerCommandsSection.append("  - sign.create.buy\n");
+            playerCommandsSection.append("  - sign.use.buy\n");
+            playerCommandsSection.append("  - sign.create.mailbox\n");
+            playerCommandsSection.append("  - sign.use.mailbox\n");
+            playerCommandsSection.append("  - sign.mailbox.money\n");
+            playerCommandsSection.append("  - sign.create.self-mailbox\n");
+            playerCommandsSection.append("  - claiminfo\n");
+            playerCommandsSection.append("# - claim.teleport\n");
+            playerCommandsSection.append("  - claim.setspawn\n");
+            playerCommandsSection.append("  - claim.gui.setclaimflag.own\n");
+            playerCommandsSection.append("  - claim.gui.globallist\n");
+            playerCommandsSection.append("  - claim.toggleglobal\n");
+            playerCommandsSection.append("  - claim.toggleglobal.anywhere\n");
+            playerCommandsSection.append("  - claim.toggleglobal.5\n");
+            playerCommandsSection.append("  - claim.color.black\n");
+            playerCommandsSection.append("  - claim.color.dark_blue\n");
+            playerCommandsSection.append("  - claim.color.dark_green\n");
+            playerCommandsSection.append("  - claim.color.dark_aqua\n");
+            playerCommandsSection.append("  - claim.color.dark_red\n");
+            playerCommandsSection.append("  - claim.color.dark_purple\n");
+            playerCommandsSection.append("  - claim.color.gold\n");
+            playerCommandsSection.append("  - claim.color.gray\n");
+            playerCommandsSection.append("  - claim.color.dark_gray\n");
+            playerCommandsSection.append("  - claim.color.blue\n");
+            playerCommandsSection.append("  - claim.color.green\n");
+            playerCommandsSection.append("  - claim.color.aqua\n");
+            playerCommandsSection.append("  - claim.color.red\n");
+            playerCommandsSection.append("  - claim.color.light_purple\n");
+            playerCommandsSection.append("  - claim.color.yellow\n");
+            playerCommandsSection.append("  - claim.color.white\n");
+            playerCommandsSection.append("  - claim.format.bold\n");
+            playerCommandsSection.append("  - claim.format.italic\n");
+            playerCommandsSection.append("  - claim.format.reset\n");
+            
+            // Find insertion point: after defaults section, before permission-tracking
+            String[] lines = configContent.split("\\R", -1);
+            java.util.List<String> newLines = new java.util.ArrayList<>();
+            int insertAt = -1;
+            
+            // Find where to insert (after defaults section)
+            for (int i = 0; i < lines.length; i++) {
+                String line = lines[i];
+                String trimmed = line.trim();
+                
+                // Look for the end of defaults section (empty line after max-self-mailboxes-per-claim)
+                if (trimmed.equals("max-self-mailboxes-per-claim:") || trimmed.startsWith("max-self-mailboxes-per-claim:")) {
+                    // Check next few lines for empty line or next section
+                    for (int j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+                        if (lines[j].trim().isEmpty() || lines[j].trim().startsWith("#") || 
+                            lines[j].trim().startsWith("permission-tracking:")) {
+                            insertAt = j;
+                            break;
+                        }
+                    }
+                    if (insertAt == -1) insertAt = i + 2; // Default to 2 lines after
+                    break;
+                }
+            }
+            
+            // Fallback: insert before permission-tracking section
+            if (insertAt == -1) {
+                for (int i = 0; i < lines.length; i++) {
+                    if (lines[i].trim().startsWith("permission-tracking:") || 
+                        lines[i].trim().startsWith("# Permission tracking")) {
+                        insertAt = i;
+                        break;
+                    }
+                }
+            }
+            
+            // Final fallback: insert before version section
+            if (insertAt == -1) {
+                for (int i = 0; i < lines.length; i++) {
+                    if (lines[i].trim().startsWith("version:") || 
+                        lines[i].trim().startsWith("# Version tracking")) {
+                        insertAt = i;
+                        break;
+                    }
+                }
+            }
+            
+            // If still not found, append before version section or at end
+            if (insertAt == -1) {
+                insertAt = lines.length;
+            }
+            
+            // Build new file content
+            for (int i = 0; i < insertAt; i++) {
+                newLines.add(lines[i]);
+            }
+            
+            // Ensure there's a blank line before insertion
+            if (!newLines.isEmpty() && !newLines.get(newLines.size() - 1).trim().isEmpty()) {
+                newLines.add("");
+            }
+            
+            // Add player-commands section
+            String[] sectionLines = playerCommandsSection.toString().split("\\R", -1);
+            for (String sectionLine : sectionLines) {
+                newLines.add(sectionLine);
+            }
+            
+            // Add remaining lines
+            for (int i = insertAt; i < lines.length; i++) {
+                newLines.add(lines[i]);
+            }
+            
+            // Update version in the content
+            String newContent = String.join(System.lineSeparator(), newLines);
+            // Update config-version if needed
+            newContent = newContent.replaceAll(
+                "(?m)^(\\s*config-version:\\s*)\"[^\"]*\"",
+                "$1\"0.1.8a\""
+            );
+            // If config-version line doesn't exist, add it
+            if (!newContent.contains("config-version:")) {
+                newContent = newContent.replaceFirst(
+                    "(?m)^(\\s*version:)",
+                    "$1\n  config-version: \"0.1.8a\""
+                );
+            }
+            
+            // Write to file
+            Files.writeString(configFile.toPath(), newContent);
+            currentConfigVersion = "0.1.8a";
+            plugin.getLogger().info("VersionManager: Successfully migrated config to version 0.1.8a - added player-commands section with 50 permissions");
+            
+            // Verify the save worked
+            String verifyContent = Files.readString(configFile.toPath());
+            if (verifyContent.contains("player-commands:")) {
+                plugin.getLogger().info("VersionManager: Verified player-commands section was saved to file");
+            } else {
+                plugin.getLogger().warning("VersionManager: WARNING - player-commands section not found in file after save!");
+            }
+            
+            // Reload plugin's config manager to pick up the changes
+            // This ensures plugin.getConfig() returns the updated values
+            try {
+                plugin.reloadConfig();
+            } catch (Exception e) {
+                plugin.getLogger().warning("VersionManager: Could not reload plugin config after migration: " + e.getMessage());
+            }
+            
+        } catch (IOException e) {
+            plugin.getLogger().severe("VersionManager: Failed to migrate config to 0.1.8a: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
 
     /**
      * Schedule update checking
@@ -395,7 +690,7 @@ public class VersionManager {
         try {
             HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("https://api.spigotmc.org/legacy/update.php/resource=131358"))
+                .uri(URI.create("https://api.spigotmc.org/legacy/update.php?resource=131358"))
                 .timeout(java.time.Duration.ofSeconds(5))
                 .GET()
                 .build();

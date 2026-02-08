@@ -3,14 +3,14 @@ version: ${project.version}
 main: dev.towki.gpexpansion.GPExpansionPlugin
 description: GriefPrevention Expansion
 api-version: '1.20'
-author: Towki
-website: https://discord.com/invite/pCKdCX6nYr
+author: CASTLEDKING
+website: https://castled.codes
 folia-supported: true
 
 dependencies:
   server:
     GriefPrevention:
-      load: BEFORE
+      load: AFTER
       required: false
       join-classpath: true
     Vault:
@@ -78,19 +78,27 @@ commands:
     description: Show detailed claim information
     usage: /<command> [claimId]
     permission: griefprevention.claiminfo
+  globalclaim:
+    description: Toggle or set global listing for a claim (standalone for /claim global)
+    usage: /<command> [true|false] [claimId]
+    permission: griefprevention.claim.toggleglobal
 
 permissions:
+  gpx.player:
+    description: Base permission for GPExpansion player commands (children permissions are dynamically managed)
+    default: true
+
   griefprevention.claims:
     description: Allows access to /claim
-    default: true
+    default: op
 
   griefprevention.claim.name:
     description: Allows using /claim name
-    default: true
+    default: op
 
   griefprevention.claim.name.anywhere:
     description: Allows using /claim name outside own claims
-    default: true
+    default: op
   
   griefprevention.claim.name.other:
     description: Allows using /claim name on other claims
@@ -111,11 +119,11 @@ permissions:
   # === CLAIM DESCRIPTION PERMISSIONS ===
   griefprevention.claim.description:
     description: Allows using /claim desc
-    default: true
+    default: op
 
   griefprevention.claim.description.anywhere:
     description: Allows using /claim desc outside own claims
-    default: true
+    default: op
 
   griefprevention.claim.description.other:
     description: Allows using /claim desc on other claims
@@ -123,7 +131,7 @@ permissions:
 
   griefprevention.claim.icon:
     description: Allows using /claim icon
-    default: true
+    default: op
 
   griefprevention.claim.icon.other:
     description: Allows using /claim icon on other claims
@@ -132,11 +140,11 @@ permissions:
   # === CLAIM BAN PERMISSIONS ===
   griefprevention.claim.ban:
     description: Allows using /claim ban
-    default: true
+    default: op
 
   griefprevention.claim.ban.anywhere:
     description: Allows using /claim ban outside own claims
-    default: true
+    default: op
 
   griefprevention.claim.ban.other:
     description: Allows using /claim ban on other claims
@@ -156,11 +164,11 @@ permissions:
 
   griefprevention.claim.banlist:
     description: Allows using /claim banlist
-    default: true
+    default: op
 
   griefprevention.claim.banlist.anywhere:
     description: Allows using /claim banlist outside own claims
-    default: true
+    default: op
 
   griefprevention.claim.banlist.other:
     description: Allows using /claim banlist on other claims
@@ -169,11 +177,11 @@ permissions:
   # === RENT SIGN PERMISSIONS ===
   griefprevention.sign.create.rent:
     description: Allows creating rent signs
-    default: true
+    default: op
 
   griefprevention.sign.use.rent:
     description: Allows using rent signs
-    default: true
+    default: op
 
   griefprevention.sign.create.rent.anywhere:
     description: Allows creating rent signs outside own claims
@@ -181,7 +189,7 @@ permissions:
 
   griefprevention.sign.rent.money:
     description: Allows using money economy for rent signs
-    default: true
+    default: op
 
   griefprevention.sign.rent.exp:
     description: Allows using exp economy for rent signs
@@ -198,11 +206,11 @@ permissions:
   # === SELL/BUY SIGN PERMISSIONS ===
   griefprevention.sign.create.sell:
     description: Allows creating sell/buy signs
-    default: true
+    default: op
 
   griefprevention.sign.use.sell:
     description: Allows using sell/buy signs
-    default: true
+    default: op
 
   griefprevention.sign.create.sell.anywhere:
     description: Allows creating sell signs outside own claims
@@ -210,7 +218,7 @@ permissions:
 
   griefprevention.sign.sell.money:
     description: Allows using money economy for sell signs
-    default: true
+    default: op
 
   griefprevention.sign.sell.exp:
     description: Allows using exp economy for sell signs
@@ -226,11 +234,11 @@ permissions:
 
   griefprevention.sign.create.buy:
     description: Allows creating buy signs (alias for sell)
-    default: true
+    default: op
 
   griefprevention.sign.use.buy:
     description: Allows using buy signs (alias for sell)
-    default: true
+    default: op
 
   griefprevention.sign.create.buy.1:
     description: Allows creating 1 buy sign
@@ -283,15 +291,15 @@ permissions:
   # === MAILBOX SIGN PERMISSIONS ===
   griefprevention.sign.create.mailbox:
     description: Allows creating mailbox signs
-    default: true
+    default: op
 
   griefprevention.sign.use.mailbox:
     description: Allows using mailbox signs
-    default: true
+    default: op
 
   griefprevention.sign.mailbox.money:
     description: Allows using money economy for mailbox signs
-    default: true
+    default: op
 
   griefprevention.sign.mailbox.exp:
     description: Allows using exp economy for mailbox signs
@@ -332,7 +340,7 @@ permissions:
   # === SELF MAILBOX PERMISSIONS ===
   griefprevention.sign.create.self-mailbox:
     description: Allows creating instant self mailboxes (wall sign on container)
-    default: true
+    default: op
 
   griefprevention.sign.create.self-mailbox.1:
     description: Allows creating 1 self mailbox per claim
@@ -373,7 +381,7 @@ permissions:
   # Claim info permissions
   griefprevention.claiminfo:
     description: Allows using /claiminfo command
-    default: true
+    default: op
 
   griefprevention.claiminfo.other:
     description: Allows viewing info for claims you don't own
@@ -382,7 +390,7 @@ permissions:
   # Claim ban/unban permissions
   griefprevention.claim.ban:
     description: Allows banning players from your claims
-    default: true
+    default: op
 
   griefprevention.claim.ban.other:
     description: Allows banning players from claims you don't own
@@ -390,7 +398,7 @@ permissions:
 
   griefprevention.claim.unban:
     description: Allows unbanning players from your claims
-    default: true
+    default: op
 
   griefprevention.claim.unban.other:
     description: Allows unbanning players from claims you don't own
@@ -399,7 +407,7 @@ permissions:
   # === CLAIM TELEPORT PERMISSIONS ===
   griefprevention.claim.teleport:
     description: Allows teleporting to claims
-    default: true
+    default: op
 
   griefprevention.claim.teleport.other:
     description: Allows teleporting other players to claims
@@ -407,7 +415,7 @@ permissions:
 
   griefprevention.claim.setspawn:
     description: Allows setting teleport spawn point for your claims
-    default: true
+    default: op
 
   griefprevention.claim.setspawn.other:
     description: Allows setting spawn points for other players' claims
@@ -415,7 +423,7 @@ permissions:
 
   griefprevention.claim.gui.setclaimflag.own:
     description: Allows opening claim flags GUI for own claims
-    default: true
+    default: op
 
   griefprevention.claim.gui.setclaimflag.anywhere:
     description: Allows opening claim flags GUI for other claims
@@ -431,7 +439,7 @@ permissions:
 
   griefprevention.claim.gui.globallist:
     description: Allows viewing the global public claim list GUI
-    default: true
+    default: op
 
   griefprevention.claim.gui.return:
     description: Allows using /claim ! to return to last viewed GUI
@@ -439,7 +447,11 @@ permissions:
 
   griefprevention.claim.toggleglobal:
     description: Allows toggling public listing for your own claims
-    default: true
+    default: op
+
+  griefprevention.claim.toggleglobal.anywhere:
+    description: Allows using /claim global or /globalclaim with claim ID when not standing in the claim
+    default: op
 
   griefprevention.claim.toggleglobal.other:
     description: Allows toggling public listing for claims you don't own
@@ -464,7 +476,7 @@ permissions:
 
   griefprevention.claim.toggleglobal.5:
     description: Allows up to 5 global claims (default)
-    default: true
+    default: op
 
   griefprevention.claim.toggleglobal.10:
     description: Allows up to 10 global claims
@@ -489,67 +501,67 @@ permissions:
 
   griefprevention.claim.color.black:
     description: Allows using &0 (black) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.dark_blue:
     description: Allows using &1 (dark blue) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.dark_green:
     description: Allows using &2 (dark green) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.dark_aqua:
     description: Allows using &3 (dark aqua) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.dark_red:
     description: Allows using &4 (dark red) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.dark_purple:
     description: Allows using &5 (dark purple) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.gold:
     description: Allows using &6 (gold) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.gray:
     description: Allows using &7 (gray) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.dark_gray:
     description: Allows using &8 (dark gray) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.blue:
     description: Allows using &9 (blue) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.green:
     description: Allows using &a (green) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.aqua:
     description: Allows using &b (aqua) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.red:
     description: Allows using &c (red) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.light_purple:
     description: Allows using &d (light purple) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.yellow:
     description: Allows using &e (yellow) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.color.white:
     description: Allows using &f (white) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.format.*:
     description: Allows using all formatting codes in claim names and descriptions
@@ -557,11 +569,11 @@ permissions:
 
   griefprevention.claim.format.bold:
     description: Allows using &l (bold) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.format.italic:
     description: Allows using &o (italic) in claim names/descriptions
-    default: true
+    default: op
 
   griefprevention.claim.format.underline:
     description: Allows using &n (underline) in claim names/descriptions
@@ -577,4 +589,4 @@ permissions:
 
   griefprevention.claim.format.reset:
     description: Allows using &r (reset) in claim names/descriptions
-    default: true
+    default: op

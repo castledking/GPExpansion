@@ -160,6 +160,10 @@ public class Messages {
         DEFAULTS.put("claim.list-header", "&eClaims ({count}):");
         DEFAULTS.put("claim.list-trusted-header", "&eTrusted Claims ({count}):");
         DEFAULTS.put("claim.list-admin-header", "&eAdmin Claims ({count}):");
+        DEFAULTS.put("claim.line-format", "&eID {id} &e({name}&e) {world}: x{x}, z{z} (-{area} blocks)");
+        DEFAULTS.put("claim.line-format-unnamed", "&eID {id} &e(unnamed) {world}: x{x}, z{z} (-{area} blocks)");
+        DEFAULTS.put("claim.subline-format", "&7- ID &f{id} &7({name}&7) &f{world}&7: &fx{x}&7, z&f{z} &8(&6Child of {parent}&8)");
+        DEFAULTS.put("claim.subline-format-unnamed", "&7- ID &f{id} &7(unnamed) &f{world}&7: &fx{x}&7, z&f{z} &8(&6Child of {parent}&8)");
         DEFAULTS.put("claim.list-empty", "&7You don't own any claims.");
         DEFAULTS.put("claim.not-found", "&cClaim ID not found: {id}");
         DEFAULTS.put("claim.not-owner", "&cYou must own claim {id} to do that.");
@@ -226,6 +230,7 @@ public class Messages {
         // Command messages
         DEFAULTS.put("commands.claim-usage", "&e/{label} <{subs}>");
         DEFAULTS.put("commands.unknown-subcommand", "&cUnknown subcommand. Try: {subs}");
+        DEFAULTS.put("commands.unknown-subcommand-help", "&cUnknown subcommand. Do &e/claimhelp &cfor help.");
         DEFAULTS.put("commands.exec-failed", "&cCommand failed to execute: {command}");
         DEFAULTS.put("commands.exec-error", "&cAn error occurred while executing the command: {error}");
         DEFAULTS.put("commands.player-not-online", "&cPlayer '{player}' is not online.");
@@ -467,7 +472,53 @@ public class Messages {
             }
         }
         
+        // Auto-bump version if no migrations needed and version is older than project version
+        String projectVersion = getProjectVersion();
+        String currentLangVersion = langConfig.getString("version", "0.1.3a");
+        if (isOlderVersion(currentLangVersion, projectVersion)) {
+            autoBumpLangVersion(projectVersion);
+        }
+        
         currentVersion = langConfig.getString("version", "0.1.3a");
+    }
+    
+    /**
+     * Get the project version from plugin.yml
+     * Falls back to reading from pom.properties or hardcoded version
+     */
+    private String getProjectVersion() {
+        String version = plugin.getDescription().getVersion();
+        // Remove any ${project.version} placeholders if present
+        if (version.contains("${") || version.isEmpty()) {
+            // Try to read from Maven properties file
+            try {
+                java.io.InputStream is = plugin.getClass().getClassLoader().getResourceAsStream("META-INF/maven/dev.towki.gpexpansion/gpexpansion/pom.properties");
+                if (is != null) {
+                    java.util.Properties props = new java.util.Properties();
+                    props.load(is);
+                    version = props.getProperty("version", "0.1.8a");
+                    is.close();
+                } else {
+                    version = "0.1.8a"; // Fallback to current version
+                }
+            } catch (Exception e) {
+                version = "0.1.8a"; // Fallback to current version
+            }
+        }
+        return version;
+    }
+    
+    /**
+     * Auto-bump lang version to project version (when no migrations are needed)
+     */
+    private void autoBumpLangVersion(String targetVersion) {
+        String currentVersion = langConfig.getString("version", "0.1.3a");
+        
+        if (isOlderVersion(currentVersion, targetVersion)) {
+            langConfig.set("version", targetVersion);
+            saveLanguageFile();
+            plugin.getLogger().info("Messages: Auto-bumped lang version from " + currentVersion + " to " + targetVersion + " (no migrations needed)");
+        }
     }
     
     /**

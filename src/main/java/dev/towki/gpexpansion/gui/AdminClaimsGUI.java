@@ -221,7 +221,7 @@ public class AdminClaimsGUI extends BaseGUI {
             inventory.setItem(NEXT_PAGE_SLOT, createNextPageItem());
         }
         
-        // Add claim items
+        // Add claim items (slots stay empty when no claims)
         int startIndex = currentPage * CLAIM_SLOTS.length;
         for (int i = 0; i < CLAIM_SLOTS.length && startIndex + i < filteredClaims.size(); i++) {
             ClaimInfo info = filteredClaims.get(startIndex + i);
