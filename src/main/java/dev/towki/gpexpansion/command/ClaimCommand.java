@@ -90,8 +90,9 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         this.gp = new GPBridge();
     }
 
-    private static final List<String> SUBS = Arrays.asList(
-            // Our features
+    /** Subcommands we handle - used when sharing /claim with GP3D (only intercept these) */
+    public static final java.util.Set<String> HANDLED_SUBCOMMANDS = java.util.Collections.unmodifiableSet(
+            new java.util.HashSet<>(Arrays.asList(
             "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
@@ -113,6 +114,30 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             "evict",             // -> evict player from rental
             "collectrent",       // -> collect pending rental payments
             // Moderation placeholders
+            "ban", "unban", "banlist"
+    )));
+
+    private static final List<String> SUBS = Arrays.asList(
+            // Our features
+            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc",
+            // Mapped GP commands (exact set requested)
+            "abandon",           // -> abandonclaim
+            "abandonall",        // -> abandonallclaims
+            "explosions",        // -> claimexplosions
+            "trust",             // -> trust
+            "untrust",           // -> untrust (supports 'all')
+            "accesstrust",       // -> accesstrust
+            "containertrust",    // -> containertrust
+            "trustlist",         // -> trustlist
+            "subdivideclaim",    // -> subdivideclaims
+            "3dsubdivideclaim",  // -> 3dsubdivideclaims
+            "restrictsubclaim",  // -> restrictsubclaim
+            "basic",             // -> basicclaims
+            "permissiontrust",   // -> permissiontrust
+            "transfer",          // -> transfer
+            "rentalsignconfirm",
+            "evict",
+            "collectrent",
             "ban", "unban", "banlist"
     );
 
@@ -259,6 +284,10 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         if (command.getName().equalsIgnoreCase("globalclaimlist") || label.equalsIgnoreCase("globalclaimlist")) {
             return handleGlobalList(sender);
         }
+        // Support standalone /globalclaim [true|false] [claimId] command (toggle when no args)
+        if (command.getName().equalsIgnoreCase("globalclaim") || label.equalsIgnoreCase("globalclaim")) {
+            return handleGlobalClaim(sender, args);
+        }
         if (args.length == 0) {
             // Check if GUI mode is enabled and sender is a player
             if (sender instanceof Player && plugin.getGUIManager() != null && plugin.getGUIManager().isGUIEnabled()) {
@@ -332,15 +361,19 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             case "globallist":
                 return handleGlobalList(sender);
             case "global":
-                return handleToggleGlobal(sender, subArgs);
+                return handleGlobalClaim(sender, subArgs);
             case "icon":
                 return handleIcon(sender, subArgs);
             case "desc":
             case "description":
                 return handleDescription(sender, subArgs);
             default:
-                sender.sendMessage(plugin.getMessages().get("commands.unknown-subcommand",
-                    "{subs}", String.join(", ", SUBS)));
+                // Try to delegate to GP3D's UnifiedClaimCommand if available
+                if (tryDelegateToGP3D(sender, command, label, args)) {
+                    return true;
+                }
+                // Otherwise show help message
+                sender.sendMessage(plugin.getMessages().get("commands.unknown-subcommand-help"));
                 return true;
         }
     }
@@ -598,10 +631,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             }
         }
 
-        if (admins.isEmpty()) {
-            sender.sendMessage(plugin.getMessages().get("claim.list-no-admin"));
-            return true;
-        }
+        if (admins.isEmpty()) return true;
         
         sender.sendMessage(plugin.getMessages().get("claim.list-admin-header",
             "{count}", String.valueOf(admins.size())));
@@ -1183,55 +1213,41 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         return LegacyComponentSerializer.legacyAmpersand().deserialize(text);
     }
     
-    // Helper methods for claim formatting
+    // Helper methods for claim formatting (use claim.line-format / subline-format from lang.yml)
     private String formatClaimLine(Object claim, String id, String name) {
-        // Format: "&eID <claimId> (<name>|unnamed) <world>: x<x>, z<z> (-<usedBLocksAmt> blocks)"
         String displayName = name.isEmpty() ? "unnamed" : name;
         String worldName = gp.getClaimWorld(claim).orElse("unknown");
-        String coords = getClaimCenterCoords(claim);
+        int centerX = gp.getClaimCorners(claim).map(c -> (c.x1 + c.x2) / 2).orElse(0);
+        int centerZ = gp.getClaimCorners(claim).map(c -> (c.z1 + c.z2) / 2).orElse(0);
         int area = gp.getClaimArea(claim);
-        
-        return String.format("&eID %s &e(%s&e) %s: %s (-%d blocks)", 
-            id, displayName, worldName, coords, area);
+        String key = name.isEmpty() ? "claim.line-format-unnamed" : "claim.line-format";
+        return plugin.getMessages().getRaw(key,
+            "{id}", id,
+            "{name}", displayName,
+            "{world}", worldName,
+            "{x}", String.valueOf(centerX),
+            "{z}", String.valueOf(centerZ),
+            "{area}", String.valueOf(area));
     }
     
     private String formatSubclaimLine(Object subclaim, String parentId, String name) {
-        // Format: "&7- ID &f<id> &7(unnamed) &fworld&7: &fx&7<x>&f, z&7<z> &8(&6Child of <parentId>&8)"
         String id = gp.getClaimId(subclaim).orElse("");
         String displayName = name.isEmpty() ? "unnamed" : name;
         String worldName = gp.getClaimWorld(subclaim).orElse("unknown");
-        String coords = getClaimCenterCoords(subclaim);
-        
-        // Format coordinates to match the example: "x-599 z-1056"
-        String formattedCoords = coords.replace("x", "").replace(", z", " ").replace(",", "");
-        
-        return String.format("&7- ID &f%s &7(&7%s&7) &f%s&7: &f%s&7, &f%s &8(&6Child of %s&8)", 
-            id, displayName, worldName, 
-            formattedCoords.contains(" ") ? "x" + formattedCoords.split(" ")[0] : "x" + formattedCoords,
-            formattedCoords.contains(" ") ? "z" + formattedCoords.split(" ")[1] : "z" + formattedCoords,
-            parentId);
+        int centerX = gp.getClaimCorners(subclaim).map(c -> (c.x1 + c.x2) / 2).orElse(0);
+        int centerZ = gp.getClaimCorners(subclaim).map(c -> (c.z1 + c.z2) / 2).orElse(0);
+        String key = name.isEmpty() ? "claim.subline-format-unnamed" : "claim.subline-format";
+        return plugin.getMessages().getRaw(key,
+            "{id}", id,
+            "{name}", displayName,
+            "{world}", worldName,
+            "{x}", String.valueOf(centerX),
+            "{z}", String.valueOf(centerZ),
+            "{parent}", parentId);
     }
     
     private String formatTrustedClaimLine(Object claim, String id, String name, String parentId, Player player) {
-        // Format: "&eID <claimId> (<name>|unnamed) <world>: x<x>, z<z> (-<usedBLocksAmt> blocks)"
-        String displayName = name.isEmpty() ? "unnamed" : name;
-        String worldName = gp.getClaimWorld(claim).orElse("unknown");
-        String coords = getClaimCenterCoords(claim);
-        int area = gp.getClaimArea(claim);
-        
-        return String.format("&eID %s &e(%s) %s: %s (-%d blocks)", 
-            id, displayName, worldName, coords, area);
-    }
-    
-    private String getClaimCenterCoords(Object claim) {
-        // Format: "x<x>, z<z>" (center of the claim)
-        return gp.getClaimCorners(claim)
-            .map(corners -> {
-                int centerX = (corners.x1 + corners.x2) / 2;
-                int centerZ = (corners.z1 + corners.z2) / 2;
-                return String.format("x%d, z%d", centerX, centerZ);
-            })
-            .orElse("unknown location");
+        return formatClaimLine(claim, id, name);
     }
     
     private Object toMainClaim(Object claim) {
@@ -1785,6 +1801,47 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         return true;
     }
     
+    /**
+     * Handle /globalclaim [true|false] [claimId] - standalone command with toggle support when no args
+     */
+    private boolean handleGlobalClaim(CommandSender sender, String[] args) {
+        if (args.length == 0) {
+            // Toggle: get current claim, flip state
+            if (!requirePlayer(sender)) return true;
+            Player player = (Player) sender;
+            java.util.Optional<Object> claimOpt = gp.getClaimAt(player.getLocation());
+            if (!claimOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.global-not-in-claim"));
+                return true;
+            }
+            Object claim = claimOpt.get();
+            String claimId = gp.getClaimId(claim).orElse(null);
+            if (claimId == null) {
+                sender.sendMessage(plugin.getMessages().get("general.error"));
+                return true;
+            }
+            boolean current = plugin.getClaimDataStore().isPublicListed(claimId);
+            return handleToggleGlobal(sender, new String[]{String.valueOf(!current)});
+        }
+        if (args.length == 1 && isNumeric(args[0])) {
+            // Toggle by ID: /globalclaim 123 - requires anywhere perm
+            if (!sender.hasPermission("griefprevention.claim.toggleglobal.anywhere")) {
+                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                return true;
+            }
+            String claimId = args[0];
+            java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
+            if (!claimOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", claimId));
+                return true;
+            }
+            boolean current = plugin.getClaimDataStore().isPublicListed(claimId);
+            return handleToggleGlobal(sender, new String[]{String.valueOf(!current), claimId});
+        }
+        // Pass through: /globalclaim true|false [id]
+        return handleToggleGlobal(sender, args);
+    }
+    
     // /claim global true|false [claimId]
     private boolean handleToggleGlobal(CommandSender sender, String[] args) {
         if (args.length < 1) {
@@ -1807,7 +1864,11 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         String claimId;
         
         if (args.length >= 2) {
-            // Claim ID provided
+            // Claim ID provided - require anywhere perm
+            if (!sender.hasPermission("griefprevention.claim.toggleglobal.anywhere")) {
+                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                return true;
+            }
             claimId = args[1];
             java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
             if (!claimOpt.isPresent()) {
@@ -1883,10 +1944,169 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         return true;
     }
     
+    /**
+     * Try to delegate unknown subcommands to GP3D's claim command via namespaced dispatch
+     * Returns true if delegation was attempted
+     */
+    private boolean tryDelegateToGP3D(CommandSender sender, Command command, String label, String[] args) {
+        if (!gp.isGP3D()) {
+            return false;
+        }
+        try {
+            String argsStr = args.length > 0 ? " " + String.join(" ", args) : "";
+            // Try griefprevention:claim first, fallback to griefprevention3d:claim
+            String fullCmd = "griefprevention:claim" + argsStr;
+            org.bukkit.Bukkit.dispatchCommand(sender, fullCmd);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    /**
+     * Get list of player-commands from config that the sender has permission for
+     */
+    private List<String> getAvailablePlayerCommands(CommandSender sender) {
+        List<String> playerCommands = plugin.getConfig().getStringList("player-commands");
+        List<String> available = new ArrayList<>();
+        
+        for (String perm : playerCommands) {
+            String fullPerm = "griefprevention." + perm;
+            if (sender.hasPermission(fullPerm)) {
+                // Map permission to command name
+                String commandName = mapPermissionToCommand(perm);
+                if (commandName != null && !available.contains(commandName)) {
+                    available.add(commandName);
+                }
+            }
+        }
+        
+        return available;
+    }
+    
+    /**
+     * Map permission name to command subcommand name
+     * Returns the subcommand name if it's a /claim subcommand, null otherwise
+     */
+    private String mapPermissionToCommand(String permission) {
+        // Map permissions to their command names
+        // Some permissions don't directly map to commands (like color/format permissions)
+        // Only return commands that are actual subcommands
+        
+        if (permission.equals("claims")) return null; // Base permission, not a subcommand
+        
+        // Direct mappings for claim.* permissions
+        if (permission.startsWith("claim.")) {
+            String sub = permission.substring("claim.".length());
+            
+            // Direct subcommand mappings
+            if (sub.equals("name")) return "name";
+            if (sub.equals("description")) return "desc";
+            if (sub.equals("icon")) return "icon";
+            if (sub.equals("ban")) return "ban";
+            if (sub.equals("unban")) return "unban";
+            if (sub.equals("banlist")) return "banlist";
+            if (sub.equals("teleport")) return "tp";
+            if (sub.equals("setspawn")) return "setspawn";
+            if (sub.equals("toggleglobal")) return "global";
+            
+            // GUI commands
+            if (sub.equals("gui.globallist")) return "globallist";
+            if (sub.equals("gui.setclaimflag.own")) return null; // GUI command, not tab-completed
+            
+            // Color/format permissions don't map to commands (used for name/desc formatting)
+            if (sub.startsWith("color.") || sub.startsWith("format.")) return null;
+            
+            // .anywhere and .other are permission modifiers, not commands
+            if (sub.endsWith(".anywhere") || sub.endsWith(".other")) return null;
+        }
+        
+        // Sign permissions don't map to /claim subcommands (they're separate commands)
+        if (permission.startsWith("sign.")) {
+            return null;
+        }
+        
+        // claiminfo is a separate command, not a /claim subcommand
+        if (permission.equals("claiminfo")) {
+            return null;
+        }
+        
+        return null;
+    }
+    
     private List<String> completeTab(CommandSender sender, Command command, String alias, String[] args) {
+        // Tab completion for /globalclaim [true|false] [claimId]
+        if (command.getName().equalsIgnoreCase("globalclaim") || alias.equalsIgnoreCase("globalclaim")) {
+            if (!sender.hasPermission("griefprevention.claim.toggleglobal")) return Collections.emptyList();
+            if (args.length == 1) {
+                List<String> opts = new ArrayList<>(Arrays.asList("true", "false"));
+                if (sender.hasPermission("griefprevention.claim.toggleglobal.anywhere") && sender instanceof Player) {
+                    opts.add("[claimId]");
+                }
+                return opts.stream()
+                    .filter(s -> s.toLowerCase().startsWith(args[0].toLowerCase()))
+                    .sorted()
+                    .collect(Collectors.toList());
+            }
+            if (args.length == 2 && (args[0].equalsIgnoreCase("true") || args[0].equalsIgnoreCase("false"))) {
+                if (sender.hasPermission("griefprevention.claim.toggleglobal.anywhere")) {
+                    return Collections.singletonList("[claimId]");
+                }
+            }
+            return Collections.emptyList();
+        }
         if (args.length == 1) {
-            return SUBS.stream()
+            // Get available player commands from config (filtered by permissions)
+            List<String> availableCommands = getAvailablePlayerCommands(sender);
+            
+            // Also include GP commands from SUBS that the player has permission for
+            // These are commands we handle but may not be in player-commands config
+            List<String> allCommands = new ArrayList<>(availableCommands);
+            
+            // Add commands from SUBS that require specific permissions
+            if (sender.hasPermission("griefprevention.claims")) {
+                // Base commands available to all with claims permission
+                if (!allCommands.contains("list")) allCommands.add("list");
+                if (!allCommands.contains("create")) allCommands.add("create");
+                if (!allCommands.contains("!")) allCommands.add("!");
+            }
+            
+            if (sender.hasPermission("griefprevention.adminclaimslist")) {
+                if (!allCommands.contains("adminlist")) allCommands.add("adminlist");
+            }
+            
+            // GP commands that we dispatch (check base GP permissions)
+            if (sender.hasPermission("griefprevention.claims")) {
+                // Trust commands
+                if (!allCommands.contains("trust")) allCommands.add("trust");
+                if (!allCommands.contains("untrust")) allCommands.add("untrust");
+                if (!allCommands.contains("trustlist")) allCommands.add("trustlist");
+                if (!allCommands.contains("accesstrust")) allCommands.add("accesstrust");
+                if (!allCommands.contains("containertrust")) allCommands.add("containertrust");
+                if (!allCommands.contains("permissiontrust")) allCommands.add("permissiontrust");
+                
+                // Claim management
+                if (!allCommands.contains("abandon")) allCommands.add("abandon");
+                if (!allCommands.contains("abandonall")) allCommands.add("abandonall");
+                if (!allCommands.contains("transfer")) allCommands.add("transfer");
+                
+                // Subdivision commands
+                if (!allCommands.contains("subdivideclaim")) allCommands.add("subdivideclaim");
+                if (!allCommands.contains("3dsubdivideclaim")) allCommands.add("3dsubdivideclaim");
+                if (!allCommands.contains("restrictsubclaim")) allCommands.add("restrictsubclaim");
+                if (!allCommands.contains("basic")) allCommands.add("basic");
+                if (!allCommands.contains("explosions")) allCommands.add("explosions");
+            }
+            
+            // Rental/eviction commands
+            if (sender.hasPermission("griefprevention.evict")) {
+                if (!allCommands.contains("evict")) allCommands.add("evict");
+            }
+            
+            // Filter by input and return
+            return allCommands.stream()
                 .filter(s -> s.toLowerCase().startsWith(args[0].toLowerCase()))
+                .sorted()
                 .collect(Collectors.toList());
         }
         if (args.length > 1) {

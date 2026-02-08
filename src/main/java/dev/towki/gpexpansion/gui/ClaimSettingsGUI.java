@@ -185,11 +185,6 @@ public class ClaimSettingsGUI extends BaseGUI {
         playClickSound();
         
         if (slot == viewChildrenSlot) {
-            List<Object> children = gp.getSubclaims(claim);
-            if (children.isEmpty()) {
-                plugin.getMessages().send(player, "gui.no-children");
-                return;
-            }
             manager.openChildrenClaims(player, claim, claimId);
         } else if (slot == bannedPlayersSlot) {
             if (player.hasPermission("griefprevention.claim.ban")) {

@@ -1151,12 +1151,26 @@ public class GPBridge {
                 for (int i = 0; i < len; i++) claims.add(java.lang.reflect.Array.get(raw, i));
             }
         } catch (ReflectiveOperationException ignored) {}
+        // Fallback: GP3D uses dataStore.claims field; getClaims() may return wrapper that fails instanceof
+        if (claims.isEmpty()) {
+            try {
+                java.lang.reflect.Field f = dataStore.getClass().getDeclaredField("claims");
+                f.setAccessible(true);
+                Object claimsField = f.get(dataStore);
+                if (claimsField instanceof java.util.Collection<?>) claims.addAll((java.util.Collection<?>) claimsField);
+            } catch (ReflectiveOperationException ignored) {}
+        }
         return claims;
     }
 
-    /** Heuristic: admin claims in GP typically have null ownerID. */
+    /** Admin claims in GP/GP3D have null ownerID; prefer Claim.isAdminClaim() when available. */
     public boolean isAdminClaim(Object claim) {
         if (claim == null) return false;
+        try {
+            java.lang.reflect.Method m = claim.getClass().getMethod("isAdminClaim");
+            Object r = m.invoke(claim);
+            if (r instanceof Boolean) return (Boolean) r;
+        } catch (ReflectiveOperationException ignored) {}
         try {
             Object owner = claim.getClass().getMethod("getOwnerID").invoke(claim);
             return owner == null;

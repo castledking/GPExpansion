@@ -1,7 +1,7 @@
 # GPExpansion Language File
 # Use & for color codes, supports MiniMessage format
 # Placeholders are shown in {brackets}
-version: "0.1.3a"
+version: "0.1.8a"
 
 # =============================================================================
 # GENERAL MESSAGES
@@ -279,6 +279,7 @@ commands:
   # Generic command messages
   claim-usage: "&e/{label} <{subs}>"
   unknown-subcommand: "&cUnknown subcommand. Try: {subs}"
+  unknown-subcommand-help: "&cUnknown subcommand. Do &e/claimhelp &cfor available commands."
   exec-failed: "&cCommand failed to execute: {command}"
   exec-error: "&cAn error occurred while executing the command: {error}"
   player-not-online: "&cPlayer '{player}' is not online."
