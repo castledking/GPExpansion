@@ -280,7 +280,7 @@ public class ChildrenClaimsGUI extends BaseGUI {
     private void handleChildClick(InventoryClickEvent event, ChildInfo info) {
         if (isLeftClick(event) && !event.isShiftClick()) {
             if (player.hasPermission("griefprevention.claim.teleport")) {
-                closeAndRunOnMainThread("claim tp " + info.claimId);
+                closeAndRunOnMainThread("claimtp " + info.claimId);
             } else {
                 plugin.getMessages().send(player, "general.no-permission");
             }

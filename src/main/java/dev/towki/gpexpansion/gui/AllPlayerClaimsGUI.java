@@ -381,7 +381,7 @@ public class AllPlayerClaimsGUI extends BaseGUI {
     private void handleClaimClick(InventoryClickEvent event, ClaimInfo info) {
         if (isLeftClick(event) && !event.isShiftClick()) {
             // Teleport to claim
-            closeAndRunOnMainThread("claim tp " + info.claimId);
+            closeAndRunOnMainThread("claimtp " + info.claimId);
         } else if (isRightClick(event) && !event.isShiftClick()) {
             // Rename claim via sign editor
             player.closeInventory();

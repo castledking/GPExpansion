@@ -505,23 +505,29 @@ public class SignLimitManager {
     }
     
     /**
-     * Check if a player can create more sell signs
+     * Check if a player can create more sell signs.
+     * Players with op or wildcard (*) bypass the limit so server owners aren't blocked.
      */
     public boolean canCreateSellSign(Player player) {
+        if (player.isOp() || player.hasPermission("*")) return true;
         return getCurrentSellSigns(player) < getSellLimit(player);
     }
     
     /**
-     * Check if a player can create more rent signs
+     * Check if a player can create more rent signs.
+     * Players with op or wildcard (*) bypass the limit so server owners aren't blocked.
      */
     public boolean canCreateRentSign(Player player) {
+        if (player.isOp() || player.hasPermission("*")) return true;
         return getCurrentRentSigns(player) < getRentLimit(player);
     }
     
     /**
-     * Check if a player can create more mailbox signs
+     * Check if a player can create more mailbox signs.
+     * Players with op or wildcard (*) bypass the limit so server owners aren't blocked.
      */
     public boolean canCreateMailboxSign(Player player) {
+        if (player.isOp() || player.hasPermission("*")) return true;
         return getCurrentMailboxSigns(player) < getMailboxLimit(player);
     }
     

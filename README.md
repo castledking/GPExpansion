@@ -71,6 +71,23 @@ Protect your rental and mailbox signs from unauthorized modification.
 - Admin-only sign breaking for active rentals
 - Automatic cleanup on sign removal
 
+### 📸 Rental Restoration Snapshots
+Admins with `griefprevention.restoresnapshot` can save and restore claim block state for rentals. When a rental or eviction ends, the claim can be restored to a saved snapshot so the next renter sees the original build.
+
+- **Create** – Save the current claim blocks as a snapshot (e.g. before listing for rent).
+- **List** – View snapshots for a claim or for all claims.
+- **Restore** – On eviction or rental end, the latest snapshot is applied automatically if the claim owner has the permission.
+
+**Commands** (require `griefprevention.restoresnapshot`):
+
+| Command | Description |
+|--------|-------------|
+| `/claim snapshot create [claimId]` | Create a snapshot of the claim (default: claim you're standing in). |
+| `/claim snapshot list [claimId]`  | List snapshots for a claim. Use `list all` to list all claims that have snapshots. |
+| `/claim snapshot remove <snapshotId>` | Delete a snapshot by ID (searches all claims). |
+
+Snapshots use block-by-block .snap format (YAML); any claim size is supported.
+
 ### 📋 Claim Management
 - `/claim name <name>` - Set claim name (supports color codes with permissions)
 - `/claim desc <description>` - Set claim description (uses same color permissions as name)
@@ -163,7 +180,22 @@ OR with max time:
 <id>;<ecoType>;<ecoAmt>;<renewTime>;<maxTime>
 ```
 
-- `<id>` - Do `/claimlist` to get this (not needed for short format)
+*Line-based* (outside claim, one value per line):
+```
+[rent]
+<claimId>
+<renewal> [max]
+100
+```
+OR with money symbol:
+```
+[rent]
+<claimId>
+<renewal> [max]
+$100
+```
+
+- `<id>` / `<claimId>` - Do `/claimlist` to get this (not needed for short format)
 - `<ecoType>` - Accepts `money`, `claimblocks`, `exp` or `item` (optional, defaults to `money`)
   - Also accepts aliases: `$` (money), `xp`/`experience` (exp), `blocks`/`cb` (claimblocks)
 - `<ecoAmt>` - The cost per renewal period
@@ -544,6 +576,7 @@ These permissions control which color and formatting codes players can use in bo
 | Permission | Description |
 |------------|-------------|
 | `griefprevention.admin` | Admin commands and sign management |
+| `griefprevention.restoresnapshot` | Create, list, and remove rental restoration snapshots; claims restore on eviction/rental end when owner has this |
 | `gpx.admin` | View migration notices |
 | `griefprevention.adminclaimslist` | View admin claims list |
 | `griefprevention.sign.admin` | Admin sign management |

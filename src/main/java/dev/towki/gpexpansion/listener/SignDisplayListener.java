@@ -67,9 +67,16 @@ public class SignDisplayListener implements Listener {
         if (now - last < 250L) return; // throttle scans
         lastScan.put(p.getUniqueId(), now);
 
+        scanAndUpdateSignsNear(p, p.getLocation(), now);
+    }
+
+    /**
+     * Scan signs near the given location and update displays (eviction countdown, [Renew], etc).
+     * Called from onPlayerMove and from periodic eviction tick. No throttle when called from periodic.
+     */
+    public void scanAndUpdateSignsNear(Player p, Location base, long now) {
         // Scan nearby 4-block radius cube
         int r = 4;
-        Location base = p.getLocation();
         for (int dx = -r; dx <= r; dx++) {
             for (int dy = -r; dy <= r; dy++) {
                 for (int dz = -r; dz <= r; dz++) {
@@ -112,37 +119,46 @@ public class SignDisplayListener implements Listener {
                     // Toggle display for renter near sign
                     String line0Plain = ChatColor.stripColor(sign.getLine(0) == null ? "" : sign.getLine(0));
                     
-                    // Check if there's an eviction pending for this claim
-                    boolean isEvicted = false;
-                    long evictionRemaining = 0;
-                    if (claimId != null && !claimId.isEmpty()) {
-                        dev.towki.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
-                        dev.towki.gpexpansion.storage.ClaimDataStore.EvictionData eviction = dataStore.getEviction(claimId).orElse(null);
-                        if (eviction != null && System.currentTimeMillis() < eviction.effectiveAt) {
-                            isEvicted = true;
-                            evictionRemaining = eviction.effectiveAt - System.currentTimeMillis();
-                        }
+                    // Check eviction state for this claim
+                    dev.towki.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
+                    dev.towki.gpexpansion.storage.ClaimDataStore.EvictionData eviction = (claimId != null && !claimId.isEmpty())
+                        ? dataStore.getEviction(claimId).orElse(null) : null;
+                    long nowMs = System.currentTimeMillis();
+                    boolean evictionPending = eviction != null && nowMs < eviction.effectiveAt;
+                    boolean evictionEffective = eviction != null && nowMs >= eviction.effectiveAt;
+                    long evictionRemaining = evictionPending ? (eviction.effectiveAt - nowMs) : 0;
+
+                    // Auto-reset sign when eviction has become effective (no sneak+break needed)
+                    if (evictionEffective && "RENT".equals(signType)) {
+                        plugin.resetRentalSign(b);
+                        continue; // resetRentalSign updated the sign; skip display logic this tick
                     }
-                    
+
+                    // Auto-reset when rental has naturally expired (no eviction was started)
+                    if ("RENT".equals(signType) && renterStr != null && expiry != null && expiry <= nowMs && eviction == null) {
+                        plugin.resetRentalSign(b);
+                        continue;
+                    }
+
+                    // When eviction is pending: always show [Evicted] for everyone (not per-player)
+                    if (evictionPending) {
+                        if (!line0Plain.equalsIgnoreCase("[Evicted]")) {
+                            sign.setLine(0, ChatColor.DARK_RED + "" + ChatColor.BOLD + "[Evicted]");
+                        }
+                        sign.setLine(2, ChatColor.DARK_RED + "Remaining Time");
+                        sign.setLine(3, ChatColor.RED + formatDuration(evictionRemaining));
+                        sign.update();
+                        continue;
+                    }
+
+                    // No eviction pending: show [Renew] for renter, [Rented] for others when rented
                     if (isRenter) {
-                        if (isEvicted) {
-                            // Show [Evicted] with countdown for renter being evicted
-                            if (!line0Plain.equalsIgnoreCase("[Evicted]")) {
-                                sign.setLine(0, ChatColor.DARK_RED + "" + ChatColor.BOLD + "[Evicted]");
-                            }
-                            sign.setLine(2, ChatColor.DARK_RED + "Remaining Time");
-                            sign.setLine(3, ChatColor.RED + formatDuration(evictionRemaining));
+                        if (!line0Plain.equalsIgnoreCase("[Renew]")) {
+                            sign.setLine(0, ChatColor.GREEN + "" + ChatColor.BOLD + "[Renew]");
                             sign.update();
-                        } else {
-                            // Show [Renew] for renter not being evicted
-                            if (!line0Plain.equalsIgnoreCase("[Renew]")) {
-                                sign.setLine(0, ChatColor.GREEN + "" + ChatColor.BOLD + "[Renew]");
-                                sign.update();
-                            }
                         }
                     } else {
                         if (line0Plain.equalsIgnoreCase("[Renew]") || line0Plain.equalsIgnoreCase("[Evicted]")) {
-                            // Revert to [Rented] if rented, else [Rent Claim] or [Buy Claim]
                             if (isRented) {
                                 sign.setLine(0, ChatColor.RED + "" + ChatColor.BOLD + "[Rented]");
                                 String renterName = resolveRenterName(renterStr);
@@ -158,8 +174,6 @@ public class SignDisplayListener implements Listener {
                                 sign.setLine(2, ChatColor.BLACK + ecoFormatted + ChatColor.BLACK + "/" + perClick);
                                 sign.setLine(3, ChatColor.BLACK + "Max: " + maxCap);
                             } else {
-                                // Check if this is a sell sign by looking at the PDC data
-                                // Hanging signs have less space; use shortened text [Rent]/[Sell]
                                 boolean hanging = isHangingSign(type);
                                 String kind = pdc.get(keyKind, PersistentDataType.STRING);
                                 String displayKey = "RENT".equals(kind)
@@ -184,6 +198,14 @@ public class SignDisplayListener implements Listener {
                 }
             }
         }
+    }
+
+    /** Called by periodic task to update eviction countdowns when player stands still. */
+    public void tickEvictionDisplays(Player p) {
+        if (!p.isOnline()) return;
+        Location loc = p.getLocation();
+        if (loc.getWorld() == null) return;
+        scanAndUpdateSignsNear(p, loc, System.currentTimeMillis());
     }
 
     private void animateItemLine(Sign sign, PersistentDataContainer pdc) {

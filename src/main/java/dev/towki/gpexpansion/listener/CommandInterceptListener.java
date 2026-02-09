@@ -12,7 +12,10 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.server.TabCompleteEvent;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -116,9 +119,41 @@ public class CommandInterceptListener implements Listener {
     }
 
     /**
-     * When gp3dClaimMode, GP3D owns /claim - do NOT inject our tab completions.
-     * Our completions would overwrite GP3D's (e.g. abandon toplevel, claim-specific suggestions).
+     * When GP3D owns /claim, inject our sub-arg completions for snapshot and evict so that
+     * "/claim snapshot " and "/claim evict " get list/remove/create and cancel/status/ etc.
      */
+    @EventHandler(priority = EventPriority.NORMAL)
+    public void onTabComplete(TabCompleteEvent event) {
+        if (!plugin.isGp3dClaimMode()) return;
+        String buffer = event.getBuffer();
+        if (buffer == null) return;
+        String trimmed = buffer.trim();
+        if (!trimmed.startsWith("/claim") && !trimmed.startsWith("claim")) return;
+        // Parse args: first token is /claim or claim, rest are args
+        String afterCommand = trimmed.startsWith("/") ? trimmed.substring(1) : trimmed;
+        int claimLen = "claim".length();
+        if (afterCommand.length() > claimLen && !Character.isWhitespace(afterCommand.charAt(claimLen))) return;
+        String argsStr = afterCommand.length() > claimLen ? afterCommand.substring(claimLen).trim() : "";
+        String[] args = argsStr.isEmpty() ? new String[0] : argsStr.split("\\s+", -1);
+        if (args.length == 0) return;
+        String first = (args[0] != null ? args[0].trim() : "").toLowerCase(Locale.ROOT);
+        if (!"snapshot".equals(first) && !"evict".equals(first)) return;
+        ClaimCommand claimCmd = plugin.getClaimCommand();
+        if (claimCmd == null) return;
+        org.bukkit.command.Command stub = new org.bukkit.command.Command("claim") {
+            @Override
+            public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] a) {
+                return false;
+            }
+        };
+        List<String> ours = claimCmd.onTabComplete(event.getSender(), stub, "claim", args);
+        if (ours != null && !ours.isEmpty()) {
+            List<String> current = event.getCompletions();
+            for (String s : ours) {
+                if (!current.contains(s)) current.add(s);
+            }
+        }
+    }
 
     private boolean interceptUntrustCommand(PlayerCommandPreprocessEvent event) {
         Player player = event.getPlayer();
