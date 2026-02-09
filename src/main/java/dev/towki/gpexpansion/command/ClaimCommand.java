@@ -113,6 +113,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             "rentalsignconfirm",
             "evict",             // -> evict player from rental
             "collectrent",       // -> collect pending rental payments
+            "snapshot",          // -> snapshot list|remove|create [id]
             // Moderation placeholders
             "ban", "unban", "banlist"
     )));
@@ -138,6 +139,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             "rentalsignconfirm",
             "evict",
             "collectrent",
+            "snapshot",
             "ban", "unban", "banlist"
     );
 
@@ -353,6 +355,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 return handleEvict(sender, subArgs);
             case "collectrent":
                 return handleCollectRent(sender, subArgs);
+            case "snapshot":
+                return handleSnapshot(sender, subArgs);
             case "tp":
             case "teleport":
                 return handleTeleport(sender, subArgs);
@@ -1276,9 +1280,9 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         boolean allowOther = sender.hasPermission("griefprevention.evict.other");
 
         if (args.length == 0) {
-            int noticeDays = plugin.getConfig().getInt("eviction.notice-period-days", 14);
+            String noticeDisplay = plugin.getEvictionNoticePeriodDisplay();
             sender.sendMessage(plugin.getMessages().get("claim.evict-usage"));
-            sender.sendMessage(plugin.getMessages().get("claim.evict-help", "{days}", String.valueOf(noticeDays)));
+            sender.sendMessage(plugin.getMessages().get("claim.evict-help", "{duration}", noticeDisplay));
             return true;
         }
 
@@ -1329,10 +1333,10 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        int noticeDays = plugin.getConfig().getInt("eviction.notice-period-days", 14);
-        long noticeMs = noticeDays * 24L * 60L * 60L * 1000L;
+        long noticeMs = plugin.getEvictionNoticePeriodMs();
         long initiatedAt = now;
         long effectiveAt = initiatedAt + noticeMs;
+        String noticeDisplay = plugin.getEvictionNoticePeriodDisplay();
 
         UUID ownerId = gp.getClaimOwner(ctx.mainClaim);
         if (ownerId == null) {
@@ -1349,14 +1353,14 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         if (renterName == null) renterName = rental.renter.toString();
 
         sender.sendMessage(plugin.getMessages().get("eviction.notice-started", "{renter}", renterName));
-        sender.sendMessage(plugin.getMessages().get("eviction.notice-duration", "{days}", String.valueOf(noticeDays)));
+        sender.sendMessage(plugin.getMessages().get("eviction.notice-duration", "{duration}", noticeDisplay));
         sender.sendMessage(plugin.getMessages().get("eviction.notice-no-extend"));
 
         // Notify the renter if they're online
         Player renter = Bukkit.getPlayer(rental.renter);
         if (renter != null) {
             renter.sendMessage(plugin.getMessages().get("eviction.notice-received", "{id}", ctx.mainClaimId));
-            renter.sendMessage(plugin.getMessages().get("eviction.notice-days", "{days}", String.valueOf(noticeDays)));
+            renter.sendMessage(plugin.getMessages().get("eviction.notice-days", "{duration}", noticeDisplay));
             renter.sendMessage(plugin.getMessages().get("eviction.notice-no-extend"));
         }
 
@@ -1497,6 +1501,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
+        String signKind = sign.getPersistentDataContainer().get(keyKind, org.bukkit.persistence.PersistentDataType.STRING);
         String claimId = sign.getPersistentDataContainer().get(keyClaim, org.bukkit.persistence.PersistentDataType.STRING);
         String renterStr = sign.getPersistentDataContainer().get(keyRenter, org.bukkit.persistence.PersistentDataType.STRING);
 
@@ -1520,33 +1525,30 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        // Clear rental store
-        if (claimId != null) {
-            ClaimDataStore dataStore = plugin.getClaimDataStore();
-            dataStore.clearRental(claimId);
-            dataStore.save();
-        }
-
-        // Revoke trust of renter if present
-        if (claimId != null && renterStr != null) {
-            try {
-                java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
-                if (claimOpt.isPresent()) {
-                    java.util.UUID renter = java.util.UUID.fromString(renterStr);
-                    String renterName = org.bukkit.Bukkit.getOfflinePlayer(renter).getName();
-                    if (renterName != null) {
-                        // Use GPBridge to untrust from this specific claim only
-                        boolean untrusted = gp.untrust(renterName, claimOpt.get());
-                        if (untrusted) {
-                            plugin.getLogger().info("Removed trust for " + renterName + " from claim " + claimId);
+        if ("RENT".equals(signKind)) {
+            plugin.resetRentalSign(b);
+        } else {
+            // Non-rent signs (e.g. mailbox): clear data and remove block
+            if (claimId != null) {
+                ClaimDataStore dataStore = plugin.getClaimDataStore();
+                dataStore.clearRental(claimId);
+                dataStore.save();
+            }
+            if (claimId != null && renterStr != null) {
+                try {
+                    java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
+                    if (claimOpt.isPresent()) {
+                        java.util.UUID renter = java.util.UUID.fromString(renterStr);
+                        String renterName = org.bukkit.Bukkit.getOfflinePlayer(renter).getName();
+                        if (renterName != null) {
+                            gp.untrust(renterName, claimOpt.get());
+                            gp.saveClaim(claimOpt.get()); // Persist so untrust survives server restarts
                         }
                     }
-                }
-            } catch (Exception ignored) {}
+                } catch (Exception ignored) {}
+            }
+            b.setType(org.bukkit.Material.AIR);
         }
-
-        // Remove the sign block
-        b.setType(org.bukkit.Material.AIR);
         sender.sendMessage(plugin.getMessages().get("eviction.rental-sign-removed"));
         return true;
     }
@@ -1623,6 +1625,182 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(plugin.getMessages().get("claim.pending-rent-collected"));
         }
 
+        return true;
+    }
+
+    private boolean handleSnapshot(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+        if (!player.hasPermission(dev.towki.gpexpansion.storage.ClaimSnapshotStore.getPermission())) {
+            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+
+        String action = args.length > 0 ? args[0].toLowerCase(Locale.ROOT) : "create";
+        String[] rest = args.length > 1 ? Arrays.copyOfRange(args, 1, args.length) : new String[0];
+
+        // Handle "snapshot list all" before requiring claim context
+        if ("list".equals(action) && rest.length >= 1 && "all".equalsIgnoreCase(rest[0])) {
+            java.util.List<String> claimIds = plugin.getSnapshotStore().listClaimIdsWithSnapshots();
+            if (claimIds.isEmpty()) {
+                sender.sendMessage(plugin.getMessages().get("snapshot.list-empty"));
+                return true;
+            }
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm");
+            for (String cid : claimIds) {
+                java.util.List<dev.towki.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry> list = plugin.getSnapshotStore().listSnapshots(cid);
+                if (list.isEmpty()) continue;
+                sender.sendMessage(org.bukkit.ChatColor.GRAY + "--- Claim " + cid + " ---");
+                sender.sendMessage(plugin.getMessages().get("snapshot.list-header", "{count}", String.valueOf(list.size())));
+                for (dev.towki.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry e : list) {
+                    sender.sendMessage(plugin.getMessages().get("snapshot.list-entry", "{id}", e.id, "{date}", sdf.format(new java.util.Date(e.created))));
+                }
+            }
+            return true;
+        }
+
+        Optional<Object> explicitClaim = Optional.empty();
+        String explicitId = null;
+        String removeSnapshotId = null;
+        if ("remove".equals(action) && rest.length >= 1) {
+            removeSnapshotId = rest[0];
+            if (rest.length >= 2) {
+                Optional<Object> looked = gp.findClaimById(rest[1]);
+                if (looked.isPresent()) {
+                    explicitClaim = looked;
+                    explicitId = rest[1];
+                }
+            }
+        } else if (rest.length >= 1 && !"remove".equals(action) && !"all".equalsIgnoreCase(rest[0])) {
+            Optional<Object> looked = gp.findClaimById(rest[0]);
+            if (looked.isPresent()) {
+                explicitClaim = looked;
+                explicitId = rest[0];
+            }
+        }
+
+        // For "list" with no claim ID: if not standing in a claim, treat as "list all" (no "provide id" message)
+        if ("list".equals(action) && rest.length == 0 && !explicitClaim.isPresent()) {
+            Optional<Object> atLoc = gp.getClaimAt(player.getLocation(), player);
+            if (!atLoc.isPresent()) {
+                java.util.List<String> claimIds = plugin.getSnapshotStore().listClaimIdsWithSnapshots();
+                if (claimIds.isEmpty()) {
+                    sender.sendMessage(plugin.getMessages().get("snapshot.list-empty"));
+                    return true;
+                }
+                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm");
+                for (String cid : claimIds) {
+                    java.util.List<dev.towki.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry> list = plugin.getSnapshotStore().listSnapshots(cid);
+                    if (list.isEmpty()) continue;
+                    sender.sendMessage(org.bukkit.ChatColor.GRAY + "--- Claim " + cid + " ---");
+                    sender.sendMessage(plugin.getMessages().get("snapshot.list-header", "{count}", String.valueOf(list.size())));
+                    for (dev.towki.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry e : list) {
+                        sender.sendMessage(plugin.getMessages().get("snapshot.list-entry", "{id}", e.id, "{date}", sdf.format(new java.util.Date(e.created))));
+                    }
+                }
+                return true;
+            }
+            explicitClaim = atLoc;
+            explicitId = gp.getClaimId(atLoc.get()).orElse(null);
+        }
+
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, false, true, false, "manage snapshots for");
+        if (!ctxOpt.isPresent()) return true;
+        ClaimContext ctx = ctxOpt.get();
+        String claimId = ctx.mainClaimId;
+        Object claim = ctx.mainClaim;
+
+        if ("list".equals(action)) {
+            List<dev.towki.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry> list = plugin.getSnapshotStore().listSnapshots(claimId);
+            if (list.isEmpty()) {
+                sender.sendMessage(plugin.getMessages().get("snapshot.list-empty"));
+                return true;
+            }
+            sender.sendMessage(plugin.getMessages().get("snapshot.list-header", "{count}", String.valueOf(list.size())));
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm");
+            for (dev.towki.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry e : list) {
+                sender.sendMessage(plugin.getMessages().get("snapshot.list-entry",
+                    "{id}", e.id, "{date}", sdf.format(new java.util.Date(e.created))));
+            }
+            return true;
+        }
+
+        if ("remove".equals(action)) {
+            if (removeSnapshotId == null || removeSnapshotId.isEmpty()) {
+                sender.sendMessage(plugin.getMessages().get("snapshot.remove-usage"));
+                return true;
+            }
+            boolean ok = plugin.getSnapshotStore().removeSnapshot(claimId, removeSnapshotId);
+            if (ok) {
+                sender.sendMessage(plugin.getMessages().get("snapshot.removed", "{id}", removeSnapshotId));
+            } else {
+                sender.sendMessage(plugin.getMessages().get("snapshot.remove-failed"));
+            }
+            return true;
+        }
+
+        if ("create".equals(action) || args.length == 0) {
+            ClaimDataStore dataStore = plugin.getClaimDataStore();
+            ClaimDataStore.RentalData rental = dataStore.getRental(claimId).orElse(null);
+            boolean availableForRent = rental == null || rental.expiry <= System.currentTimeMillis();
+            if (!availableForRent) {
+                sender.sendMessage(plugin.getMessages().get("snapshot.not-available-for-rent"));
+                return true;
+            }
+            Optional<String> worldOpt = gp.getClaimWorld(claim);
+            if (!worldOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.world-unknown", "{world}", "?"));
+                return true;
+            }
+            org.bukkit.World world = Bukkit.getWorld(worldOpt.get());
+            if (world == null) {
+                sender.sendMessage(plugin.getMessages().get("claim.world-unknown", "{world}", worldOpt.get()));
+                return true;
+            }
+            Optional<GPBridge.ClaimCorners> cornersOpt = gp.getClaimCorners(claim);
+            if (!cornersOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("snapshot.create-failed"));
+                return true;
+            }
+            GPBridge.ClaimCorners corners = cornersOpt.get();
+            int minX = Math.min(corners.x1, corners.x2);
+            int maxX = Math.max(corners.x1, corners.x2);
+            int minY = Math.min(corners.y1, corners.y2);
+            int maxY = Math.max(corners.y1, corners.y2);
+            int minZ = Math.min(corners.z1, corners.z2);
+            int maxZ = Math.max(corners.z1, corners.z2);
+            if (!gp.is3DClaim(claim)) {
+                int worldSpanY = world.getMaxHeight() - world.getMinHeight();
+                if (worldSpanY <= 128) {
+                    minY = world.getMinHeight();
+                    maxY = world.getMaxHeight() - 1;
+                }
+            }
+            int sizeX = maxX - minX + 1;
+            int sizeY = maxY - minY + 1;
+            int sizeZ = maxZ - minZ + 1;
+            if (sizeX > 128 || sizeY > 128 || sizeZ > 128) {
+                sender.sendMessage(plugin.getMessages().get("snapshot.claim-too-large"));
+                return true;
+            }
+            Location loc = world.getBlockAt(corners.x1, corners.y1, corners.z1).getLocation();
+            final String finalClaimId = claimId;
+            final Object finalClaim = claim;
+            plugin.runAtLocation(loc, () -> {
+                dev.towki.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry entry =
+                    plugin.getSnapshotStore().createSnapshot(finalClaimId, finalClaim, world);
+                plugin.runAtEntity(player, () -> {
+                    if (entry == null) {
+                        sender.sendMessage(plugin.getMessages().get("snapshot.create-failed"));
+                    } else {
+                        sender.sendMessage(plugin.getMessages().get("snapshot.created", "{id}", entry.id));
+                    }
+                });
+            });
+            return true;
+        }
+
+        sender.sendMessage(plugin.getMessages().get("snapshot.usage"));
         return true;
     }
 
@@ -2035,6 +2213,38 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     }
     
     private List<String> completeTab(CommandSender sender, Command command, String alias, String[] args) {
+        // Standalone /claimlist and /claimslist: no args (they show your claims list); return empty so no misleading /claim subcommands
+        if (command.getName().equalsIgnoreCase("claimslist") || alias.equalsIgnoreCase("claimslist") || alias.equalsIgnoreCase("claimlist")) {
+            return Collections.emptyList();
+        }
+        // Standalone /adminclaimlist and /adminclaimslist: no args; return empty
+        if (command.getName().equalsIgnoreCase("adminclaimlist") || alias.equalsIgnoreCase("adminclaimlist") || alias.equalsIgnoreCase("adminclaimslist")) {
+            return Collections.emptyList();
+        }
+        // Tab completion for /claimtp <claimId> [player] - must come before /claim logic
+        if (command.getName().equalsIgnoreCase("claimtp") || alias.equalsIgnoreCase("claimtp")) {
+            if (!sender.hasPermission("griefprevention.claim.teleport")) return Collections.emptyList();
+            if (args.length <= 1) {
+                String prefix = args.length == 1 ? args[0] : "";
+                if (!(sender instanceof Player)) return Collections.emptyList();
+                List<String> ids = new ArrayList<>();
+                for (Object claim : gp.getClaimsFor((Player) sender)) {
+                    gp.getClaimId(claim).ifPresent(id -> ids.add(id));
+                }
+                return ids.stream()
+                    .filter(id -> id.toLowerCase().startsWith(prefix.toLowerCase()))
+                    .sorted()
+                    .collect(Collectors.toList());
+            }
+            if (args.length == 2 && sender.hasPermission("griefprevention.claim.teleport.other")) {
+                return Bukkit.getOnlinePlayers().stream()
+                    .map(Player::getName)
+                    .filter(n -> n.toLowerCase().startsWith(args[1].toLowerCase()))
+                    .sorted()
+                    .collect(Collectors.toList());
+            }
+            return Collections.emptyList();
+        }
         // Tab completion for /globalclaim [true|false] [claimId]
         if (command.getName().equalsIgnoreCase("globalclaim") || alias.equalsIgnoreCase("globalclaim")) {
             if (!sender.hasPermission("griefprevention.claim.toggleglobal")) return Collections.emptyList();
@@ -2056,6 +2266,14 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             return Collections.emptyList();
         }
         if (args.length == 1) {
+            // If they typed a full subcommand that has sub-options, return those (some servers pass only one arg)
+            String first = (args[0] != null ? args[0].trim() : "").toLowerCase(Locale.ROOT);
+            if ("snapshot".equals(first) && sender.hasPermission(dev.towki.gpexpansion.storage.ClaimSnapshotStore.getPermission())) {
+                return Arrays.asList("list", "remove", "create").stream().sorted().collect(Collectors.toList());
+            }
+            if ("evict".equals(first) && sender.hasPermission("griefprevention.evict")) {
+                return Arrays.asList("cancel", "status", "[claimId]", "[player]").stream().sorted().collect(Collectors.toList());
+            }
             // Get available player commands from config (filtered by permissions)
             List<String> availableCommands = getAvailablePlayerCommands(sender);
             
@@ -2102,6 +2320,9 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             if (sender.hasPermission("griefprevention.evict")) {
                 if (!allCommands.contains("evict")) allCommands.add("evict");
             }
+            if (sender.hasPermission(dev.towki.gpexpansion.storage.ClaimSnapshotStore.getPermission())) {
+                if (!allCommands.contains("snapshot")) allCommands.add("snapshot");
+            }
             
             // Filter by input and return
             return allCommands.stream()
@@ -2110,7 +2331,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 .collect(Collectors.toList());
         }
         if (args.length > 1) {
-            String sub = args[0].toLowerCase(Locale.ROOT);
+            String sub = (args[0] != null ? args[0].trim() : "").toLowerCase(Locale.ROOT);
             switch (sub) {
                 case "name":
                     return Collections.singletonList("<name...>");
@@ -2134,7 +2355,13 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                     if (args.length == 3) return Collections.singletonList("[claimId]");
                     return new ArrayList<>();
                 case "evict":
-                    if (args.length == 2) return Arrays.asList("cancel", "status", "[claimId]");
+                    if (args.length == 2) {
+                        String prefix = args[1].toLowerCase(Locale.ROOT);
+                        return Arrays.asList("cancel", "status", "[claimId]", "[player]").stream()
+                            .filter(s -> s.toLowerCase(Locale.ROOT).startsWith(prefix))
+                            .sorted()
+                            .collect(Collectors.toList());
+                    }
                     return new ArrayList<>();
                 case "tp":
                 case "teleport":
@@ -2161,6 +2388,50 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 case "desc":
                 case "description":
                     if (args.length == 2) return Collections.singletonList("<description...>");
+                    return new ArrayList<>();
+                case "snapshot":
+                    if (!sender.hasPermission(dev.towki.gpexpansion.storage.ClaimSnapshotStore.getPermission()))
+                        return new ArrayList<>();
+                    {
+                        String firstSub = args.length >= 2 ? (args[1] != null ? args[1].trim() : "").toLowerCase(Locale.ROOT) : "";
+                        boolean hasRemove = "remove".equals(firstSub);
+                        boolean hasList = "list".equals(firstSub);
+                        boolean hasCreate = "create".equals(firstSub);
+                        // Completing first sub-arg after "snapshot": only when args[1] is not yet a full list/remove/create
+                        boolean completingFirstSubArg = args.length == 2 && !hasRemove && !hasList && !hasCreate;
+                        if (completingFirstSubArg) {
+                            String prefix = (args[1] != null ? args[1].trim() : "").toLowerCase(Locale.ROOT);
+                            return Arrays.asList("list", "remove", "create").stream()
+                                .filter(s -> s.toLowerCase(Locale.ROOT).startsWith(prefix))
+                                .sorted()
+                                .collect(Collectors.toList());
+                        }
+                        if (args.length >= 2 && hasList) {
+                            String p = args.length >= 3 ? (args[2] != null ? args[2].trim() : "").toLowerCase(Locale.ROOT) : "";
+                            return Arrays.asList("all", "[claimId]").stream()
+                                .filter(s -> s.toLowerCase(Locale.ROOT).startsWith(p))
+                                .sorted()
+                                .collect(Collectors.toList());
+                        }
+                        if (args.length == 2 && hasCreate)
+                            return Collections.singletonList("[claimId]");
+                        // After "snapshot remove" or "snapshot remove <partial>": complete with all existing snapshot IDs
+                        if (args.length >= 2 && hasRemove) {
+                            String prefix = args.length >= 3 ? (args[2] != null ? args[2].trim() : "").toLowerCase(Locale.ROOT) : "";
+                            List<String> allIds = new ArrayList<>();
+                            for (String cid : plugin.getSnapshotStore().listClaimIdsWithSnapshots()) {
+                                for (dev.towki.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry e : plugin.getSnapshotStore().listSnapshots(cid)) {
+                                    if (e.id != null && !e.id.isEmpty() && e.id.toLowerCase(Locale.ROOT).startsWith(prefix))
+                                        allIds.add(e.id);
+                                }
+                            }
+                            allIds = allIds.stream().distinct().sorted(String.CASE_INSENSITIVE_ORDER).limit(100).collect(Collectors.toList());
+                            if (!allIds.isEmpty()) return allIds;
+                            return Collections.singletonList("<snapshotId>");
+                        }
+                        if (args.length == 4 && hasRemove)
+                            return Collections.singletonList("[claimId]");
+                    }
                     return new ArrayList<>();
                 default:
                     return new ArrayList<>();

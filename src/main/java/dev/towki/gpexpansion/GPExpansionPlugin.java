@@ -11,7 +11,6 @@ import dev.towki.gpexpansion.config.VersionManager;
 import dev.towki.gpexpansion.setup.SetupWizardManager;
 import dev.towki.gpexpansion.setup.SetupChatListener;
 import dev.towki.gpexpansion.setup.SignAutoPasteListener;
-import dev.towki.gpexpansion.setup.SignPacketListener;
 import dev.towki.gpexpansion.gp.GPBridge;
 import dev.towki.gpexpansion.listener.SignListener;
 import dev.towki.gpexpansion.listener.MailboxListener;
@@ -43,6 +42,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
     private dev.towki.gpexpansion.reminder.RentalReminderService reminderService;
     private dev.towki.gpexpansion.confirm.ConfirmationService confirmationService;
     private dev.towki.gpexpansion.storage.ClaimDataStore claimDataStore;
+    private dev.towki.gpexpansion.storage.ClaimSnapshotStore snapshotStore;
     private dev.towki.gpexpansion.gui.GUIManager guiManager;
     private SignLimitManager signLimitManager;
     private MailboxListener mailboxListener;
@@ -54,6 +54,8 @@ public final class GPExpansionPlugin extends JavaPlugin {
     private dev.towki.gpexpansion.permission.PermissionManager permissionManager;
     private ClaimCommand claimCommand;
     private boolean gp3dClaimMode;
+    private dev.towki.gpexpansion.listener.SignDisplayListener signDisplayListener;
+    private dev.towki.gpexpansion.scheduler.TaskHandle evictionDisplayTickTask;
 
     // Tax settings
     private double taxPercent = 5.0;
@@ -84,6 +86,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
         // Setup economy if Vault present
         setupEconomy();
+        setupVaultPermission();
 
         // Initialize version manager and check for migrations
         versionManager = new VersionManager(this);
@@ -92,6 +95,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Load stores
         claimDataStore = new dev.towki.gpexpansion.storage.ClaimDataStore(this);
         claimDataStore.load();
+        snapshotStore = new dev.towki.gpexpansion.storage.ClaimSnapshotStore(this);
         
         // Initialize GUI manager
         guiManager = new dev.towki.gpexpansion.gui.GUIManager(this);
@@ -353,21 +357,6 @@ public final class GPExpansionPlugin extends JavaPlugin {
             SignAutoPasteListener autoPasteListener = new SignAutoPasteListener(GPExpansionPlugin.this, setupWizardManager);
             Bukkit.getPluginManager().registerEvents(autoPasteListener, GPExpansionPlugin.this);
             getLogger().info("- Registered SignAutoPasteListener for auto-paste mode");
-            
-            // Try to register PacketEvents listener for better sign GUI experience
-            if (isPacketEventsAvailable()) {
-                try {
-                    SignPacketListener packetListener = new SignPacketListener(GPExpansionPlugin.this, setupWizardManager);
-                    packetListener.register();
-                    // Tell autoPasteListener that PacketEvents is handling sign pre-fill
-                    autoPasteListener.setPacketEventsAvailable(true);
-                } catch (Exception e) {
-                    getLogger().warning("Failed to register PacketEvents listener: " + e.getMessage());
-                    getLogger().info("Falling back to GUI bypass mode");
-                }
-            } else {
-                getLogger().info("PacketEvents not found - sign wizard will use fallback mode (GUI bypass)");
-            }
             getLogger().info("Registered /claim, /trustlist, /adminclaimlist, /gpx, /rentclaim, /sellclaim, /cancelsetup commands under GPExpansion");
         });
 
@@ -396,8 +385,10 @@ public final class GPExpansionPlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new dev.towki.gpexpansion.listener.ClaimAbandonListener(this), this);
         // Join reminders
         Bukkit.getPluginManager().registerEvents(new dev.towki.gpexpansion.listener.ReminderJoinListener(this), this);
-        // Dynamic sign display ([Renew] and item scroll)
-        Bukkit.getPluginManager().registerEvents(new dev.towki.gpexpansion.listener.SignDisplayListener(this), this);
+        // Dynamic sign display ([Renew], [Evicted] countdown, item scroll)
+        signDisplayListener = new dev.towki.gpexpansion.listener.SignDisplayListener(this);
+        Bukkit.getPluginManager().registerEvents(signDisplayListener, this);
+        startEvictionDisplayTick();
         // Economy late-hook listener
         Bukkit.getPluginManager().registerEvents(new dev.towki.gpexpansion.listener.EconomyHookListener(this), this);
         
@@ -454,6 +445,22 @@ public final class GPExpansionPlugin extends JavaPlugin {
         }
     }
 
+    /** Starts a periodic task (every 1 second) that updates eviction countdowns for all online players, even when standing still. */
+    private void startEvictionDisplayTick() {
+        if (signDisplayListener == null) return;
+        if (evictionDisplayTickTask != null) {
+            evictionDisplayTickTask.cancel();
+        }
+        // Run every 20 ticks (1 second); for each player run sign update on their entity region (Folia-safe)
+        evictionDisplayTickTask = SchedulerAdapter.runRepeatingGlobal(this, () -> {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (p.isValid() && p.getWorld() != null) {
+                    runAtEntity(p, () -> signDisplayListener.tickEvictionDisplays(p));
+                }
+            }
+        }, 20L, 20L);
+    }
+
     /** Unregister claimlist and adminclaimlist so our enhanced display takes over (used when sharing /claim with GP3D) */
     @SuppressWarnings("unchecked")
     private void unregisterClaimlistCommands() throws ReflectiveOperationException {
@@ -493,6 +500,10 @@ public final class GPExpansionPlugin extends JavaPlugin {
         }
         if (reminderService != null) {
             reminderService.stop();
+        }
+        if (evictionDisplayTickTask != null) {
+            evictionDisplayTickTask.cancel();
+            evictionDisplayTickTask = null;
         }
         if (claimDataStore != null) {
             claimDataStore.save();
@@ -595,6 +606,51 @@ public final class GPExpansionPlugin extends JavaPlugin {
     public void refreshEconomy() {
         setupEconomy();
     }
+
+    private net.milkbowl.vault.permission.Permission vaultPermission;
+
+    private void setupVaultPermission() {
+        try {
+            if (getServer().getPluginManager().getPlugin("Vault") != null) {
+                RegisteredServiceProvider<net.milkbowl.vault.permission.Permission> rsp =
+                    getServer().getServicesManager().getRegistration(net.milkbowl.vault.permission.Permission.class);
+                if (rsp != null && rsp.getProvider() != null) {
+                    vaultPermission = rsp.getProvider();
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Check if player has griefprevention.restoresnapshot.
+     * Uses Bukkit API for online players; Vault Permission API for offline (required since owner may be offline).
+     */
+    public boolean hasRestoreSnapshotPermission(OfflinePlayer player) {
+        if (player.isOnline() && player.getPlayer() != null) {
+            if (player.getPlayer().hasPermission(dev.towki.gpexpansion.storage.ClaimSnapshotStore.getPermission())) {
+                return true;
+            }
+        }
+        if (vaultPermission != null) {
+            try {
+                String worldName = null;
+                if (player.getPlayer() != null && player.getPlayer().getWorld() != null) {
+                    worldName = player.getPlayer().getWorld().getName();
+                } else if (!getServer().getWorlds().isEmpty()) {
+                    worldName = getServer().getWorlds().get(0).getName();
+                }
+                String playerName = player.getName();
+                if (playerName != null && !playerName.isEmpty()) {
+                    return vaultPermission.has(worldName, playerName, dev.towki.gpexpansion.storage.ClaimSnapshotStore.getPermission());
+                }
+            } catch (Throwable ignored) {}
+        }
+        return false;
+    }
+
+    public dev.towki.gpexpansion.storage.ClaimSnapshotStore getSnapshotStore() {
+        return snapshotStore;
+    }
     
     /**
      * Get the messages/lang manager.
@@ -691,6 +747,198 @@ public final class GPExpansionPlugin extends JavaPlugin {
         return amount == Math.floor(amount)
             ? String.format(java.util.Locale.US, "%,.0f", amount)
             : String.format(java.util.Locale.US, "%,.2f", amount);
+    }
+
+    /**
+     * Reset a rental sign to available-for-rent state: clear rental/eviction data, untrust renter,
+     * remove renter from sign PDC, and update display to [Rent].
+     */
+    public void resetRentalSign(org.bukkit.block.Block signBlock) {
+        if (!(signBlock.getState() instanceof org.bukkit.block.Sign sign)) return;
+        org.bukkit.persistence.PersistentDataContainer pdc = sign.getPersistentDataContainer();
+        org.bukkit.NamespacedKey keyKind = new org.bukkit.NamespacedKey(this, "sign.kind");
+        org.bukkit.NamespacedKey keyClaim = new org.bukkit.NamespacedKey(this, "sign.claimId");
+        org.bukkit.NamespacedKey keyRenter = new org.bukkit.NamespacedKey(this, "rent.renter");
+        org.bukkit.NamespacedKey keyExpiry = new org.bukkit.NamespacedKey(this, "rent.expiry");
+        org.bukkit.NamespacedKey keyEcoAmt = new org.bukkit.NamespacedKey(this, "sign.ecoAmt");
+        org.bukkit.NamespacedKey keyEcoKind = new org.bukkit.NamespacedKey(this, "sign.ecoKind");
+        org.bukkit.NamespacedKey keyPerClick = new org.bukkit.NamespacedKey(this, "sign.perClick");
+        org.bukkit.NamespacedKey keyMaxCap = new org.bukkit.NamespacedKey(this, "sign.maxCap");
+        if (!"RENT".equals(pdc.get(keyKind, org.bukkit.persistence.PersistentDataType.STRING))) return;
+        String claimId = pdc.get(keyClaim, org.bukkit.persistence.PersistentDataType.STRING);
+        String renterStr = pdc.get(keyRenter, org.bukkit.persistence.PersistentDataType.STRING);
+        dev.towki.gpexpansion.storage.ClaimDataStore dataStore = getClaimDataStore();
+
+        // Only restore snapshot when we're actually clearing an active rental/eviction from the data store.
+        // Skip restore if rental/eviction are already cleared (e.g. eviction was already processed, or after
+        // server restart when owner sneak+breaks the sign) so we don't restore the same snapshot twice.
+        boolean hasActiveRentalOrEviction = claimId != null && (
+            dataStore.getRental(claimId).isPresent() || dataStore.getEviction(claimId).isPresent());
+
+        // Restore claim from snapshot if owner has permission (owner may be offline; use Vault)
+        // Use sign block location for runAtLocation to ensure Folia runs in loaded region
+        if (claimId != null && hasActiveRentalOrEviction) {
+            java.util.Optional<Object> claimOpt = new dev.towki.gpexpansion.gp.GPBridge().findClaimById(claimId);
+            if (claimOpt.isPresent()) {
+                try {
+                    Object ownerId = claimOpt.get().getClass().getMethod("getOwnerID").invoke(claimOpt.get());
+                    if (ownerId instanceof java.util.UUID ownerUuid) {
+                        OfflinePlayer owner = Bukkit.getOfflinePlayer(ownerUuid);
+                        if (hasRestoreSnapshotPermission(owner)) {
+                            java.util.Optional<dev.towki.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry> latest =
+                                snapshotStore.getLatestSnapshot(claimId);
+                            if (latest.isPresent()) {
+                                // Use the sign's world so we restore in the same dimension the player sees (avoids world-name mismatch)
+                                org.bukkit.World world = signBlock.getWorld();
+                                String snapId = latest.get().id;
+                                final String fid = claimId;
+                                final String fsid = snapId;
+                                getLogger().info("Restoring claim " + claimId + " from snapshot " + snapId + " in world " + world.getName() + " (Folia=" + dev.towki.gpexpansion.scheduler.SchedulerAdapter.isFolia() + ")");
+                                if (dev.towki.gpexpansion.scheduler.SchedulerAdapter.isFolia()) {
+                                    org.bukkit.Location signLoc = signBlock.getLocation();
+                                    dev.towki.gpexpansion.scheduler.SchedulerAdapter.runAtLocationLater(this, signLoc, () -> {
+                                        boolean ok = snapshotStore.restoreSnapshot(claimId, snapId, world, null);
+                                        if (ok) getLogger().info("Claim " + claimId + " restored from snapshot on eviction.");
+                                        else getLogger().warning("Failed to restore snapshot for claim " + claimId + " (snapshot " + snapId + ")");
+                                    }, 1L);
+                                } else {
+                                        // Non-Folia: run restore on main thread. If we're already on primary thread, run now so chunks are loaded.
+                                        Runnable doRestore = () -> {
+                                            boolean ok = snapshotStore.restoreSnapshot(fid, fsid, world);
+                                            if (ok) getLogger().info("Claim " + fid + " restored from snapshot on eviction.");
+                                            else getLogger().warning("Failed to restore snapshot for claim " + fid + " (snapshot " + fsid + ")");
+                                        };
+                                        if (Bukkit.isPrimaryThread()) {
+                                            doRestore.run();
+                                        } else {
+                                            dev.towki.gpexpansion.scheduler.SchedulerAdapter.runLaterGlobal(this, doRestore, 1L);
+                                        }
+                                }
+                            }
+                        }
+                    }
+                } catch (ReflectiveOperationException ignored) {}
+            }
+        }
+
+        if (claimId != null) {
+            dataStore.clearRental(claimId);
+            dataStore.clearEviction(claimId);
+            dataStore.save();
+        }
+        if (claimId != null && renterStr != null) {
+            dev.towki.gpexpansion.gp.GPBridge gpBridge = new dev.towki.gpexpansion.gp.GPBridge();
+            java.util.Optional<Object> claimOpt = gpBridge.findClaimById(claimId);
+            if (claimOpt.isPresent()) {
+                try {
+                    java.util.UUID renter = java.util.UUID.fromString(renterStr);
+                    String renterName = Bukkit.getOfflinePlayer(renter).getName();
+                    if (renterName != null) {
+                        boolean untrusted = gpBridge.untrust(renterName, claimOpt.get());
+                        if (untrusted) {
+                            gpBridge.saveClaim(claimOpt.get()); // Persist so untrust survives server restarts
+                            getLogger().info("Removed trust for " + renterName + " from claim " + claimId);
+                        }
+                    }
+                } catch (IllegalArgumentException ignored) {}
+            }
+        }
+        pdc.remove(keyRenter);
+        pdc.remove(keyExpiry);
+        String ecoAmt = pdc.get(keyEcoAmt, org.bukkit.persistence.PersistentDataType.STRING);
+        String ecoKindStr = pdc.get(keyEcoKind, org.bukkit.persistence.PersistentDataType.STRING);
+        String perClick = pdc.get(keyPerClick, org.bukkit.persistence.PersistentDataType.STRING);
+        String maxCap = pdc.get(keyMaxCap, org.bukkit.persistence.PersistentDataType.STRING);
+        if (ecoAmt == null) ecoAmt = "";
+        if (perClick == null) perClick = "";
+        if (maxCap == null) maxCap = "";
+        String ecoFormatted = formatEcoForSign(ecoKindStr, ecoAmt);
+        boolean hanging = signBlock.getType().name().contains("HANGING_SIGN");
+        String displayLine0 = org.bukkit.ChatColor.translateAlternateColorCodes('&',
+            messages.getRaw(hanging ? "sign-interaction.sign-display-rent-hanging" : "sign-interaction.sign-display-rent-full"));
+        org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
+        front.setLine(0, displayLine0);
+        front.setLine(1, org.bukkit.ChatColor.BLACK + "ID: " + org.bukkit.ChatColor.GOLD + (claimId != null ? claimId : ""));
+        front.setLine(2, org.bukkit.ChatColor.BLACK + ecoFormatted + "/" + perClick);
+        front.setLine(3, org.bukkit.ChatColor.BLACK + "Max: " + maxCap);
+        sign.update(true);
+    }
+
+    private String formatEcoForSign(String ecoKindStr, String ecoAmtRaw) {
+        if (ecoAmtRaw == null || ecoAmtRaw.isEmpty()) return "";
+        if (ecoKindStr == null) ecoKindStr = "MONEY";
+        try {
+            dev.towki.gpexpansion.util.EcoKind kind = dev.towki.gpexpansion.util.EcoKind.valueOf(ecoKindStr.toUpperCase());
+            switch (kind) {
+                case MONEY:
+                    try {
+                        return formatMoneyForSign(Double.parseDouble(ecoAmtRaw));
+                    } catch (NumberFormatException ignored) {
+                        return "$" + ecoAmtRaw;
+                    }
+                case EXPERIENCE:
+                    return ecoAmtRaw.toUpperCase().endsWith("L")
+                        ? ecoAmtRaw.substring(0, ecoAmtRaw.length() - 1) + " Levels"
+                        : ecoAmtRaw + " XP";
+                case CLAIMBLOCKS:
+                    return ecoAmtRaw + " blocks";
+                case ITEM:
+                    return ecoAmtRaw + " items";
+                default:
+                    return ecoAmtRaw;
+            }
+        } catch (IllegalArgumentException ignored) {
+            return ecoAmtRaw;
+        }
+    }
+
+    /**
+     * Parse eviction notice period from config.
+     * Supports: "14d", "1h", "10m", "10s", "1w", or plain number (treated as days).
+     */
+    public long getEvictionNoticePeriodMs() {
+        Object val = getConfig().get("eviction.notice-period");
+        if (val != null) {
+            if (val instanceof Number n) {
+                return n.longValue() * 24L * 60L * 60L * 1000L;
+            }
+            String s = String.valueOf(val).trim();
+            if (!s.isEmpty()) {
+                long ms = parseDurationToMillis(s);
+                if (ms > 0) return ms;
+            }
+        }
+        return 14L * 24L * 60L * 60L * 1000L; // default 14 days
+    }
+
+    /** Human-readable eviction notice duration for messages (e.g. "14 days", "1 hour"). */
+    public String getEvictionNoticePeriodDisplay() {
+        long ms = getEvictionNoticePeriodMs();
+        long sec = ms / 1000L;
+        long min = sec / 60L;
+        long hr = min / 60L;
+        long d = hr / 24L;
+        if (d > 0) return d + " day" + (d == 1 ? "" : "s");
+        if (hr > 0) return hr + " hour" + (hr == 1 ? "" : "s");
+        if (min > 0) return min + " minute" + (min == 1 ? "" : "s");
+        return sec + " second" + (sec == 1 ? "" : "s");
+    }
+
+    private long parseDurationToMillis(String s) {
+        if (s == null || s.isEmpty()) return 0L;
+        String numStr = s.replaceAll("[^0-9]", "");
+        if (numStr.isEmpty()) return 0L;
+        long n = Long.parseLong(numStr);
+        if (s.length() == numStr.length()) return n * 24L * 60L * 60L * 1000L; // plain number = days
+        char unit = Character.toLowerCase(s.charAt(s.length() - 1));
+        return switch (unit) {
+            case 's' -> n * 1000L;
+            case 'm' -> n * 60L * 1000L;
+            case 'h' -> n * 60L * 60L * 1000L;
+            case 'd' -> n * 24L * 60L * 60L * 1000L;
+            case 'w' -> n * 7L * 24L * 60L * 60L * 1000L;
+            default -> 0L;
+        };
     }
 
     public boolean hasMoney(OfflinePlayer player, double amount) {

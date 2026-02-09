@@ -114,6 +114,13 @@ public class Messages {
         // Wizard - General
         DEFAULTS.put("wizard.cancelled", "&cSetup wizard cancelled.");
         DEFAULTS.put("wizard.previous-cancelled", "&7(Previous setup wizard cancelled)");
+        DEFAULTS.put("wizard.autopaste-place-in-claim", "&eAuto-paste: &7Place the sign &einside a claim you own or rent&7 to auto-fill the format.");
+        DEFAULTS.put("wizard.autopaste-anywhere-required", "&eAuto-paste: &7To paste outside your claim you need &e{permission}&7.");
+        DEFAULTS.put("wizard.autopaste-edit-then-done", "&e&lSign Auto-Paste: &7Edit if needed, then click Done.");
+        DEFAULTS.put("wizard.autopaste-placed-success", "&a✓ Sign placed successfully!");
+        DEFAULTS.put("wizard.autopaste-format-filled", "&a✓ Sign format auto-filled!");
+        DEFAULTS.put("wizard.autopaste-failed-place", "&cFailed to place sign. Please try again.");
+        DEFAULTS.put("wizard.autopaste-sign-removed", "&cSign was removed. Please try again.");
         DEFAULTS.put("wizard.claim-not-found", "&cClaim ID not found: {id}");
         DEFAULTS.put("wizard.not-claim-owner", "&cYou don't own that claim!");
         DEFAULTS.put("wizard.invalid-claim-id", "&cInvalid claim ID. Please enter a number.\n&7(Type 'cancel' to exit the wizard)");
@@ -201,7 +208,7 @@ public class Messages {
         DEFAULTS.put("claim.banlist-empty", "&7 - No players banned");
         DEFAULTS.put("claim.banlist-entry", "&c - {player}");
         DEFAULTS.put("claim.evict-usage", "&eUsage: /claim evict [claimId]");
-        DEFAULTS.put("claim.evict-help", "&7Starts a {days}-day eviction notice for the renter.");
+        DEFAULTS.put("claim.evict-help", "&7Starts a {duration} eviction notice for the renter.");
         DEFAULTS.put("claim.evict-no-permission", "&cYou lack permission: &egriefprevention.evict");
         DEFAULTS.put("claim.not-rented", "&cThis claim is not currently rented.");
         DEFAULTS.put("claim.rental-sign-confirm-usage", "&eUsage: /claim rentalsignconfirm <world> <x> <y> <z>");
@@ -324,10 +331,10 @@ public class Messages {
         DEFAULTS.put("eviction.cancel-hint", "&7Use /claim evict cancel {id} to cancel or break the rental sign.");
         DEFAULTS.put("eviction.notice-in-progress", "&eAn eviction is already in progress. {time} remaining before you can remove the renter.");
         DEFAULTS.put("eviction.notice-started", "&aEviction notice started for {renter}.");
-        DEFAULTS.put("eviction.notice-duration", "&eThey have {days} days before you can remove them from the claim or break the sign.");
+        DEFAULTS.put("eviction.notice-duration", "&eThey have {duration} before you can remove them from the claim or break the sign.");
         DEFAULTS.put("eviction.notice-no-extend", "&7During this time, the renter cannot extend their rental.");
         DEFAULTS.put("eviction.notice-received", "&cYou have received an eviction notice for claim {id}.");
-        DEFAULTS.put("eviction.notice-days", "&eYou have {days} days before you will be removed from this claim.");
+        DEFAULTS.put("eviction.notice-days", "&eYou have {duration} before you will be removed from this claim.");
         DEFAULTS.put("eviction.no-pending", "&cThere is no pending eviction for this claim.");
         DEFAULTS.put("eviction.no-pending-info", "&7There is no pending eviction for this claim.");
         DEFAULTS.put("eviction.cancelled", "&aEviction cancelled for claim {id}.");
@@ -339,7 +346,7 @@ public class Messages {
         // Eviction messages
         DEFAULTS.put("eviction.cannot-manage-sign", "&cYou cannot manage this sign.");
         DEFAULTS.put("eviction.active-renter", "&cThis claim has an active renter.");
-        DEFAULTS.put("eviction.start-eviction-notice", "&eUse {command} to start a {days}-day eviction notice. &7(New: {coords} placeholder available)");
+        DEFAULTS.put("eviction.start-eviction-notice", "&eUse {command} to start a {duration} eviction notice. &7(New: {coords} placeholder available)");
         DEFAULTS.put("eviction.notice-pending", "&cEviction notice is still pending.");
         DEFAULTS.put("eviction.time-remaining", "&e{time} remaining before you can remove the renter.");
         DEFAULTS.put("eviction.cannot-break-sign", "&cYou cannot break this sign.");
@@ -357,6 +364,14 @@ public class Messages {
         // Claim info messages
         DEFAULTS.put("claim.not-standing-in-claim", "You are not standing in a claim.");
         DEFAULTS.put("claim.provide-id", "Provide a claim ID.");
+        DEFAULTS.put("claim.info-header", "&6=== Claim Info ===");
+        DEFAULTS.put("claim.info-id", "&7ID: &e{id}");
+        DEFAULTS.put("claim.info-name", "&7Name: &e{name}");
+        DEFAULTS.put("claim.info-owner", "&7Owner: &e{owner}");
+        DEFAULTS.put("claim.info-world", "&7World: &e{world}");
+        DEFAULTS.put("claim.info-location", "&7Location: &ex{x}, z{z}");
+        DEFAULTS.put("claim.info-size", "&7Size: &e{width} x {depth} ({area} blocks)");
+        DEFAULTS.put("claim.info-type", "&7Type: &e{type}");
         
         // Empty line for formatting
         DEFAULTS.put("general.empty-line", "");

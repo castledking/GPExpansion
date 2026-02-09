@@ -3,11 +3,8 @@ package dev.towki.gpexpansion.command;
 import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
 import dev.towki.gpexpansion.storage.ClaimDataStore;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -27,7 +24,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * /claiminfo [id] - Shows detailed information about a claim
@@ -226,10 +222,11 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
                         if (signClaimId != null && signClaimId.equals(claimId)) {
                             if ("RENT".equals(signKind)) {
                                 hasRentSign = true;
-                                // Check if currently rented
-                                String renter = pdc.get(new NamespacedKey(plugin, "sign.renter"), PersistentDataType.STRING);
-                                if (renter != null && !renter.isEmpty()) {
-                                    OfflinePlayer renterPlayer = Bukkit.getOfflinePlayer(UUID.fromString(renter));
+                                // Check if currently rented - use ClaimDataStore as source of truth
+                                Optional<ClaimDataStore.RentalData> rental = claimDataStore.getRental(claimId);
+                                if (rental.isPresent() && rental.get().expiry > System.currentTimeMillis()) {
+                                    UUID renterUuid = rental.get().renter;
+                                    OfflinePlayer renterPlayer = Bukkit.getOfflinePlayer(renterUuid);
                                     rentStatus = "Rented by " + (renterPlayer.getName() != null ? renterPlayer.getName() : "Unknown");
                                 } else {
                                     rentStatus = "Available for rent";

@@ -30,6 +30,7 @@ defaults:
 # A list of permissions starting from griefprevention.<permission> that the gpx.player permission should have
 # Permissions are dynamically updated on /gpx reload
 player-commands:
+  # - restoresnapshot
   - claims
   - claim.name
   - claim.name.anywhere
@@ -106,15 +107,16 @@ tax:
 
 # Eviction settings
 eviction:
-  # Time in days that a renter has before being evicted after notice is given
-  # Default is 14 days
-  notice-period-days: 14
+  # Time before a renter can be evicted after notice is given.
+  # Supports: 14d, 1d, 24h, 1h, 30m, 10s, 1w (days/hours/minutes/seconds/weeks).
+  # Plain number (e.g. 14) is treated as days.
+  notice-period: 14d
 
 # Version tracking and update checking
 version:
   # Current configuration version (DO NOT MODIFY)
   # Used to handle configuration migrations between versions
-  config-version: "0.1.8a"
+  config-version: "0.1.10a"
   
   # Update checking settings
   update-checker:

@@ -3,6 +3,7 @@ package dev.towki.gpexpansion.setup;
 import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.setup.SetupWizardManager.PendingSignData;
 
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import org.bukkit.Location;
@@ -19,7 +20,9 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.inventory.ItemStack;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -67,39 +70,50 @@ public class SignAutoPasteListener implements Listener {
     
     /**
      * Handle sign placement: cancel, place sign with format, open editor.
+     * Runs at LOWEST so we intercept before other plugins (e.g. GriefPrevention) can cancel.
      * Only intercepts when the sign is being placed in a claim the player owns (or rents for self mailbox).
      */
-    @EventHandler(priority = EventPriority.HIGHEST)
+    @EventHandler(priority = EventPriority.LOWEST)
     public void onBlockPlace(BlockPlaceEvent event) {
         Player player = event.getPlayer();
         Block block = event.getBlockPlaced();
         
-        // Only handle sign blocks
         if (!isSign(block.getType())) {
             return;
         }
         
-        // Check if player has pending auto-paste
         if (!wizardManager.hasPendingAutoPaste(player.getUniqueId())) {
             return;
         }
         
-        // Get the pending data (don't consume yet - wait for SignChangeEvent)
         PendingSignData data = wizardManager.getPendingAutoPaste(player.getUniqueId());
         if (data == null) {
             return;
         }
 
-        // Prevent griefing: only auto-paste in a claim the player owns (or rents for self mailbox)
-        if (!wizardManager.canCreateSignAtLocation(player, block.getLocation(), data)) {
-            return; // Do not cancel - let normal placement run; GP will cancel if they can't build
+        // Allow paste if: in allowed claim, OR has the .anywhere permission for this sign type
+        boolean inAllowedClaim = wizardManager.canCreateSignAtLocation(player, block.getLocation(), data);
+        String anywherePerm = wizardManager.getAnywherePermission(data);
+        boolean hasAnywhere = anywherePerm != null && player.hasPermission(anywherePerm);
+        if (!inAllowedClaim && !hasAnywhere) {
+            if (plugin.getConfigManager().isDebugEnabled()) {
+                plugin.getLogger().info("[AutoPaste] Skipping " + player.getName() + " - sign not in allowed claim and no .anywhere permission");
+            }
+            if (wizardManager.hasClaimAt(block.getLocation())) {
+                plugin.getMessages().send(player, "wizard.autopaste-place-in-claim");
+            } else {
+                plugin.getMessages().send(player, "wizard.autopaste-anywhere-required", "{permission}", anywherePerm != null ? anywherePerm : "");
+            }
+            return;
         }
         
-        String[] lines = data.getSignLines();
+        boolean hanging = block.getType().name().contains("HANGING");
+        String[] lines = data.getSignLines(hanging);
         
-        plugin.getLogger().info("[AutoPaste] Intercepting sign placement for " + player.getName());
+        if (plugin.getConfigManager().isDebugEnabled()) {
+            plugin.getLogger().info("[AutoPaste] Intercepting sign placement for " + player.getName() + " at " + block.getLocation());
+        }
         
-        // Cancel the original event
         event.setCancelled(true);
         
         // Store block info
@@ -112,42 +126,46 @@ public class SignAutoPasteListener implements Listener {
         pendingEdits.put(player.getUniqueId(), 
             new PendingSignEdit(loc, signType, blockData, itemInHand, lines));
         
-        // Schedule sign placement and editor opening
-        runAtLocation(loc, () -> {
-            // Place the sign block
+        // Schedule sign placement 1 tick later (so cancel is applied), then send content to client and open editor.
+        runAtLocationLater(loc, () -> {
             Block targetBlock = loc.getBlock();
             targetBlock.setType(signType, false);
             targetBlock.setBlockData(blockData, false);
-            
-            if (targetBlock.getState() instanceof Sign sign) {
-                // Pre-fill with format lines
-                for (int i = 0; i < 4 && i < lines.length; i++) {
-                    try {
-                        sign.getSide(Side.FRONT).setLine(i, lines[i] != null ? lines[i] : "");
-                    } catch (NoSuchMethodError | NoClassDefFoundError e) {
-                        sign.setLine(i, lines[i] != null ? lines[i] : "");
-                    }
-                }
-                sign.update(true, false);
-                
-                // Open sign editor for player to edit
-                runOnPlayer(player, () -> {
-                    try {
-                        player.openSign(sign, Side.FRONT);
-                    } catch (NoSuchMethodError | NoClassDefFoundError e) {
-                        player.openSign(sign);
-                    }
-                    
-                    player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
-                        "&e&lSign Auto-Paste: &7Edit if needed, then click Done."));
-                }, 2L);
-            } else {
-                // Failed to place sign
+            if (!(targetBlock.getState() instanceof Sign sign)) {
                 pendingEdits.remove(player.getUniqueId());
-                player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
-                    "&cFailed to place sign. Please try again."));
+                runOnPlayer(player, () -> plugin.getMessages().send(player, "wizard.autopaste-failed-place"), 1L);
+                return;
             }
-        });
+            for (int i = 0; i < 4 && i < lines.length; i++) {
+                String line = lines[i] != null ? lines[i] : "";
+                try {
+                    sign.getSide(Side.FRONT).setLine(i, line);
+                } catch (NoSuchMethodError | NoClassDefFoundError e) {
+                    sign.setLine(i, line);
+                }
+            }
+            sign.update(true, false);
+            List<Component> components = new ArrayList<>(4);
+            for (int i = 0; i < 4; i++) {
+                String line = i < lines.length && lines[i] != null ? lines[i] : "";
+                components.add(LegacyComponentSerializer.legacySection().deserialize(line));
+            }
+            runOnPlayer(player, () -> {
+                Block b = loc.getBlock();
+                if (b.getState() instanceof Sign openSign) {
+                    player.sendSignChange(loc, components);
+                    try {
+                        player.openSign(openSign, Side.FRONT);
+                    } catch (NoSuchMethodError | NoClassDefFoundError e) {
+                        player.openSign(openSign);
+                    }
+                    plugin.getMessages().send(player, "wizard.autopaste-edit-then-done");
+                } else {
+                    pendingEdits.remove(player.getUniqueId());
+                    plugin.getMessages().send(player, "wizard.autopaste-sign-removed");
+                }
+            }, 2L);
+        }, 1L);
     }
     
     /**
@@ -175,8 +193,7 @@ public class SignAutoPasteListener implements Listener {
                     for (int i = 0; i < 4 && i < lines.length; i++) {
                         event.line(i, LegacyComponentSerializer.legacyAmpersand().deserialize(lines[i] != null ? lines[i] : ""));
                     }
-                    player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
-                        "&a✓ Sign format auto-filled!"));
+                    plugin.getMessages().send(player, "wizard.autopaste-format-filled");
                 }
             }
             return;
@@ -214,10 +231,10 @@ public class SignAutoPasteListener implements Listener {
             }
         }
         
-        plugin.getLogger().info("[AutoPaste] Sign completed by " + player.getName());
-        
-        player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
-            "&a✓ Sign placed successfully!"));
+        if (plugin.getConfigManager().isDebugEnabled()) {
+            plugin.getLogger().info("[AutoPaste] Sign completed by " + player.getName());
+        }
+        plugin.getMessages().send(player, "wizard.autopaste-placed-success");
     }
     
     private boolean isSign(Material material) {
@@ -228,8 +245,8 @@ public class SignAutoPasteListener implements Listener {
     private void runOnPlayer(Player player, Runnable task, long delayTicks) {
         dev.towki.gpexpansion.scheduler.SchedulerAdapter.runLaterEntity(plugin, player, task, delayTicks);
     }
-    
-    private void runAtLocation(Location loc, Runnable task) {
-        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runAtLocation(plugin, loc, task);
+
+    private void runAtLocationLater(Location loc, Runnable task, long delayTicks) {
+        dev.towki.gpexpansion.scheduler.SchedulerAdapter.runAtLocationLater(plugin, loc, task, delayTicks);
     }
 }

@@ -45,6 +45,11 @@ public class SignListener implements Listener {
     private final GPBridge gp = new GPBridge();
     private final SignLimitManager signLimitManager;
 
+    /** True if player has the permission, or has full access (op or wildcard *). Ensures server owners with * aren't blocked. */
+    private static boolean hasPermissionOrFullAccess(Player player, String permission) {
+        return player.hasPermission(permission) || player.isOp() || player.hasPermission("*");
+    }
+
     // PDC keys
     private NamespacedKey keyKind() { return new NamespacedKey(plugin, "sign.kind"); }
     private NamespacedKey keyClaim() { return new NamespacedKey(plugin, "sign.claimId"); }
@@ -303,9 +308,9 @@ public class SignListener implements Listener {
             }
         }
 
-        boolean hasPerm = rent ? player.hasPermission("griefprevention.sign.create.rent") : 
-                       (sell ? player.hasPermission("griefprevention.sign.create.buy") : 
-                               (player.hasPermission("griefprevention.sign.create.mailbox") || player.hasPermission("griefprevention.sign.create.self-mailbox")));
+        boolean hasPerm = rent ? hasPermissionOrFullAccess(player, "griefprevention.sign.create.rent") :
+                       (sell ? hasPermissionOrFullAccess(player, "griefprevention.sign.create.buy") :
+                               (hasPermissionOrFullAccess(player, "griefprevention.sign.create.mailbox") || hasPermissionOrFullAccess(player, "griefprevention.sign.create.self-mailbox")));
         if (!hasPerm) {
             String signType = rent ? "rent" : (sell ? "sell" : "mailbox");
             plugin.getMessages().send(player, "permissions.create-sign-denied", "{signtype}", signType);
@@ -330,8 +335,8 @@ public class SignListener implements Listener {
                 // Allow condensed format anywhere if the user has the anywhere permission
                 String anywherePermission = rent ? "griefprevention.sign.create.rent.anywhere"
                                                  : (sell ? "griefprevention.sign.create.buy.anywhere" : null);
-                if (anywherePermission != null && player.hasPermission(anywherePermission)) {
-                    // Try to parse claim ID from line 1 (condensed format)
+                if (anywherePermission != null && hasPermissionOrFullAccess(player, anywherePermission)) {
+                    // Try to parse claim ID from line 1: semicolon format (id;...) or line-based (id only)
                     if (line1Raw.contains(";")) {
                         String[] parts = line1Raw.split(";");
                         if (parts.length > 0) {
@@ -342,6 +347,13 @@ public class SignListener implements Listener {
                                     targetClaim = claimOpt.get();
                                 }
                             }
+                        }
+                    } else if (!line1Raw.isEmpty()) {
+                        // Line-based outside format: line1 = claimId, line2 = renewal [max], line3 = amount
+                        targetClaimId = line1Raw.trim();
+                        Optional<Object> claimOpt = gp.findClaimById(targetClaimId);
+                        if (claimOpt.isPresent()) {
+                            targetClaim = claimOpt.get();
                         }
                     }
                 }
@@ -377,15 +389,15 @@ public class SignListener implements Listener {
                 // Sign is outside the claim - check for .anywhere permission
                 String anywherePermission = rent ? "griefprevention.sign.create.rent.anywhere" 
                                                  : "griefprevention.sign.create.buy.anywhere";
-                if (!player.hasPermission(anywherePermission)) {
+                if (!hasPermissionOrFullAccess(player, anywherePermission)) {
                     String signTypeStr = rent ? "rent" : "sell";
                     plugin.getMessages().send(player, "permissions.anywhere-denied", "{signtype}", signTypeStr);
                     return;
                 }
             }
             
-            // Verify player owns the claim
-            if (!gp.isOwner(targetClaim, player.getUniqueId()) && !player.hasPermission("griefprevention.admin")) {
+            // Verify player owns the claim (or has admin / full access)
+            if (!gp.isOwner(targetClaim, player.getUniqueId()) && !hasPermissionOrFullAccess(player, "griefprevention.admin")) {
                 plugin.getMessages().send(player, "sign-creation.not-claim-owner");
                 return;
             }
@@ -430,6 +442,23 @@ public class SignListener implements Listener {
             claimId = targetClaimId;
             
             if (rent) {
+                // Outside line-based format: [rent] / <claimId> / <renewal> [max] / 100 or $100 (requires .anywhere)
+                if (targetClaimId != null && line1.equals(targetClaimId)) {
+                    String[] durations = line2.split("\\s+");
+                    if (durations.length < 1 || line2.trim().isEmpty()) {
+                        plugin.getMessages().send(player, "sign-creation.invalid-format", "{details}", "Line 2: <renewal> [max] (e.g. 7d or 7d 30d)");
+                        return;
+                    }
+                    String renewTime = durations[0].trim();
+                    String maxTime = durations.length > 1 ? durations[1].trim() : renewTime;
+                    String ecoAmt = line3.replaceFirst("^\\$", "").trim();
+                    if (ecoAmt.isEmpty()) {
+                        plugin.getMessages().send(player, "sign-creation.invalid-format", "{details}", "Line 3: amount (e.g. 100 or $100)");
+                        return;
+                    }
+                    ecoKindStr = "money";
+                    renewalSpecStr = ecoAmt + ";" + renewTime + ";" + maxTime;
+                } else {
                 // When we resolved claim via anywhere/condensed, line1 is "<claimId>;<ecoAmt>;<renewTime>" or "<claimId>;<renewTime>;<ecoAmt>"
                 // Strip the leading claimId so we parse the rest as short format
                 String rentLine1 = line1;
@@ -519,6 +548,7 @@ public class SignListener implements Listener {
                             "{details}", "Line 2 should contain the payment amount or use semicolon format on Line 1");
                         return;
                     }
+                }
                 }
             } else {
                 // Sell/Buy short format:
@@ -819,6 +849,15 @@ public class SignListener implements Listener {
 
         plugin.getMessages().send(player, "sign-creation.sign-created",
             "{id}", claimId);
+
+        // Snapshot prompt: if rent sign and player has restoresnapshot and claim is available for rent
+        if (rent && player.hasPermission(dev.towki.gpexpansion.storage.ClaimSnapshotStore.getPermission())) {
+            ClaimDataStore.RentalData rental = plugin.getClaimDataStore().getRental(claimId).orElse(null);
+            boolean availableForRent = rental == null || rental.expiry <= System.currentTimeMillis();
+            if (availableForRent && claimId != null && !claimId.isEmpty()) {
+                plugin.getMessages().send(player, "snapshot.restore-prompt", "{claimId}", claimId);
+            }
+        }
         
         // If ITEM sign was created without an item, tell them how to fix it
         if (missingItem) {
@@ -868,7 +907,15 @@ public class SignListener implements Listener {
             return;
         }
 
-        // Cancel the event to prevent sign editing for rent and sell signs (but not mailbox)
+        // Invalid signs (missing economy, wrong format) never got proper PDC - don't intercept, let native edit
+        org.bukkit.block.Sign currentSign = (org.bukkit.block.Sign) signLocation.getBlock().getState();
+        PersistentDataContainer pdc = currentSign.getPersistentDataContainer();
+        if (pdc.get(keyKind(), PersistentDataType.STRING) == null || pdc.get(keyClaim(), PersistentDataType.STRING) == null
+                || pdc.get(new NamespacedKey(plugin, "sign.ecoKind"), PersistentDataType.STRING) == null) {
+            return;
+        }
+        
+        // Valid rent/sell sign - prevent edit, handle interaction
         if (!mailboxSign) {
             event.setCancelled(true);
         }
@@ -886,11 +933,7 @@ public class SignListener implements Listener {
         }
         
         try {
-            // Get the sign again to ensure we have the latest state
-            org.bukkit.block.Sign currentSign = (org.bukkit.block.Sign) signLocation.getBlock().getState();
-            PersistentDataContainer pdc = currentSign.getPersistentDataContainer();
-            
-            // Get the sign data from PDC
+            // Get the sign data from PDC (already validated above)
             String kindStr = pdc.get(keyKind(), PersistentDataType.STRING);
             String claimId = pdc.get(keyClaim(), PersistentDataType.STRING);
             String ecoAmtRaw = pdc.get(keyEcoAmt(), PersistentDataType.STRING);

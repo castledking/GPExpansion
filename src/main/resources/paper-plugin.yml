@@ -21,10 +21,6 @@ dependencies:
       load: BEFORE
       required: false
       join-classpath: true
-    packetevents:
-      load: BEFORE
-      required: false
-      join-classpath: true
     PlaceholderAPI:
       load: BEFORE
       required: false
@@ -82,6 +78,14 @@ commands:
     description: Toggle or set global listing for a claim (standalone for /claim global)
     usage: /<command> [true|false] [claimId]
     permission: griefprevention.claim.toggleglobal
+  claimtp:
+    description: Teleport to a claim
+    usage: /<command> <claimId> [player]
+    permission: griefprevention.claim.teleport
+  setclaimspawn:
+    description: Set the teleport spawn point for a claim
+    usage: /<command>
+    permission: griefprevention.claim.setspawn
 
 permissions:
   gpx.player:
@@ -467,6 +471,10 @@ permissions:
 
   griefprevention.eviction.bypass:
     description: Allows bypassing eviction protections
+    default: op
+
+  griefprevention.restoresnapshot:
+    description: Allows creating snapshots for rent claims; claims are restored from the latest snapshot on eviction
     default: op
 
   # === GLOBAL CLAIM LIMIT PERMISSIONS ===
