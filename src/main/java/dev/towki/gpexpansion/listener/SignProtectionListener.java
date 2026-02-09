@@ -201,7 +201,7 @@ public class SignProtectionListener implements Listener {
                             plugin.getMessages().send(player, "eviction.active-renter");
                             plugin.getMessages().send(player, "eviction.start-eviction-notice", 
                                 "{command}", ChatColor.GOLD + "/claim evict " + claimId + ChatColor.YELLOW,
-                                "{days}", String.valueOf(plugin.getConfig().getInt("eviction.notice-period-days", 14)));
+                                "{duration}", plugin.getEvictionNoticePeriodDisplay());
                             event.setCancelled(true);
                             return;
                         }
@@ -223,10 +223,8 @@ public class SignProtectionListener implements Listener {
 
                 // Check if there's a pending confirmation within the time window
                 if (prev != null && (now - prev) <= 10000L) {
-                    // Execute confirmation - clear rental and remove sign
                     confirmMap.remove(key);
                     performDelete(block, player);
-                    player.sendMessage(ChatColor.GREEN + plugin.getMessages().getRaw("eviction.rental-sign-removed"));
                     event.setCancelled(true);
                     return;
                 }
@@ -303,7 +301,7 @@ public class SignProtectionListener implements Listener {
                     plugin.getMessages().send(p, "eviction.active-renter");
                     plugin.getMessages().send(p, "eviction.start-eviction-notice", 
                         "{command}", ChatColor.GOLD + "/claim evict " + claimId + ChatColor.YELLOW,
-                        "{days}", String.valueOf(plugin.getConfig().getInt("eviction.notice-period-days", 14)));
+                        "{duration}", plugin.getEvictionNoticePeriodDisplay());
                     plugin.getMessages().send(p, "eviction.cannot-remove-renter");
                     return false;
                 }
@@ -376,18 +374,17 @@ public class SignProtectionListener implements Listener {
             }
             return false; // cancel this break
         }
-        // Second break within window: allow; cleanup via event listener for command also
+        // Second break within window
         confirmMap.remove(key);
-        performDelete(signBlock, p);
-        return true; // allow break
+        boolean allowBreak = performDelete(signBlock, p);
+        return allowBreak;
     }
 
-    private void performDelete(Block signBlock, Player player) {
+    private boolean performDelete(Block signBlock, Player player) {
         try {
             Sign sign = (Sign) signBlock.getState();
             String signKind = sign.getPersistentDataContainer().get(keyKind, PersistentDataType.STRING);
             String claimId = sign.getPersistentDataContainer().get(keyClaim, PersistentDataType.STRING);
-            String renterStr = sign.getPersistentDataContainer().get(keyRenter, PersistentDataType.STRING);
 
             ClaimDataStore dataStore = plugin.getClaimDataStore();
 
@@ -405,30 +402,33 @@ public class SignProtectionListener implements Listener {
                     boolean virtualMailbox = claimId != null && claimId.startsWith("v:");
                     plugin.getMessages().send(player, virtualMailbox ? "mailbox.self-deleted-virtual" : "mailbox.self-deleted");
                 }
-                return;
+                return true; // allow break - sign is removed
             }
 
-            // Rental sign only: clear rental and revoke trust (do not run for SELL or unpurchased MAILBOX signs)
+            // Rental sign: if available for rent (no renter), allow break and destroy; if has renter, reset to [Rent] and keep sign
             if ("RENT".equals(signKind)) {
-                if (claimId != null) {
-                    dataStore.clearRental(claimId);
-                    dataStore.save();
-                }
-                if (claimId != null && renterStr != null) {
-                    Optional<Object> claimOpt = gp.findClaimById(claimId);
-                    if (claimOpt.isPresent()) {
-                        UUID renter = UUID.fromString(renterStr);
-                        String renterName = Bukkit.getOfflinePlayer(renter).getName();
-                        if (renterName != null) {
-                            boolean untrusted = gp.untrust(renterName, claimOpt.get());
-                            if (untrusted) {
-                                plugin.getLogger().info("Removed trust for " + renterName + " from claim " + claimId);
-                            }
-                        }
+                String renterStr = sign.getPersistentDataContainer().get(keyRenter, PersistentDataType.STRING);
+                if (renterStr == null || renterStr.isEmpty()) {
+                    // Available for rent - allow owner to destroy the sign
+                    if (claimId != null && !claimId.isEmpty()) {
+                        dataStore.clearRental(claimId);
+                        dataStore.clearEviction(claimId);
+                        dataStore.save();
                     }
+                    if (player != null) {
+                        plugin.getMessages().send(player, "eviction.rental-sign-removed");
+                    }
+                    return true; // allow break - sign is destroyed
                 }
+                // Has renter (or was just evicted) - reset to [Rent] available and keep sign block
+                plugin.resetRentalSign(signBlock);
+                if (player != null) {
+                    plugin.getMessages().send(player, "eviction.rental-sign-removed");
+                }
+                return false; // cancel break - sign stays
             }
         } catch (Throwable ignored) {}
+        return true;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)

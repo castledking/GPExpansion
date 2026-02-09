@@ -2,11 +2,11 @@ package dev.towki.gpexpansion.config;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
+import dev.towki.gpexpansion.scheduler.SchedulerAdapter;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.io.*;
 import java.net.URI;
@@ -181,6 +181,15 @@ public class VersionManager {
             loadConfig();
         }
         
+        // Migrate to 0.1.9a: replace eviction section with canonical format
+        if (isVersionOlder(currentConfigVersion, "0.1.9a")) {
+            migrateToVersion019a();
+            loadConfig();
+        }
+
+        // Ensure eviction section is present and valid (for 0.1.9a+ with empty/corrupted eviction)
+        ensureEvictionSectionPresent();
+
         // Auto-bump version if no migrations needed and version is older than project version
         // Only auto-bump if player-commands section exists (to avoid bumping before migration)
         String projectVersion = getProjectVersion();
@@ -473,6 +482,7 @@ public class VersionManager {
             playerCommandsSection.append("# A list of permissions starting from griefprevention.<permission> that the gpx.player permission should have\n");
             playerCommandsSection.append("# Permissions are dynamically updated on /gpx reload\n");
             playerCommandsSection.append("player-commands:\n");
+            playerCommandsSection.append("#  - restoresnapshot\n");
             playerCommandsSection.append("  - claims\n");
             playerCommandsSection.append("  - claim.name\n");
             playerCommandsSection.append("  - claim.name.anywhere\n");
@@ -498,7 +508,7 @@ public class VersionManager {
             playerCommandsSection.append("  - sign.mailbox.money\n");
             playerCommandsSection.append("  - sign.create.self-mailbox\n");
             playerCommandsSection.append("  - claiminfo\n");
-            playerCommandsSection.append("# - claim.teleport\n");
+            playerCommandsSection.append("#  - claim.teleport\n");
             playerCommandsSection.append("  - claim.setspawn\n");
             playerCommandsSection.append("  - claim.gui.setclaimflag.own\n");
             playerCommandsSection.append("  - claim.gui.globallist\n");
@@ -641,6 +651,166 @@ public class VersionManager {
     }
 
     /**
+     * Canonical eviction section for 0.1.9a (matches config.yml in resources).
+     * Placeholder {value} is replaced with the notice-period value (e.g. "14d").
+     */
+    private static final String EVICTION_SECTION_019A =
+        "# Eviction settings\n" +
+        "eviction:\n" +
+        "  # Time before a renter can be evicted after notice is given.\n" +
+        "  # Supports: 14d, 1d, 24h, 1h, 30m, 10s, 1w (days/hours/minutes/seconds/weeks).\n" +
+        "  # Plain number (e.g. 14) is treated as days.\n" +
+        "  notice-period: {value}";
+
+    /**
+     * Migrate to config version 0.1.9a: replace entire eviction section with canonical format.
+     * - If notice-period exists and is valid, preserves it.
+     * - If only notice-period-days exists, converts (e.g. 14 -> "14d").
+     * - If eviction is missing/empty, adds section with default "14d".
+     * File-based replacement like 0.1.8a for robustness.
+     */
+    private void migrateToVersion019a() {
+        File configFile = new File(dataFolder, "config.yml");
+        if (!configFile.exists()) {
+            plugin.getLogger().warning("VersionManager: config.yml does not exist, cannot migrate");
+            return;
+        }
+
+        try {
+            FileConfiguration config = plugin.getConfig();
+            String noticePeriodValue = resolveNoticePeriodValue(config);
+
+            String configContent = Files.readString(configFile.toPath());
+            String newEvictionBlock = EVICTION_SECTION_019A.replace("{value}", noticePeriodValue);
+
+            // Find eviction section: from "# Eviction settings" or "eviction:" to next top-level section
+            String[] lines = configContent.split("\\R", -1);
+            int startIdx = -1;
+            int endIdx = -1;
+
+            for (int i = 0; i < lines.length; i++) {
+                String trimmed = lines[i].trim();
+                if (startIdx < 0 && (trimmed.equals("# Eviction settings") || trimmed.startsWith("eviction:"))) {
+                    startIdx = i;
+                }
+                if (startIdx >= 0 && endIdx < 0 && i > startIdx) {
+                    // End when we hit a top-level section (no leading spaces) that's not part of eviction
+                    if (lines[i].matches("^[a-zA-Z#].*") && !lines[i].startsWith("  ")) {
+                        endIdx = i;
+                        break;
+                    }
+                }
+            }
+            if (startIdx >= 0 && endIdx < 0) endIdx = lines.length;
+
+            String newContent;
+            if (startIdx >= 0) {
+                // Replace existing eviction block
+                java.util.List<String> newLines = new java.util.ArrayList<>();
+                for (int i = 0; i < startIdx; i++) newLines.add(lines[i]);
+                for (String line : newEvictionBlock.split("\\R", -1)) newLines.add(line);
+                for (int i = endIdx; i < lines.length; i++) newLines.add(lines[i]);
+                newContent = String.join(System.lineSeparator(), newLines);
+                plugin.getLogger().info("VersionManager: Replaced eviction section with canonical 0.1.9a format (notice-period: " + noticePeriodValue + ")");
+            } else {
+                // Eviction section missing: insert before version section
+                int insertAt = -1;
+                for (int i = 0; i < lines.length; i++) {
+                    if (lines[i].trim().startsWith("version:") || lines[i].trim().startsWith("# Version tracking")) {
+                        insertAt = i;
+                        break;
+                    }
+                }
+                if (insertAt < 0) insertAt = lines.length;
+
+                java.util.List<String> newLines = new java.util.ArrayList<>();
+                for (int i = 0; i < insertAt; i++) newLines.add(lines[i]);
+                if (!newLines.isEmpty() && !newLines.get(newLines.size() - 1).trim().isEmpty()) newLines.add("");
+                for (String line : newEvictionBlock.split("\\R", -1)) newLines.add(line);
+                newLines.add("");
+                for (int i = insertAt; i < lines.length; i++) newLines.add(lines[i]);
+                newContent = String.join(System.lineSeparator(), newLines);
+                plugin.getLogger().info("VersionManager: Added eviction section (was missing) with notice-period: " + noticePeriodValue);
+            }
+
+            // Update config-version
+            newContent = newContent.replaceAll(
+                "(?m)^(\\s*config-version:\\s*)\"[^\"]*\"",
+                "$1\"0.1.9a\""
+            );
+
+            Files.writeString(configFile.toPath(), newContent);
+            currentConfigVersion = "0.1.9a";
+            plugin.getLogger().info("VersionManager: Config version updated to 0.1.9a");
+
+            plugin.reloadConfig();
+        } catch (IOException e) {
+            plugin.getLogger().severe("VersionManager: Failed to migrate config to 0.1.9a: " + e.getMessage());
+        }
+    }
+
+    /** Resolve notice-period value: from notice-period, notice-period-days, or default "14d". */
+    private String resolveNoticePeriodValue(FileConfiguration config) {
+        if (config.contains("eviction.notice-period")) {
+            Object val = config.get("eviction.notice-period");
+            if (val != null) {
+                String s = String.valueOf(val).trim();
+                if (!s.isEmpty() && !"null".equalsIgnoreCase(s)) return s;
+            }
+        }
+        if (config.contains("eviction.notice-period-days")) {
+            int days = config.getInt("eviction.notice-period-days", 14);
+            return days + "d";
+        }
+        return "14d";
+    }
+
+    /**
+     * Ensure eviction section has notice-period. Runs after migrations.
+     * If eviction.notice-period is missing or empty, replaces eviction section via file.
+     */
+    private void ensureEvictionSectionPresent() {
+        FileConfiguration config = plugin.getConfig();
+        if (!config.contains("eviction")) return;
+        Object val = config.get("eviction.notice-period");
+        if (val != null) {
+            String s = String.valueOf(val).trim();
+            if (!s.isEmpty() && !"null".equalsIgnoreCase(s)) return; // Already valid
+        }
+        File configFile = new File(dataFolder, "config.yml");
+        if (!configFile.exists()) return;
+        try {
+            String noticePeriodValue = config.contains("eviction.notice-period-days")
+                ? (config.getInt("eviction.notice-period-days", 14) + "d")
+                : "14d";
+            String configContent = Files.readString(configFile.toPath());
+            String newBlock = EVICTION_SECTION_019A.replace("{value}", noticePeriodValue);
+            String[] lines = configContent.split("\\R", -1);
+            int startIdx = -1, endIdx = -1;
+            for (int i = 0; i < lines.length; i++) {
+                String t = lines[i].trim();
+                if (startIdx < 0 && (t.equals("# Eviction settings") || t.startsWith("eviction:"))) startIdx = i;
+                if (startIdx >= 0 && i > startIdx && lines[i].matches("^[a-zA-Z#].*") && !lines[i].startsWith("  ")) {
+                    endIdx = i;
+                    break;
+                }
+            }
+            if (startIdx >= 0 && endIdx < 0) endIdx = lines.length;
+            if (startIdx < 0) return;
+
+            java.util.List<String> newLines = new java.util.ArrayList<>();
+            for (int i = 0; i < startIdx; i++) newLines.add(lines[i]);
+            for (String line : newBlock.split("\\R", -1)) newLines.add(line);
+            for (int i = endIdx; i < lines.length; i++) newLines.add(lines[i]);
+            Files.writeString(configFile.toPath(), String.join(System.lineSeparator(), newLines));
+            plugin.reloadConfig();
+            plugin.getLogger().info("VersionManager: Repaired empty/corrupted eviction section (notice-period: " + noticePeriodValue + ")");
+        } catch (IOException e) {
+            plugin.getLogger().warning("VersionManager: Could not repair eviction section: " + e.getMessage());
+        }
+    }
+
+    /**
      * Schedule update checking
      */
     private void scheduleUpdateCheck() {
@@ -651,13 +821,9 @@ public class VersionManager {
             // Check immediately
             checkForUpdates();
         } else {
-            // Schedule for later
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    checkForUpdates();
-                }
-            }.runTaskLater(plugin, (checkInterval - timeSinceLastCheck) / 50); // Convert to ticks
+            // Schedule for later (Folia-safe via SchedulerAdapter)
+            long delayTicks = Math.max(1L, (checkInterval - timeSinceLastCheck) / 50L);
+            SchedulerAdapter.runLaterGlobal(plugin, this::checkForUpdates, delayTicks);
         }
     }
     

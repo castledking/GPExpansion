@@ -58,11 +58,12 @@ public class SetupWizardManager {
             this.mailboxSelf = session.getType() == SetupType.MAILBOX && session.isMailboxSelf();
         }
 
-        public String[] getSignLines() {
+        /** Wall signs use [rent claim]; hanging signs use [rent] (short format). */
+        public String[] getSignLines(boolean hanging) {
             switch (type) {
                 case RENT:
                     return new String[] {
-                        "[rent claim]",
+                        hanging ? "[rent]" : "[rent claim]",
                         claimId,
                         ecoKind.name().toLowerCase(),
                         price + ";" + renewalTime + ";" + maxTime
@@ -87,6 +88,10 @@ public class SetupWizardManager {
                 default:
                     return new String[] {"", "", "", ""};
             }
+        }
+
+        public String[] getSignLines() {
+            return getSignLines(false);
         }
     }
     
@@ -133,6 +138,29 @@ public class SetupWizardManager {
             return gp.isOwner(claim, playerId) || admin;
         }
         return false;
+    }
+
+    /**
+     * Returns the .anywhere permission for this sign type (allows paste outside own/rented claims).
+     */
+    public String getAnywherePermission(PendingSignData data) {
+        switch (data.type) {
+            case RENT:
+                return "griefprevention.sign.create.rent.anywhere";
+            case SELL:
+                return "griefprevention.sign.create.buy.anywhere";
+            case MAILBOX:
+                return "griefprevention.sign.create.mailbox.anywhere";
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Returns true if there is any claim at the location (used to choose which auto-paste message to show).
+     */
+    public boolean hasClaimAt(org.bukkit.Location location) {
+        return gp.getClaimAt(location).isPresent();
     }
     
     /**

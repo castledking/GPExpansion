@@ -306,7 +306,7 @@ public class TrustedClaimsGUI extends BaseGUI {
     private void handleClaimClick(InventoryClickEvent event, ClaimInfo info) {
         if (isLeftClick(event) && !event.isShiftClick()) {
             if (player.hasPermission("griefprevention.claim.teleport")) {
-                closeAndRunOnMainThread("claim tp " + info.claimId);
+                closeAndRunOnMainThread("claimtp " + info.claimId);
             } else {
                 plugin.getMessages().send(player, "general.no-permission");
             }

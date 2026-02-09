@@ -351,7 +351,7 @@ public class GlobalClaimListGUI extends BaseGUI {
             if (claimIndex < publicClaims.size()) {
                 ClaimInfo info = publicClaims.get(claimIndex);
                 if (player.hasPermission("griefprevention.claim.teleport")) {
-                    closeAndRunOnMainThread("claim tp " + info.claimId);
+                    closeAndRunOnMainThread("claimtp " + info.claimId);
                 } else {
                     plugin.getMessages().send(player, "general.no-permission");
                 }
