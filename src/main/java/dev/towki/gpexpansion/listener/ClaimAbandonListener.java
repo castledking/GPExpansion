@@ -55,7 +55,7 @@ public class ClaimAbandonListener implements Listener {
                         plugin.getMessages().send(player, "eviction.active-renter");
                         plugin.getMessages().send(player, "eviction.start-eviction-notice", 
                             "{command}", plugin.getMessages().getRaw("eviction.abandon-eviction-command", "{id}", claimId),
-                            "{days}", String.valueOf(plugin.getConfig().getInt("eviction.notice-period-days", 14)));
+                            "{duration}", plugin.getEvictionNoticePeriodDisplay());
                         return;
                     } else {
                         boolean effective = System.currentTimeMillis() >= eviction.effectiveAt;

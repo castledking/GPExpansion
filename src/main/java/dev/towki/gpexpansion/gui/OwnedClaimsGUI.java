@@ -379,7 +379,7 @@ public class OwnedClaimsGUI extends BaseGUI {
         if (isLeftClick(event) && !event.isShiftClick()) {
             // Teleport to claim
             if (player.hasPermission("griefprevention.claim.teleport")) {
-                closeAndRunOnMainThread("claim tp " + info.claimId);
+                closeAndRunOnMainThread("claimtp " + info.claimId);
             } else {
                 plugin.getMessages().send(player, "general.no-permission");
             }

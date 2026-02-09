@@ -138,6 +138,7 @@ sign-interaction:
   rent-claim-unavailable: "&cThis claim is not available for rent."
   rent-own-claim: "&cYou cannot rent your own claim."
   rent-already-rented: "&cThis claim is already rented."
+  snapshot-restoring: "&eSnapshot is restoring, please wait a few seconds..."
   
   # Sign data issues
   sign-missing-data: "&cThis sign is missing required data. Please break and recreate it."
@@ -341,6 +342,15 @@ wizard:
   previous-cancelled: "&7(Previous setup wizard cancelled)"
   cancel-none: "&7You don't have an active setup or auto-paste mode to cancel."
   
+  # Auto-paste (sign placement) messages
+  autopaste-place-in-claim: "&eAuto-paste: &7Place the sign &einside a claim you own or rent&7 to auto-fill the format."
+  autopaste-anywhere-required: "&eAuto-paste: &7To paste outside your claim you need &e{permission}&7."
+  autopaste-edit-then-done: "&e&lSign Auto-Paste: &7Edit if needed, then click Done."
+  autopaste-placed-success: "&a✓ Sign placed successfully!"
+  autopaste-format-filled: "&a✓ Sign format auto-filled!"
+  autopaste-failed-place: "&cFailed to place sign. Please try again."
+  autopaste-sign-removed: "&cSign was removed. Please try again."
+  
   # Validation errors
   claim-not-found: "&cClaim ID not found: {id}"
   not-claim-owner: "&cYou don't own that claim!"
@@ -460,7 +470,9 @@ claim:
   trustlist-empty: "&7No players are trusted in this claim."
   trustlist-entry: "&7- &e{player}&7: {level}"
   
-  # Claim not found
+  # Claim not found / claiminfo
+  not-standing-in-claim: "You are not standing in a claim."
+  provide-id: "Provide a claim ID."
   not-found: "&cClaim ID not found: {id}"
   not-owner: "&cYou must own claim {id} to do that."
   owner-unknown: "&cUnable to determine the claim owner."
@@ -497,7 +509,7 @@ claim:
   
   # Eviction (claim command)
   evict-usage: "&eUsage: /claim evict [claimId]"
-  evict-help: "&7Starts a {days}-day eviction notice for the renter."
+  evict-help: "&7Starts a {duration} eviction notice for the renter."
   evict-no-permission: "&cYou lack permission: &egriefprevention.evict"
   not-rented: "&cThis claim is not currently rented."
   
@@ -521,6 +533,24 @@ claim:
   untrust-renter-hint: "&eUse {command} instead."
 
 # =============================================================================
+# CLAIM SNAPSHOT MESSAGES
+# =============================================================================
+snapshot:
+  list-empty: "&eNo snapshots found. This claim will not be restored on eviction."
+  list-header: "&eSnapshots ({count}):"
+  list-entry: "&7- &e{id} &7({date})"
+  created: "&aSnapshot created: &e{id}&a."
+  removed: "&aSnapshot removed: &e{id}&a."
+  remove-failed: "&cFailed to remove snapshot."
+  remove-usage: "&cUsage: /claim snapshot remove <snapshotId>"
+  create-failed: "&cFailed to create snapshot."
+  claim-too-large: "&cThis claim is too large to snapshot. Maximum 128 blocks on each axis (X, Y, Z). Subdivide or use a smaller claim."
+  not-available-for-rent: "&cThis claim is currently rented. Snapshots can only be created for claims available for rent."
+  restore-prompt: "&eYou have snapshot restore enabled. Run &6/claim snapshot create {claimId}&e to save the claim state before listing it for rent."
+  restored-on-eviction: "&aClaim restored from snapshot on eviction."
+  usage: "&eUsage: /claim snapshot [list|remove|create] [claimId|all]. &7list = current claim, list <id> = that claim, list all = all claims."
+
+# =============================================================================
 # EVICTION MESSAGES
 # =============================================================================
 eviction:
@@ -531,7 +561,7 @@ eviction:
   
   # Active renter messages
   active-renter: "&cThis claim has an active renter."
-  start-eviction-notice: "&eUse {command} to start a {days}-day eviction notice. &7(New: {coords} placeholder available)"
+  start-eviction-notice: "&eUse {command} to start a {duration} eviction notice. &7(New: {coords} placeholder available)"
   
   # Eviction pending messages
   notice-pending: "&cEviction notice is still pending."
@@ -542,10 +572,10 @@ eviction:
   cancel-hint: "&7Use /claim evict cancel {id} to cancel or break the rental sign."
   notice-in-progress: "&eAn eviction is already in progress. {time} remaining before you can remove the renter."
   notice-started: "&aEviction notice started for {renter}."
-  notice-duration: "&eThey have {days} days before you can remove them from the claim or break the sign."
+  notice-duration: "&eThey have {duration} before you can remove them from the claim or break the sign."
   notice-no-extend: "&7During this time, the renter cannot extend their rental."
   notice-received: "&cYou have received an eviction notice for claim {id}."
-  notice-days: "&eYou have {days} days before you will be removed from this claim."
+  notice-days: "&eYou have {duration} before you will be removed from this claim."
   no-pending: "&cThere is no pending eviction for this claim."
   no-pending-info: "&7There is no pending eviction for this claim."
   cancelled: "&aEviction cancelled for claim {id}."
@@ -568,10 +598,6 @@ eviction:
 # =============================================================================
 # CLAIM INFO MESSAGES
 # =============================================================================
-claim:
-  not-standing-in-claim: "You are not standing in a claim."
-  provide-id: "Provide a claim ID."
-
 claiminfo:
   no-permission-other: "&cYou don't have permission to view info for claims you don't own."
 

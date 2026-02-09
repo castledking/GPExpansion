@@ -88,6 +88,10 @@ public class Config {
             // Reload config from disk so in-memory values reflect the patched file
             config = YamlConfiguration.loadConfiguration(configFile);
         }
+        // Ensure player-commands section is between defaults and permission-tracking (not at bottom).
+        if (ensurePlayerCommandsPositionInFile()) {
+            config = YamlConfiguration.loadConfiguration(configFile);
+        }
     }
 
     /**
@@ -190,6 +194,132 @@ public class Config {
             return false;
         }
     }
+
+    /**
+     * Ensure player-commands section exists and is placed between defaults and permission-tracking.
+     * If it was added at the bottom by YamlConfiguration.save(), move it to the correct position.
+     * Returns true if the file was modified.
+     */
+    private boolean ensurePlayerCommandsPositionInFile() {
+        try {
+            String content = Files.readString(configFile.toPath());
+            String[] lines = content.split("\\R", -1);
+            java.util.List<String> lineList = new java.util.ArrayList<>(java.util.Arrays.asList(lines));
+
+            // Find insertion point: before "permission-tracking:" or "# Permission tracking"
+            int insertBefore = -1;
+            for (int i = 0; i < lineList.size(); i++) {
+                String t = lineList.get(i).trim();
+                if (t.equals("permission-tracking:") || t.startsWith("# Permission tracking")) {
+                    insertBefore = i;
+                    break;
+                }
+            }
+            if (insertBefore < 0) return false;
+
+            // Find existing player-commands section (with optional preceding comment block)
+            int pcStart = -1;
+            int pcEnd = -1;
+            for (int i = 0; i < lineList.size(); i++) {
+                String line = lineList.get(i);
+                String t = line.trim();
+                if (t.equals("player-commands:")) {
+                    pcStart = i;
+                    // Include preceding comment lines
+                    while (pcStart > 0 && (lineList.get(pcStart - 1).trim().startsWith("#") || lineList.get(pcStart - 1).trim().isEmpty())) {
+                        pcStart--;
+                    }
+                    pcEnd = i;
+                    i++;
+                    while (i < lineList.size()) {
+                        String l = lineList.get(i);
+                        String tr = l.trim();
+                        if (tr.isEmpty() || tr.startsWith("#") || l.matches("^\\s+-\\s+.*") || tr.startsWith("-")) {
+                            pcEnd = i;
+                            i++;
+                        } else if (tr.matches("^[a-zA-Z0-9_.-]+:.*") && !l.startsWith(" ")) {
+                            break;
+                        } else {
+                            pcEnd = i;
+                            i++;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            // Build the player-commands block to insert (from existing or from default)
+            java.util.List<String> block = new java.util.ArrayList<>();
+            if (pcStart >= 0 && pcEnd >= pcStart) {
+                for (int i = pcStart; i <= pcEnd; i++) {
+                    block.add(lineList.get(i));
+                }
+            } else {
+                // Use block from jar default
+                block.add("");
+                block.add("# Player command permissions (dynamically assigned to gpx.player permission)");
+                block.add("# A list of permissions starting from griefprevention.<permission> that the gpx.player permission should have");
+                block.add("# Permissions are dynamically updated on /gpx reload");
+                block.add("player-commands:");
+                @SuppressWarnings("unchecked")
+                java.util.List<String> list = (java.util.List<String>) config.getList("player-commands");
+                if (list == null && plugin.getResource("config.yml") != null) {
+                    FileConfiguration def = YamlConfiguration.loadConfiguration(new InputStreamReader(plugin.getResource("config.yml")));
+                    list = def.getStringList("player-commands");
+                }
+                if (list != null) {
+                    for (String item : list) {
+                        block.add("  - " + item);
+                    }
+                }
+            }
+
+            // Remove existing section from its current position (so we don't duplicate)
+            java.util.List<String> without = new java.util.ArrayList<>();
+            for (int i = 0; i < lineList.size(); i++) {
+                if (i >= pcStart && i <= pcEnd) continue;
+                without.add(lineList.get(i));
+            }
+            // If player-commands already exists and is immediately before permission-tracking, nothing to do
+            if (pcStart >= 0) {
+                int j = pcEnd + 1;
+                while (j < lineList.size() && lineList.get(j).trim().isEmpty()) j++;
+                if (j < lineList.size()) {
+                    String next = lineList.get(j).trim();
+                    if (next.equals("permission-tracking:") || next.startsWith("# Permission tracking")) {
+                        return false;
+                    }
+                }
+            }
+
+            // Adjust insertBefore if we removed lines before it
+            if (pcStart >= 0 && pcStart < insertBefore) {
+                insertBefore -= (pcEnd - pcStart + 1);
+            }
+
+            // Insert block before permission-tracking
+            java.util.List<String> out = new java.util.ArrayList<>(without.size() + block.size() + 2);
+            out.addAll(without.subList(0, insertBefore));
+            if (!out.isEmpty() && !out.get(out.size() - 1).trim().isEmpty()) {
+                out.add("");
+            }
+            out.addAll(block);
+            if (insertBefore < without.size() && !without.get(insertBefore).trim().isEmpty()) {
+                out.add("");
+            }
+            out.addAll(without.subList(insertBefore, without.size()));
+
+            String newContent = String.join(System.lineSeparator(), out);
+            if (newContent.equals(content)) return false;
+
+            Files.writeString(configFile.toPath(), newContent);
+            plugin.getLogger().info("Config updated: placed player-commands between defaults and permission-tracking.");
+            return true;
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to place player-commands block in config.yml: " + e.getMessage());
+            return false;
+        }
+    }
     
     /**
      * Add any missing default values to the config.
@@ -214,6 +344,13 @@ public class Config {
                 modified = true;
                 plugin.getLogger().info("Added missing config option: " + path + " = " + defaultValue);
             }
+        }
+
+        // player-commands: when missing, copy list from jar default so it always appears in config
+        if (!config.contains("player-commands") && defaultConfig != null && defaultConfig.contains("player-commands")) {
+            config.set("player-commands", defaultConfig.getList("player-commands"));
+            modified = true;
+            plugin.getLogger().info("Added missing config option: player-commands (from default)");
         }
 
         // mailbox-protocol is handled via ensureMailboxProtocolBlockInFile() so it is inserted with comments/ordering preserved.
