@@ -240,6 +240,9 @@ public class ClaimCommandAddonImpl {
             out.add("tp");
             out.add("teleport");
         }
+        if (sender.hasPermission("griefprevention.claim.setspawn")) {
+            out.add("setspawn");
+        }
         if (sender.hasPermission(dev.towki.gpexpansion.storage.ClaimSnapshotStore.getPermission())) {
             out.add("snapshot");
         }

@@ -29,8 +29,25 @@ public class SignLimitManager {
     
     public SignLimitManager(GPExpansionPlugin plugin) {
         this.plugin = plugin;
-        this.permissionManager = new PermissionManager(plugin);
+        this.permissionManager = initializePermissionManager(plugin);
         loadConfig();
+    }
+    
+    private PermissionManager initializePermissionManager(GPExpansionPlugin plugin) {
+        try {
+            if (plugin.getServer().getPluginManager().getPlugin("Vault") != null) {
+                return new PermissionManager(plugin);
+            } else {
+                plugin.getLogger().info("Vault not found - permission management via /gpx max will use in-memory limits only");
+                return null;
+            }
+        } catch (NoClassDefFoundError e) {
+            plugin.getLogger().info("Vault classes not available - permission management via /gpx max will use in-memory limits only");
+            return null;
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to initialize PermissionManager: " + e.getMessage());
+            return null;
+        }
     }
     
     /**
@@ -402,7 +419,7 @@ public class SignLimitManager {
      * Clean up global claim permissions
      */
     private void cleanupGlobalClaimPermissions(Player player, int newLimit) {
-        if (permissionManager.cleanupGlobalClaimPermissions(player, newLimit)) {
+        if (permissionManager != null && permissionManager.cleanupGlobalClaimPermissions(player, newLimit)) {
             plugin.getLogger().info("Successfully cleaned up global claim permissions for " + player.getName());
         } else {
             plugin.getLogger().warning("Could not clean up global claim permissions for " + player.getName() + 
@@ -445,7 +462,7 @@ public class SignLimitManager {
      * Clean up sell sign permissions by removing all numbered permissions and adding the highest one
      */
     private void cleanupSellPermissions(Player player, int newLimit) {
-        if (permissionManager.cleanupSellPermissions(player, newLimit)) {
+        if (permissionManager != null && permissionManager.cleanupSellPermissions(player, newLimit)) {
             plugin.getLogger().info("Successfully cleaned up sell sign permissions for " + player.getName());
         } else {
             plugin.getLogger().warning("Could not clean up sell sign permissions for " + player.getName() + 
@@ -457,7 +474,7 @@ public class SignLimitManager {
      * Clean up rent sign permissions by removing all numbered permissions and adding the highest one
      */
     private void cleanupRentPermissions(Player player, int newLimit) {
-        if (permissionManager.cleanupRentPermissions(player, newLimit)) {
+        if (permissionManager != null && permissionManager.cleanupRentPermissions(player, newLimit)) {
             plugin.getLogger().info("Successfully cleaned up rent sign permissions for " + player.getName());
         } else {
             plugin.getLogger().warning("Could not clean up rent sign permissions for " + player.getName() + 
@@ -469,7 +486,7 @@ public class SignLimitManager {
      * Clean up mailbox sign permissions by removing all numbered permissions and adding the highest one
      */
     private void cleanupMailboxPermissions(Player player, int newLimit) {
-        if (permissionManager.cleanupMailboxPermissions(player, newLimit)) {
+        if (permissionManager != null && permissionManager.cleanupMailboxPermissions(player, newLimit)) {
             plugin.getLogger().info("Successfully cleaned up mailbox sign permissions for " + player.getName());
         } else {
             plugin.getLogger().warning("Could not clean up mailbox sign permissions for " + player.getName() + 
@@ -535,13 +552,13 @@ public class SignLimitManager {
      * Check if permission cleanup is supported
      */
     public boolean isPermissionCleanupSupported() {
-        return permissionManager.isCleanupSupported();
+        return permissionManager != null && permissionManager.isCleanupSupported();
     }
     
     /**
      * Get the name of the supported permission plugin
      */
     public String getSupportedPermissionPlugin() {
-        return permissionManager.getSupportedPlugin();
+        return permissionManager != null ? permissionManager.getSupportedPlugin() : "None";
     }
 }

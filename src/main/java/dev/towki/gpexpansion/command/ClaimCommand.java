@@ -3,6 +3,7 @@ package dev.towki.gpexpansion.command;
 import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
 import dev.towki.gpexpansion.storage.ClaimDataStore;
+import dev.towki.gpexpansion.util.SafeTeleportUtil;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
@@ -1834,6 +1835,9 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         
         Object claim = claimOpt.get();
         
+        // Get claim bounds for safe teleport search
+        int searchRadius = gp.getClaimSearchRadius(claim);
+        
         // Get teleport location - prefer custom spawn, fallback to claim center
         Optional<Location> spawnOpt = plugin.getClaimDataStore().getSpawn(claimId);
         
@@ -1842,9 +1846,25 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         final CommandSender finalSender = sender;
         
         if (spawnOpt.isPresent()) {
-            // Custom spawn location - can teleport directly
             Location teleportLoc = spawnOpt.get();
-            plugin.teleportEntity(finalTarget, teleportLoc);
+            
+            // Bounds based on claim size - use claim dimensions but ensure at least 8
+            int radius = Math.max(searchRadius, 8);
+            int[] bounds = new int[] {
+                teleportLoc.getBlockX() - radius,
+                teleportLoc.getBlockX() + radius,
+                teleportLoc.getBlockZ() - radius,
+                teleportLoc.getBlockZ() + radius
+            };
+            
+            Location safeLoc = SafeTeleportUtil.getSafeDestination(teleportLoc, bounds);
+            
+            if (safeLoc == null) {
+                sender.sendMessage(plugin.getMessages().get("claim.teleport-unsafe", "{id}", claimId));
+                return true;
+            }
+            
+            plugin.teleportEntity(finalTarget, safeLoc);
             sendTeleportMessages(finalSender, finalTarget, finalClaimId);
         } else {
             // Use claim center as fallback - need to get Y on correct region thread
@@ -1855,11 +1875,30 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             }
             Location centerXZ = centerXZOpt.get();
             
+            final int finalSearchRadius = searchRadius;
+            
             // Schedule on target region to get highest Y and teleport
             dev.towki.gpexpansion.scheduler.SchedulerAdapter.runAtLocation(plugin, centerXZ, () -> {
                 int y = centerXZ.getWorld().getHighestBlockYAt(centerXZ.getBlockX(), centerXZ.getBlockZ()) + 1;
                 Location teleportLoc = new Location(centerXZ.getWorld(), centerXZ.getX(), y, centerXZ.getZ());
-                plugin.teleportEntity(finalTarget, teleportLoc);
+                
+                // Bounds based on claim size - use claim dimensions but ensure at least 8
+                int radius = Math.max(finalSearchRadius, 8);
+                int[] bounds = new int[] {
+                    centerXZ.getBlockX() - radius,
+                    centerXZ.getBlockX() + radius,
+                    centerXZ.getBlockZ() - radius,
+                    centerXZ.getBlockZ() + radius
+                };
+                
+                Location safeLoc = SafeTeleportUtil.getSafeDestination(teleportLoc, bounds);
+                
+                if (safeLoc == null) {
+                    finalSender.sendMessage(plugin.getMessages().get("claim.teleport-unsafe", "{id}", finalClaimId));
+                    return;
+                }
+                
+                plugin.teleportEntity(finalTarget, safeLoc);
                 sendTeleportMessages(finalSender, finalTarget, finalClaimId);
             });
         }
@@ -1931,6 +1970,12 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage(plugin.getMessages().get("claim.setspawn-error"));
                 return true;
             }
+        }
+        
+        // Check if location is safe (solid block below feet)
+        if (!SafeTeleportUtil.isLocationSafeForSpawn(loc)) {
+            sender.sendMessage(plugin.getMessages().get("claim.setspawn-unsafe"));
+            return true;
         }
         
         // Save the spawn point

@@ -918,10 +918,13 @@ public class SignListener implements Listener {
         // Check if snapshot is restoring for this claim (rent signs only)
         if (rentSign) {
             String claimIdFromPdc = pdc.get(keyClaim(), PersistentDataType.STRING);
-            if (claimIdFromPdc != null && plugin.getSnapshotStore().isRestoring(claimIdFromPdc)) {
-                event.setCancelled(true);
-                plugin.getMessages().send(player, "sign-interaction.snapshot-restoring");
-                return;
+            if (claimIdFromPdc != null) {
+                dev.towki.gpexpansion.storage.ClaimSnapshotStore snapshotStore = plugin.getSnapshotStore();
+                if (snapshotStore != null && snapshotStore.isRestoring(claimIdFromPdc)) {
+                    event.setCancelled(true);
+                    plugin.getMessages().send(player, "sign-interaction.snapshot-restoring");
+                    return;
+                }
             }
         }
         

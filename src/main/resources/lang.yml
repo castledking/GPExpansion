@@ -1,7 +1,7 @@
 # GPExpansion Language File
 # Use & for color codes, supports MiniMessage format
 # Placeholders are shown in {brackets}
-version: "0.1.8a"
+version: "0.1.10a"
 
 # =============================================================================
 # GENERAL MESSAGES
@@ -231,11 +231,14 @@ claim:
   teleport-other-success: "&aTeleported &6{player}&a to claim &6{id}&a ({name}&a)."
   teleport-by-other: "&aYou were teleported to claim &6{id}&a ({name}&a)."
   teleport-no-location: "&cCould not find a teleport location for claim &6{id}&c."
+  teleport-unsafe: "&cThe spawn location for claim &6{id}&c is unsafe and cannot be teleported to."
+  teleport-unsafe-confirm: "&eWarning: The spawn location for claim &6{id}&c is unsafe. Running this command again will confirm teleport to a nearby safe location."
   player-not-found: "&cPlayer not found: &6{player}"
   setspawn-not-in-claim: "&cYou must be standing inside a claim to set its spawn point."
   setspawn-not-owner: "&cYou must be the owner of this claim to set its spawn point."
   setspawn-success: "&aSpawn point set for claim &6{id}&a."
   setspawn-error: "&cAn error occurred while setting the spawn point."
+  setspawn-unsafe: "&cCannot set spawn point in an unsafe location."
 
 # =============================================================================
 # GUI MESSAGES

@@ -1,6 +1,7 @@
 package dev.towki.gpexpansion.permission;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
+import dev.towki.gpexpansion.scheduler.SchedulerAdapter;
 import net.milkbowl.vault.permission.Permission;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -23,7 +24,9 @@ public class PermissionManager {
     public PermissionManager(GPExpansionPlugin plugin) {
         this.plugin = plugin;
         setupVault();
-        updatePlayerCommandPermissions();
+        // Delay permission update until server is ready (avoids Purpur startup issues)
+        // Run on next tick to ensure server is fully initialized
+        SchedulerAdapter.runLaterGlobal(plugin, this::updatePlayerCommandPermissions, 1L);
     }
     
     /**
@@ -142,83 +145,91 @@ public class PermissionManager {
      * This dynamically adds/removes child permissions to gpx.player
      */
     public void updatePlayerCommandPermissions() {
-        FileConfiguration config = plugin.getConfig();
-        List<String> playerCommands = config.getStringList("player-commands");
-        
-        if (playerCommands.isEmpty()) {
-            plugin.getLogger().warning("No player-commands found in config.yml, skipping permission update");
-            return;
-        }
-        
-        // Get or create gpx.player permission
-        org.bukkit.permissions.Permission gpxPlayerPerm = Bukkit.getPluginManager().getPermission("gpx.player");
-        if (gpxPlayerPerm == null) {
-            // Create the permission if it doesn't exist
-            gpxPlayerPerm = new org.bukkit.permissions.Permission("gpx.player", 
-                "Base permission for GPExpansion player commands (children permissions are dynamically managed)",
-                PermissionDefault.TRUE);
-            Bukkit.getPluginManager().addPermission(gpxPlayerPerm);
-            plugin.getLogger().info("Created gpx.player permission");
-        }
-        
-        // Build list of full permission names (with griefprevention. prefix)
-        List<String> childPermissions = new ArrayList<>();
-        for (String perm : playerCommands) {
-            String fullPerm = "griefprevention." + perm;
-            childPermissions.add(fullPerm);
+        try {
+            FileConfiguration config = plugin.getConfig();
+            List<String> playerCommands = config.getStringList("player-commands");
             
-            // Ensure the child permission exists
-            org.bukkit.permissions.Permission childPerm = Bukkit.getPluginManager().getPermission(fullPerm);
-            if (childPerm == null) {
-                plugin.getLogger().warning("Permission " + fullPerm + " not found in plugin.yml, skipping");
-                continue;
+            if (playerCommands.isEmpty()) {
+                plugin.getLogger().warning("No player-commands found in config.yml, skipping permission update");
+                return;
             }
-        }
-        
-        // Update children - need to recreate permission with new children map
-        java.util.Map<String, Boolean> newChildren = new java.util.HashMap<>();
-        
-        // Keep non-griefprevention children
-        for (java.util.Map.Entry<String, Boolean> entry : gpxPlayerPerm.getChildren().entrySet()) {
-            if (!entry.getKey().startsWith("griefprevention.")) {
-                newChildren.put(entry.getKey(), entry.getValue());
+            
+            // Get or create gpx.player permission
+            org.bukkit.permissions.Permission gpxPlayerPerm = Bukkit.getPluginManager().getPermission("gpx.player");
+            if (gpxPlayerPerm == null) {
+                // Create the permission if it doesn't exist
+                gpxPlayerPerm = new org.bukkit.permissions.Permission("gpx.player", 
+                    "Base permission for GPExpansion player commands (children permissions are dynamically managed)",
+                    PermissionDefault.TRUE);
+                Bukkit.getPluginManager().addPermission(gpxPlayerPerm);
+                plugin.getLogger().info("Created gpx.player permission");
             }
-        }
-        
-        // Add all child permissions from config
-        for (String child : childPermissions) {
-            org.bukkit.permissions.Permission childPerm = Bukkit.getPluginManager().getPermission(child);
-            if (childPerm != null) {
-                newChildren.put(child, true);
+            
+            // Build list of full permission names (with griefprevention. prefix)
+            List<String> childPermissions = new ArrayList<>();
+            for (String perm : playerCommands) {
+                String fullPerm = "griefprevention." + perm;
+                childPermissions.add(fullPerm);
+                
+                // Ensure the child permission exists
+                org.bukkit.permissions.Permission childPerm = Bukkit.getPluginManager().getPermission(fullPerm);
+                if (childPerm == null) {
+                    plugin.getLogger().warning("Permission " + fullPerm + " not found in plugin.yml, skipping");
+                    continue;
+                }
+            }
+            
+            // Update children - need to recreate permission with new children map
+            java.util.Map<String, Boolean> newChildren = new java.util.HashMap<>();
+            
+            // Keep non-griefprevention children
+            for (java.util.Map.Entry<String, Boolean> entry : gpxPlayerPerm.getChildren().entrySet()) {
+                if (!entry.getKey().startsWith("griefprevention.")) {
+                    newChildren.put(entry.getKey(), entry.getValue());
+                }
+            }
+            
+            // Add all child permissions from config
+            for (String child : childPermissions) {
+                org.bukkit.permissions.Permission childPerm = Bukkit.getPluginManager().getPermission(child);
+                if (childPerm != null) {
+                    newChildren.put(child, true);
+                } else {
+                    plugin.getLogger().warning("Permission " + child + " not found in plugin.yml, skipping");
+                }
+            }
+            
+            // Calculate changes for logging (before removing permission)
+            long oldGriefPreventionChildren = gpxPlayerPerm.getChildren().keySet().stream()
+                .filter(k -> k.startsWith("griefprevention.")).count();
+            long newGriefPreventionChildren = newChildren.keySet().stream()
+                .filter(k -> k.startsWith("griefprevention.")).count();
+            
+            int added = (int) (newGriefPreventionChildren - oldGriefPreventionChildren);
+            int removed = (int) (oldGriefPreventionChildren - newGriefPreventionChildren);
+            
+            // Recreate permission with updated children
+            Bukkit.getPluginManager().removePermission(gpxPlayerPerm);
+            org.bukkit.permissions.Permission newGpxPlayerPerm = new org.bukkit.permissions.Permission(
+                "gpx.player",
+                "Base permission for GPExpansion player commands (children permissions are dynamically managed)",
+                PermissionDefault.TRUE,
+                newChildren
+            );
+            Bukkit.getPluginManager().addPermission(newGpxPlayerPerm);
+            
+            if (added > 0 || removed > 0) {
+                plugin.getLogger().info("Updated gpx.player permission: added " + added + 
+                    " children, removed " + removed + " children");
             } else {
-                plugin.getLogger().warning("Permission " + child + " not found in plugin.yml, skipping");
+                plugin.getLogger().fine("gpx.player permission children are up to date");
             }
-        }
-        
-        // Calculate changes for logging (before removing permission)
-        long oldGriefPreventionChildren = gpxPlayerPerm.getChildren().keySet().stream()
-            .filter(k -> k.startsWith("griefprevention.")).count();
-        long newGriefPreventionChildren = newChildren.keySet().stream()
-            .filter(k -> k.startsWith("griefprevention.")).count();
-        
-        int added = (int) (newGriefPreventionChildren - oldGriefPreventionChildren);
-        int removed = (int) (oldGriefPreventionChildren - newGriefPreventionChildren);
-        
-        // Recreate permission with updated children
-        Bukkit.getPluginManager().removePermission(gpxPlayerPerm);
-        org.bukkit.permissions.Permission newGpxPlayerPerm = new org.bukkit.permissions.Permission(
-            "gpx.player",
-            "Base permission for GPExpansion player commands (children permissions are dynamically managed)",
-            PermissionDefault.TRUE,
-            newChildren
-        );
-        Bukkit.getPluginManager().addPermission(newGpxPlayerPerm);
-        
-        if (added > 0 || removed > 0) {
-            plugin.getLogger().info("Updated gpx.player permission: added " + added + 
-                " children, removed " + removed + " children");
-        } else {
-            plugin.getLogger().fine("gpx.player permission children are up to date");
+        } catch (Exception e) {
+            // Don't let permission update failures block server startup (especially on Purpur)
+            plugin.getLogger().warning("Failed to update player command permissions (non-critical): " + e.getMessage());
+            if (plugin.getConfigManager().isDebugEnabled()) {
+                e.printStackTrace();
+            }
         }
     }
     
