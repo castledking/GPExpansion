@@ -30,3 +30,10 @@ pom.xml.releaseBackup
 pom.xml.versionsBackup
 pom.xml.next
 release.properties
+org.eclipse.core.resources.prefs
+org.eclipse.jdt.apt.core.prefs
+org.eclipse.jdt.core.prefs
+org.eclipse.m2e.core.prefs
+.project
+.classpath
+.factorypath

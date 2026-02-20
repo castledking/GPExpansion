@@ -104,7 +104,15 @@ public final class GPExpansionPlugin extends JavaPlugin {
         signLimitManager = new dev.towki.gpexpansion.permission.SignLimitManager(this);
         
         // Initialize permission manager (handles dynamic gpx.player permissions)
-        permissionManager = new dev.towki.gpexpansion.permission.PermissionManager(this);
+        try {
+            permissionManager = new dev.towki.gpexpansion.permission.PermissionManager(this);
+        } catch (NoClassDefFoundError e) {
+            permissionManager = null;
+            getLogger().info("Vault classes not available - permission management features disabled");
+        } catch (Exception e) {
+            permissionManager = null;
+            getLogger().warning("Failed to initialize PermissionManager: " + e.getMessage());
+        }
 
         // Start reminder service
         reminderService = new dev.towki.gpexpansion.reminder.RentalReminderService(this);
@@ -114,7 +122,8 @@ public final class GPExpansionPlugin extends JavaPlugin {
         confirmationService = new dev.towki.gpexpansion.confirm.ConfirmationService(this);
 
         // Delay until server tick using Folia global scheduler when available
-        runGlobal(() -> {
+        // Use runLaterGlobal with 1 tick delay to ensure server is fully ready (fixes Purpur startup issues)
+        SchedulerAdapter.runLaterGlobal(this, () -> {
             ClaimCommand claimCommand = new ClaimCommand(this);
             boolean gp3dPresent = new dev.towki.gpexpansion.gp.GPBridge().isGP3D();
             if (gp3dPresent) {
@@ -358,7 +367,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
             Bukkit.getPluginManager().registerEvents(autoPasteListener, GPExpansionPlugin.this);
             getLogger().info("- Registered SignAutoPasteListener for auto-paste mode");
             getLogger().info("Registered /claim, /trustlist, /adminclaimlist, /gpx, /rentclaim, /sellclaim, /cancelsetup commands under GPExpansion");
-        });
+        }, 1L);
 
         // Register listeners
         getLogger().info("Registering event listeners...");

@@ -33,10 +33,9 @@ dependencies:
       load: BEFORE
       required: false
       join-classpath: true
-    Nexo:
-      load: BEFORE
-      required: false
-      join-classpath: true
+    # Nexo omitted from load order to avoid circular dependency:
+    # GriefPrevention -> GPExpansion -> Nexo -> Vulcan -> GSit -> GriefPrevention
+    # Nexo is still used at runtime (glyph parsing in GUIs) via reflection when present.
 
 # Register our listeners
 listeners:

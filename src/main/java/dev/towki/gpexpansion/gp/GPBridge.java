@@ -772,6 +772,28 @@ public class GPBridge {
     }
 
     /**
+     * Get the search radius for safe teleportation based on claim dimensions.
+     * Returns half the smaller of width/depth, capped at a reasonable max.
+     */
+    public int getClaimSearchRadius(Object claim) {
+        if (claim == null) return 3;
+        try {
+            Location lesser = (Location) claim.getClass().getMethod("getLesserBoundaryCorner").invoke(claim);
+            Location greater = (Location) claim.getClass().getMethod("getGreaterBoundaryCorner").invoke(claim);
+            if (lesser == null || greater == null) return 3;
+            
+            int width = Math.abs(greater.getBlockX() - lesser.getBlockX());
+            int depth = Math.abs(greater.getBlockZ() - lesser.getBlockZ());
+            int minDimension = Math.min(width, depth);
+            
+            // Return half the claim size, capped at 16 (reasonable for very large claims)
+            return Math.min(minDimension / 2, 16);
+        } catch (ReflectiveOperationException e) {
+            return 3;
+        }
+    }
+
+    /**
      * Get GriefPrevention's safe teleport location for a claim.
      */
     public Optional<Location> getSafeTeleportLocation(Object claim) {

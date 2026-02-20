@@ -82,11 +82,14 @@ public class Messages {
         DEFAULTS.put("claim.teleport-other-success", "&aTeleported &6{player}&a to claim &6{id}&a.");
         DEFAULTS.put("claim.teleport-by-other", "&aYou were teleported to claim &6{id}&a.");
         DEFAULTS.put("claim.teleport-no-location", "&cCould not find a teleport location for claim &6{id}&c.");
+        DEFAULTS.put("claim.teleport-unsafe", "&cThe spawn location for claim &6{id}&c is unsafe and cannot be teleported to.");
+        DEFAULTS.put("claim.teleport-unsafe-confirm", "&eWarning: The spawn location for claim &6{id}&c is unsafe. Running this command again will confirm teleport to a nearby safe location.");
         DEFAULTS.put("claim.player-not-found", "&cPlayer not found: &6{player}");
         DEFAULTS.put("claim.setspawn-not-in-claim", "&cYou must be standing inside a claim to set its spawn point.");
         DEFAULTS.put("claim.setspawn-not-owner", "&cYou must be the owner of this claim to set its spawn point.");
         DEFAULTS.put("claim.setspawn-success", "&aSpawn point set for claim &6{id}&a.");
         DEFAULTS.put("claim.setspawn-error", "&cAn error occurred while setting the spawn point.");
+        DEFAULTS.put("claim.setspawn-unsafe", "&cCannot set spawn point in an unsafe location.");
         
         // GUI messages
         DEFAULTS.put("gui.rename-prompt", "&eType the new name for claim &6{id}&e in chat, or type &ccancel&e to cancel.");

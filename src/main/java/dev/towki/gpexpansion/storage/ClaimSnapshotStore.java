@@ -17,6 +17,7 @@ import org.bukkit.util.BlockVector;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 import org.bukkit.Chunk;
@@ -32,12 +33,14 @@ public class ClaimSnapshotStore {
 
     private final GPExpansionPlugin plugin;
     private final File dataDir;
-    private final Set<String> restoringClaims = Collections.synchronizedSet(new HashSet<>());
+    private final Set<String> restoringClaims;
 
     public ClaimSnapshotStore(GPExpansionPlugin plugin) {
         this.plugin = plugin;
         this.dataDir = new File(plugin.getDataFolder(), "snapshots");
         if (!dataDir.exists()) dataDir.mkdirs();
+        // Use ConcurrentHashMap.newKeySet() for thread-safe Set without synchronization overhead
+        this.restoringClaims = ConcurrentHashMap.newKeySet();
     }
 
     public static class SnapshotEntry {
@@ -326,32 +329,37 @@ public class ClaimSnapshotStore {
                 final Map<String, List<BlockToPlace>> byChunkFinal = byChunk;
                 final int total = byChunk.values().stream().mapToInt(List::size).sum();
                 SchedulerAdapter.runGlobal(plugin, () -> {
-                    if (plugin.getConfigManager().isDebugEnabled() && "world".equals(world.getName())) {
-                        boolean hasDebugBlock = byChunkFinal.values().stream().flatMap(List::stream)
-                            .anyMatch(b -> b.x == DEBUG_X && b.y == DEBUG_Y && b.z == DEBUG_Z);
-                        plugin.getLogger().info("[Snapshot debug] (29,67,1298) in restore zone: " + hasDebugBlock + " origin=" + ox + "," + oy + "," + oz);
-                    }
-                    if (SchedulerAdapter.isFolia()) {
-                        for (Map.Entry<String, List<BlockToPlace>> e : byChunkFinal.entrySet()) {
-                            String[] parts = e.getKey().split(",");
-                            int chunkX = Integer.parseInt(parts[0]), chunkZ = Integer.parseInt(parts[1]);
-                            List<BlockToPlace> blocks = new ArrayList<>(e.getValue());
-                            loadChunkAndRestoreBlocks(world, chunkX, chunkZ, blocks);
+                    try {
+                        if (plugin.getConfigManager().isDebugEnabled() && "world".equals(world.getName())) {
+                            boolean hasDebugBlock = byChunkFinal.values().stream().flatMap(List::stream)
+                                .anyMatch(b -> b.x == DEBUG_X && b.y == DEBUG_Y && b.z == DEBUG_Z);
+                            plugin.getLogger().info("[Snapshot debug] (29,67,1298) in restore zone: " + hasDebugBlock + " origin=" + ox + "," + oy + "," + oz);
                         }
-                        plugin.getLogger().info("[Snapshot] Scheduled " + total + " blocks in " + byChunkFinal.size() + " chunks for Folia restore (claim " + fid + ")");
-                    } else {
-                        int placed = 0;
-                        for (List<BlockToPlace> blocks : byChunkFinal.values()) {
-                            for (BlockToPlace b : blocks) {
-                                world.getChunkAt(b.x >> 4, b.z >> 4);
-                                world.getBlockAt(b.x, b.y, b.z).setBlockData(b.data);
-                                if (plugin.getConfigManager().isDebugEnabled() && b.x == DEBUG_X && b.y == DEBUG_Y && b.z == DEBUG_Z && "world".equals(world.getName())) {
-                                    plugin.getLogger().info("[Snapshot debug] SET block at (29,67,1298) [non-Folia]: " + b.data.getAsString());
-                                }
-                                placed++;
+                        if (SchedulerAdapter.isFolia()) {
+                            for (Map.Entry<String, List<BlockToPlace>> e : byChunkFinal.entrySet()) {
+                                String[] parts = e.getKey().split(",");
+                                int chunkX = Integer.parseInt(parts[0]), chunkZ = Integer.parseInt(parts[1]);
+                                List<BlockToPlace> blocks = new ArrayList<>(e.getValue());
+                                loadChunkAndRestoreBlocks(world, chunkX, chunkZ, blocks);
                             }
+                            plugin.getLogger().info("[Snapshot] Scheduled " + total + " blocks in " + byChunkFinal.size() + " chunks for Folia restore (claim " + fid + ")");
+                        } else {
+                            int placed = 0;
+                            for (List<BlockToPlace> blocks : byChunkFinal.values()) {
+                                for (BlockToPlace b : blocks) {
+                                    world.getChunkAt(b.x >> 4, b.z >> 4);
+                                    world.getBlockAt(b.x, b.y, b.z).setBlockData(b.data);
+                                    if (plugin.getConfigManager().isDebugEnabled() && b.x == DEBUG_X && b.y == DEBUG_Y && b.z == DEBUG_Z && "world".equals(world.getName())) {
+                                        plugin.getLogger().info("[Snapshot debug] SET block at (29,67,1298) [non-Folia]: " + b.data.getAsString());
+                                    }
+                                    placed++;
+                                }
+                            }
+                            plugin.getLogger().info("[Snapshot] Restored " + placed + " blocks from .snap for claim " + fid);
                         }
-                        plugin.getLogger().info("[Snapshot] Restored " + placed + " blocks from .snap for claim " + fid);
+                    } finally {
+                        // Clear restoring flag when restore completes
+                        restoringClaims.remove(fid);
                     }
                 });
             } catch (Throwable t) {
@@ -570,13 +578,19 @@ public class ClaimSnapshotStore {
             File nbtFile = new File(claimDir, snapshotId + ".nbt");
             if (nbtFile.exists()) {
                 plugin.getLogger().info("[Snapshot] Using legacy .nbt (create new snapshot with /claim snapshot for .snap)");
-                return restoreSnapshotStructureNbt(claimId, snapshotId, world, claimDir, nbtFile);
+                boolean success = restoreSnapshotStructureNbt(claimId, snapshotId, world, claimDir, nbtFile);
+                // NBT restore is synchronous, clear flag immediately
+                restoringClaims.remove(claimId);
+                return success;
             }
             plugin.getLogger().warning("[Snapshot] No .snap or .nbt found for " + snapshotId + " in claim " + claimId);
+            // No snapshot found, clear flag
+            restoringClaims.remove(claimId);
             return false;
-        } finally {
-            // Clear flag after a short delay to allow block updates to propagate
-            SchedulerAdapter.runLaterGlobal(plugin, () -> restoringClaims.remove(claimId), 20L * 3); // 3 seconds
+        } catch (Exception e) {
+            // On error, clear flag
+            restoringClaims.remove(claimId);
+            throw e;
         }
     }
 
