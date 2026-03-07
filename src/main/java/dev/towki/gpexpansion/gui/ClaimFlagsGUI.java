@@ -18,9 +18,14 @@ import java.util.*;
  */
 public class ClaimFlagsGUI extends BaseGUI {
 
-    private static final String BASE_PERMISSION = "gpflags.command.setclaimflag";
-    private static final String OWN_PERMISSION = "griefprevention.claim.gui.setclaimflag.own";
-    private static final String ANYWHERE_PERMISSION = "griefprevention.claim.gui.setclaimflag.anywhere";
+    /** GPFlags permission to toggle flags; still required for actual toggling */
+    private static final String GPFLAGS_SET_FLAG = "gpflags.command.setclaimflag";
+    /** Base permission to open claim flags GUI */
+    private static final String BASE_PERMISSION = "griefprevention.claim.gui.flags";
+    /** Open flags GUI for own claims by ID when not standing in them */
+    private static final String ANYWHERE_PERMISSION = "griefprevention.claim.gui.flags.anywhere";
+    /** Open flags GUI for other players' claims */
+    private static final String OTHER_PERMISSION = "griefprevention.claim.gui.flags.other";
 
     private final Object claim;
     private final String claimId;
@@ -328,8 +333,8 @@ public class ClaimFlagsGUI extends BaseGUI {
     }
 
     private void toggleFlag(FlagDisplayInfo flag) {
-        // Check permissions
-        if (!player.hasPermission(BASE_PERMISSION)) {
+        // Check GPFlags permission for toggling
+        if (!player.hasPermission(GPFLAGS_SET_FLAG)) {
             plugin.getMessages().send(player, "flags.no-permission");
             return;
         }
@@ -339,8 +344,8 @@ public class ClaimFlagsGUI extends BaseGUI {
             return;
         }
         
-        // Check own/anywhere permission
-        if (!isOwner && !player.hasPermission(ANYWHERE_PERMISSION)) {
+        // Check access: must be owner or have .other to modify other players' claims
+        if (!isOwner && !player.hasPermission(OTHER_PERMISSION)) {
             plugin.getMessages().send(player, "flags.not-owner");
             return;
         }
@@ -367,19 +372,20 @@ public class ClaimFlagsGUI extends BaseGUI {
     }
 
     /**
-     * Check if a player can access the claim flags GUI for a claim
+     * Check if a player can access the claim flags GUI for a claim.
+     * Requires griefprevention.claim.gui.flags; for other players' claims also requires .flags.other.
      */
     public static boolean canAccess(Player player, Object claim, GPBridge gp) {
         if (!GPFlagsBridge.isAvailable()) return false;
+        if (!player.hasPermission(GPFLAGS_SET_FLAG)) return false;
         if (!player.hasPermission(BASE_PERMISSION)) return false;
         
         boolean isOwner = gp.isOwner(claim, player.getUniqueId()) || player.hasPermission("griefprevention.admin");
         
         if (isOwner) {
-            return player.hasPermission(OWN_PERMISSION);
-        } else {
-            return player.hasPermission(ANYWHERE_PERMISSION);
+            return true;
         }
+        return player.hasPermission(OTHER_PERMISSION);
     }
 
     /**

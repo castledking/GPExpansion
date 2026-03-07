@@ -5,7 +5,7 @@
 
   <groupId>dev.towki.gpexpansion</groupId>
   <artifactId>gpexpansion</artifactId>
-  <version>0.1.10a</version>
+  <version>1.0.0</version>
   <name>GPExpansion</name>
   <description>GriefPrevention Expansion</description>
 
@@ -13,7 +13,7 @@
     <maven.compiler.source>17</maven.compiler.source>
     <maven.compiler.target>17</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <paper.version>1.20.6-R0.1-SNAPSHOT</paper.version>
+    <paper.version>1.21-R0.1-SNAPSHOT</paper.version>
     <adventure.minimessage.version>4.17.0</adventure.minimessage.version>
     <vault.api.version>1.7</vault.api.version>
   </properties>
@@ -79,31 +79,6 @@
       <artifactId>adventure-text-serializer-legacy</artifactId>
       <version>${adventure.minimessage.version}</version>
     </dependency>
-
-    <!-- GriefPrevention main plugin (compile-time API access) -->
-    <dependency>
-      <groupId>com.github.GriefPrevention</groupId>
-      <artifactId>GriefPrevention</artifactId>
-      <version>16.18.6</version>
-      <scope>provided</scope>
-    </dependency>
-    
-    <!-- PacketEvents for sign GUI manipulation (optional) -->
-    <dependency>
-      <groupId>com.github.retrooper</groupId>
-      <artifactId>packetevents-spigot</artifactId>
-      <version>2.11.1</version>
-      <scope>provided</scope>
-    </dependency>
-    
-    <!-- PlaceholderAPI for font images from ItemsAdder/Oraxen/Nexo -->
-    <dependency>
-      <groupId>me.clip</groupId>
-      <artifactId>placeholderapi</artifactId>
-      <version>2.11.6</version>
-      <scope>provided</scope>
-    </dependency>
-    
   </dependencies>
 
   <build>

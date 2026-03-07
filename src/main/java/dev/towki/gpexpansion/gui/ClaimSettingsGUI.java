@@ -123,16 +123,7 @@ public class ClaimSettingsGUI extends BaseGUI {
     }
     
     private boolean canShowClaimFlags() {
-        if (!GPFlagsBridge.isAvailable()) return false;
-        if (!player.hasPermission("gpflags.command.setclaimflag")) return false;
-        
-        boolean isOwner = gp.isOwner(claim, player.getUniqueId()) || player.hasPermission("griefprevention.admin");
-        
-        if (isOwner) {
-            return player.hasPermission("griefprevention.claim.gui.setclaimflag.own");
-        } else {
-            return player.hasPermission("griefprevention.claim.gui.setclaimflag.anywhere");
-        }
+        return ClaimFlagsGUI.canAccess(player, claim, gp);
     }
     
     private ItemStack createClaimFlagsItem() {

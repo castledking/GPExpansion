@@ -145,6 +145,16 @@ public class ClaimCommandAddonImpl {
             case "global":
                 if (args != null && args.length == 2) out.add("[claimId]");
                 break;
+            case "flags":
+                if (sender.hasPermission("griefprevention.claim.gui.flags")) {
+                    if (args != null && args.length == 1) out.add("[claimId]");
+                }
+                break;
+            case "options":
+                if (sender.hasPermission("griefprevention.claim.gui.options")) {
+                    if (args != null && args.length == 1) out.add("[claimId]");
+                }
+                break;
             case "trustlist":
             case "restrictsubclaim":
             case "explosions":
@@ -219,6 +229,12 @@ public class ClaimCommandAddonImpl {
         }
         if (sender.hasPermission("griefprevention.claim.gui.return")) {
             out.add("!");
+        }
+        if (sender.hasPermission("griefprevention.claim.gui.flags")) {
+            out.add("flags");
+        }
+        if (sender.hasPermission("griefprevention.claim.gui.options")) {
+            out.add("options");
         }
         if (sender.hasPermission("griefprevention.adminclaimslist")) {
             out.add("adminlist");
