@@ -94,7 +94,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     /** Subcommands we handle - used when sharing /claim with GP3D (only intercept these) */
     public static final java.util.Set<String> HANDLED_SUBCOMMANDS = java.util.Collections.unmodifiableSet(
             new java.util.HashSet<>(Arrays.asList(
-            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc",
+            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -121,7 +121,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBS = Arrays.asList(
             // Our features
-            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc",
+            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -372,6 +372,10 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             case "desc":
             case "description":
                 return handleDescription(sender, subArgs);
+            case "flags":
+                return handleClaimFlags(sender, subArgs);
+            case "options":
+                return handleClaimOptions(sender, subArgs);
             default:
                 // Try to delegate to GP3D's UnifiedClaimCommand if available
                 if (tryDelegateToGP3D(sender, command, label, args)) {
@@ -895,7 +899,121 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             "{description}", description));
         return true;
     }
-    
+
+    /**
+     * Handle /claim flags [claimId] - open claim flags GUI. Optional claim ID for targeting a specific claim.
+     * Permissions: griefprevention.claim.gui.flags (base), .flags.anywhere (own by ID), .flags.other (other players).
+     */
+    private boolean handleClaimFlags(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+        if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
+            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+        if (!sender.hasPermission("griefprevention.claim.gui.flags")) {
+            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+        Object claim;
+        String claimId;
+        if (args.length >= 1 && !args[0].isEmpty()) {
+            String id = args[0];
+            Optional<Object> claimOpt = gp.findClaimById(id);
+            if (!claimOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", id));
+                return true;
+            }
+            claim = claimOpt.get();
+            claimId = gp.getClaimId(claim).orElse(id);
+            boolean isOwner = gp.isOwner(claim, player.getUniqueId()) || player.hasPermission("griefprevention.admin");
+            if (isOwner) {
+                if (!sender.hasPermission("griefprevention.claim.gui.flags.anywhere")) {
+                    sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                    return true;
+                }
+            } else {
+                if (!sender.hasPermission("griefprevention.claim.gui.flags.other")) {
+                    sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                    return true;
+                }
+            }
+        } else {
+            Optional<Object> claimOpt = gp.getClaimAt(player.getLocation(), player);
+            if (!claimOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+                return true;
+            }
+            claim = claimOpt.get();
+            claimId = gp.getClaimId(claim).orElse(null);
+            if (claimId == null) {
+                sender.sendMessage(plugin.getMessages().get("general.error"));
+                return true;
+            }
+        }
+        if (!dev.towki.gpexpansion.gui.ClaimFlagsGUI.canAccess(player, claim, gp)) {
+            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+        plugin.getGUIManager().openClaimFlags(player, claim, claimId);
+        return true;
+    }
+
+    /**
+     * Handle /claim options [claimId] - open claim options GUI. Optional claim ID for targeting a specific claim.
+     * Permissions: griefprevention.claim.gui.options (base), .options.anywhere (own by ID), .options.other (other players).
+     */
+    private boolean handleClaimOptions(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+        if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
+            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+        if (!sender.hasPermission("griefprevention.claim.gui.options")) {
+            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+        Object claim;
+        String claimId;
+        if (args.length >= 1 && !args[0].isEmpty()) {
+            String id = args[0];
+            Optional<Object> claimOpt = gp.findClaimById(id);
+            if (!claimOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", id));
+                return true;
+            }
+            claim = claimOpt.get();
+            claimId = gp.getClaimId(claim).orElse(id);
+            boolean isOwner = gp.isOwner(claim, player.getUniqueId()) || player.hasPermission("griefprevention.admin");
+            if (isOwner) {
+                if (!sender.hasPermission("griefprevention.claim.gui.options.anywhere")) {
+                    sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                    return true;
+                }
+            } else {
+                if (!sender.hasPermission("griefprevention.claim.gui.options.other")) {
+                    sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                    return true;
+                }
+            }
+        } else {
+            Optional<Object> claimOpt = gp.getClaimAt(player.getLocation(), player);
+            if (!claimOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+                return true;
+            }
+            claim = claimOpt.get();
+            claimId = gp.getClaimId(claim).orElse(null);
+            if (claimId == null) {
+                sender.sendMessage(plugin.getMessages().get("general.error"));
+                return true;
+            }
+        }
+        plugin.getGUIManager().openClaimOptions(player, claim, claimId);
+        return true;
+    }
+
     private boolean handleBan(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         if (!sender.hasPermission("griefprevention.claim.ban")) {
@@ -2350,6 +2468,12 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             if (sender.hasPermission(dev.towki.gpexpansion.storage.ClaimSnapshotStore.getPermission())) {
                 if (!allCommands.contains("snapshot")) allCommands.add("snapshot");
             }
+            if (sender.hasPermission("griefprevention.claim.gui.flags")) {
+                if (!allCommands.contains("flags")) allCommands.add("flags");
+            }
+            if (sender.hasPermission("griefprevention.claim.gui.options")) {
+                if (!allCommands.contains("options")) allCommands.add("options");
+            }
             
             // Filter by input and return
             return allCommands.stream()
@@ -2457,6 +2581,14 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                             return Collections.singletonList("<snapshotId>");
                         }
                     }
+                    return new ArrayList<>();
+                case "flags":
+                    if (args.length == 2 && sender.hasPermission("griefprevention.claim.gui.flags"))
+                        return Collections.singletonList("[claimId]");
+                    return new ArrayList<>();
+                case "options":
+                    if (args.length == 2 && sender.hasPermission("griefprevention.claim.gui.options"))
+                        return Collections.singletonList("[claimId]");
                     return new ArrayList<>();
                 default:
                     return new ArrayList<>();

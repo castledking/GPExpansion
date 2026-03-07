@@ -10,7 +10,9 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.enchantments.Enchantment;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
@@ -246,6 +248,13 @@ public abstract class BaseGUI {
      * Create a simple item with name and lore.
      */
     protected ItemStack createItem(Material material, String name, List<String> lore) {
+        return createItem(material, name, lore, false);
+    }
+
+    /**
+     * Create a simple item with name, lore, and optional enchanted glow.
+     */
+    protected ItemStack createItem(Material material, String name, List<String> lore, boolean enchantedGlow) {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
@@ -258,6 +267,10 @@ public abstract class BaseGUI {
                     loreComponents.add(colorize(line));
                 }
                 meta.lore(loreComponents);
+            }
+            if (enchantedGlow) {
+                meta.addEnchant(Enchantment.UNBREAKING, 1, true);
+                meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
             }
             item.setItemMeta(meta);
         }
@@ -462,19 +475,20 @@ public abstract class BaseGUI {
     }
     
     /**
-     * Parse PlaceholderAPI placeholders in a string.
+     * Parse PlaceholderAPI placeholders in a string (optional dependency; uses reflection).
      * Supports font images from ItemsAdder (%img_name%), Oraxen (%oraxen_id%), Nexo (%nexo_id%).
      */
     protected String parsePlaceholders(String text) {
         if (text == null) return null;
-        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
-            try {
-                return me.clip.placeholderapi.PlaceholderAPI.setPlaceholders(player, text);
-            } catch (Exception e) {
-                // PlaceholderAPI not available or error - return original text
-            }
+        if (!Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) return text;
+        try {
+            Class<?> api = Class.forName("me.clip.placeholderapi.PlaceholderAPI");
+            java.lang.reflect.Method setPlaceholders = api.getMethod("setPlaceholders", org.bukkit.entity.Player.class, String.class);
+            Object result = setPlaceholders.invoke(null, player, text);
+            return result != null ? result.toString() : text;
+        } catch (Exception e) {
+            return text;
         }
-        return text;
     }
     
     /**

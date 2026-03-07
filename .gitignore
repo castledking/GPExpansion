@@ -25,6 +25,7 @@ replay_pid*
 !src/main/resources/*.jar
 
 # Maven
+.m2/
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup

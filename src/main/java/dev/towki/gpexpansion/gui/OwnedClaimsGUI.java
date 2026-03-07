@@ -234,12 +234,30 @@ public class OwnedClaimsGUI extends BaseGUI {
             inventory.setItem(NEXT_PAGE_SLOT, createNextPageItem());
         }
         
+        // Current claim (main/top-level) the player is standing in, for enchanted glow
+        String currentMainClaimId = getCurrentMainClaimId();
+
         // Add claim items
         int startIndex = currentPage * CLAIM_SLOTS.length;
         for (int i = 0; i < CLAIM_SLOTS.length && startIndex + i < filteredClaims.size(); i++) {
             ClaimInfo info = filteredClaims.get(startIndex + i);
-            inventory.setItem(CLAIM_SLOTS[i], createClaimItem(info));
+            inventory.setItem(CLAIM_SLOTS[i], createClaimItem(info, currentMainClaimId));
         }
+    }
+
+    /**
+     * Get the main (top-level) claim ID at the player's location, or null if not in a claim.
+     */
+    private String getCurrentMainClaimId() {
+        Optional<Object> at = gp.getClaimAt(player.getLocation(), player);
+        if (!at.isPresent()) return null;
+        Object c = at.get();
+        while (true) {
+            Optional<Object> parent = gp.getParentClaim(c);
+            if (!parent.isPresent() || parent.get() == c) break;
+            c = parent.get();
+        }
+        return gp.getClaimId(c).orElse(null);
     }
     
     private ItemStack createFilterItem() {
@@ -275,7 +293,7 @@ public class OwnedClaimsGUI extends BaseGUI {
         return createItem(Material.ARROW, "&e&lNext Page »", List.of("&7Page " + (currentPage + 2) + "/" + ((filteredClaims.size() - 1) / CLAIM_SLOTS.length + 1)));
     }
     
-    private ItemStack createClaimItem(ClaimInfo info) {
+    private ItemStack createClaimItem(ClaimInfo info, String currentMainClaimId) {
         Material material = Material.GRASS_BLOCK;
         if (info.isRented) material = Material.CLOCK;
         else if (info.isSold) material = Material.EMERALD;
@@ -308,8 +326,13 @@ public class OwnedClaimsGUI extends BaseGUI {
             lore.add("&b▸ Right-click to rename");
         }
         lore.add("&e▸ Shift+Left-click for options");
+        if (info.claimId != null && info.claimId.equals(currentMainClaimId)) {
+            lore.add("");
+            lore.add("&b✦ You are here");
+        }
         
-        return createItem(material, "&6" + info.name, lore);
+        boolean glow = info.claimId != null && info.claimId.equals(currentMainClaimId);
+        return createItem(material, "&6" + info.name, lore, glow);
     }
     
     @Override

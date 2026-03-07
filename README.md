@@ -94,6 +94,8 @@ Snapshots use block-by-block .snap format (YAML); any claim size is supported.
 - `/claim icon <material>` - Set claim icon for GUI display
 - `/claim spawn` - Set the teleport spawn point for your claim
 - `/claim tp [claimId]` - Teleport to a claim's spawn point
+- `/claim flags [claimId]` - Open the claim flags GUI (GPFlags). With no argument, opens for the claim you're standing in. With a claim ID, opens for that claim (requires `.anywhere` for own claims or `.other` for others' claims).
+- `/claim options [claimId]` - Open the claim options GUI. With no argument, opens for the claim you're standing in. With a claim ID, opens for that claim (requires `.anywhere` for own claims or `.other` for others' claims).
 - `/claim ban <player>` - Ban players from your claims
 - `/claim unban <player>` - Unban players from your claims
 - `/claim info [claimId]` - View detailed claim information
@@ -589,9 +591,15 @@ These permissions control which color and formatting codes players can use in bo
 |------------|-------------|
 | `griefprevention.claim.gui.globallist` | Open global claim list GUI |
 | `griefprevention.claim.gui.return` | Use `/claim !` to return to last GUI |
-| `griefprevention.claim.gui.setclaimflag.own` | Open claim flags GUI for own claims |
-| `griefprevention.claim.gui.setclaimflag.anywhere` | Open claim flags GUI for other claims |
-| `gpflags.command.setclaimflag` | Use GPFlags claim flag commands |
+| `griefprevention.claim.gui.flags` | Open claim flags GUI (from claim menu or `/claim flags [id]`) |
+| `griefprevention.claim.gui.flags.anywhere` | Use `/claim flags <claimId>` for your own claims when not standing in them |
+| `griefprevention.claim.gui.flags.other` | Open claim flags GUI for other players' claims (admins) |
+| `griefprevention.claim.gui.options` | Open claim options GUI (from claim menu or `/claim options [id]`) |
+| `griefprevention.claim.gui.options.anywhere` | Use `/claim options <claimId>` for your own claims when not standing in them |
+| `griefprevention.claim.gui.options.other` | Open claim options GUI for other players' claims (admins) |
+| `griefprevention.claim.gui.setclaimflag.own` | (Legacy) Open claim flags GUI for own claims; prefer `griefprevention.claim.gui.flags` |
+| `griefprevention.claim.gui.setclaimflag.anywhere` | (Legacy) Open claim flags GUI for other claims; prefer `griefprevention.claim.gui.flags.anywhere` / `.flags.other` |
+| `gpflags.command.setclaimflag` | Use GPFlags claim flag commands (required to toggle flags) |
 | `gpflags.flag.*` | Toggle any GPFlags flag |
 
 ### Moderation

@@ -425,11 +425,35 @@ permissions:
     default: op
 
   griefprevention.claim.gui.setclaimflag.own:
-    description: Allows opening claim flags GUI for own claims
+    description: Allows opening claim flags GUI for own claims (legacy; prefer griefprevention.claim.gui.flags)
     default: op
 
   griefprevention.claim.gui.setclaimflag.anywhere:
-    description: Allows opening claim flags GUI for other claims
+    description: Allows opening claim flags GUI for other claims (legacy; prefer griefprevention.claim.gui.flags.anywhere)
+    default: op
+
+  griefprevention.claim.gui.flags:
+    description: Allows opening the claim flags GUI (e.g. via claim menu or /claim flags [id])
+    default: op
+
+  griefprevention.claim.gui.flags.anywhere:
+    description: Use claim ID with /claim flags to open flags for your own claims when not standing in them
+    default: op
+
+  griefprevention.claim.gui.flags.other:
+    description: Allows admins to open the flags GUI for other players' claims
+    default: op
+
+  griefprevention.claim.gui.options:
+    description: Allows opening the claim options GUI (e.g. via claim menu or /claim options [id])
+    default: op
+
+  griefprevention.claim.gui.options.anywhere:
+    description: Use claim ID with /claim options to open options for your own claims when not standing in them
+    default: op
+
+  griefprevention.claim.gui.options.other:
+    description: Allows admins to open the options GUI for other players' claims
     default: op
 
   gpflags.command.setclaimflag:
