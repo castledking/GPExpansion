@@ -15,6 +15,7 @@ import dev.towki.gpexpansion.gp.GPBridge;
 import dev.towki.gpexpansion.listener.SignListener;
 import dev.towki.gpexpansion.listener.MailboxListener;
 import dev.towki.gpexpansion.listener.BanEnforcementListener;
+import dev.towki.gpexpansion.listener.DiscordSRVChatCaptureBridge;
 import dev.towki.gpexpansion.command.PaperCommandWrapper;
 import dev.towki.gpexpansion.permission.SignLimitManager;
 import dev.towki.gpexpansion.scheduler.SchedulerAdapter;
@@ -271,6 +272,10 @@ public final class GPExpansionPlugin extends JavaPlugin {
             descriptionInputManager = new dev.towki.gpexpansion.gui.DescriptionInputManager(this);
             Bukkit.getPluginManager().registerEvents(new dev.towki.gpexpansion.gui.DescriptionChatListener(GPExpansionPlugin.this, descriptionInputManager), GPExpansionPlugin.this);
             getLogger().info("- Registered DescriptionChatListener for claim descriptions");
+            new DiscordSRVChatCaptureBridge(this, player ->
+                setupWizardManager.hasActiveSession(player.getUniqueId())
+                    || descriptionInputManager.hasPending(player.getUniqueId())
+            ).registerIfAvailable();
             
             // Register /mailbox command
             MailboxCommand mailboxCommand = new MailboxCommand(this);

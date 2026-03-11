@@ -25,6 +25,10 @@ dependencies:
       load: BEFORE
       required: false
       join-classpath: true
+    DiscordSRV:
+      load: BEFORE
+      required: false
+      join-classpath: false
     ItemsAdder:
       load: BEFORE
       required: false
