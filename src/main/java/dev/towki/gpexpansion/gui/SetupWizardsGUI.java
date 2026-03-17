@@ -1,5 +1,6 @@
 package dev.towki.gpexpansion.gui;
 
+import dev.towki.gpexpansion.command.SellClaimCommand;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -70,13 +71,13 @@ public class SetupWizardsGUI extends BaseGUI {
         lore.add("&7your claim permanently.");
         lore.add("");
         
-        if (player.hasPermission("griefprevention.sign.create.sell")) {
+        if (SellClaimCommand.hasSellPermission(player)) {
             lore.add("&a✓ You can create sell signs");
             lore.add("");
             lore.add("&eClick to start sell wizard");
         } else {
             lore.add("&c✗ No permission to create sell signs");
-            lore.add("&8Missing: griefprevention.sign.create.sell");
+            lore.add("&8Missing: griefprevention.sign.create.sell or .buy");
         }
         
         return createItem(Material.EMERALD, "&a&lSell Sign Wizard", lore);
@@ -98,7 +99,7 @@ public class SetupWizardsGUI extends BaseGUI {
                 plugin.getMessages().send(player, "general.no-permission");
             }
         } else if (slot == SELL_WIZARD_SLOT) {
-            if (player.hasPermission("griefprevention.sign.create.sell")) {
+            if (SellClaimCommand.hasSellPermission(player)) {
                 closeAndRunOnMainThread(() -> player.performCommand("sellclaim " + claimId));
             } else {
                 plugin.getMessages().send(player, "general.no-permission");

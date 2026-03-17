@@ -24,6 +24,9 @@ import java.util.stream.Collectors;
  * Starts the sell sign setup wizard.
  */
 public class SellClaimCommand implements CommandExecutor, TabCompleter {
+
+    private static final String SELL_PERMISSION = "griefprevention.sign.create.sell";
+    private static final String BUY_PERMISSION = "griefprevention.sign.create.buy";
     
     private final GPExpansionPlugin plugin;
     private final SetupWizardManager wizardManager;
@@ -43,10 +46,10 @@ public class SellClaimCommand implements CommandExecutor, TabCompleter {
         }
         
         // Check permission
-        if (!player.hasPermission("griefprevention.sign.create.buy")) {
+        if (!hasSellPermission(player)) {
             Messages messages = plugin.getMessages();
             messages.send(player, "permissions.create-sign-denied", "signtype", "sell");
-            messages.send(player, "permissions.create-sign-denied-detail", "permission", "griefprevention.sign.create.buy");
+            messages.send(player, "permissions.create-sign-denied-detail", "permission", SELL_PERMISSION + " or " + BUY_PERMISSION);
             return true;
         }
         
@@ -88,5 +91,9 @@ public class SellClaimCommand implements CommandExecutor, TabCompleter {
         }
         
         return Collections.emptyList();
+    }
+
+    public static boolean hasSellPermission(Player player) {
+        return player.hasPermission(SELL_PERMISSION) || player.hasPermission(BUY_PERMISSION);
     }
 }

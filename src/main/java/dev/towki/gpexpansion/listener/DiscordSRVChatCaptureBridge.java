@@ -39,6 +39,10 @@ public final class DiscordSRVChatCaptureBridge {
         try {
             ClassLoader discordSrvClassLoader = discordSrv.getClass().getClassLoader();
             Class<?> eventClass = Class.forName(PRE_PROCESS_EVENT_CLASS, true, discordSrvClassLoader);
+            if (!Event.class.isAssignableFrom(eventClass)) {
+                plugin.getLogger().warning("DiscordSRV pre-process event is not a Bukkit event on this version; skipping captured-chat bridge");
+                return;
+            }
             Method getPlayer = eventClass.getMethod("getPlayer");
             Method setCancelled = eventClass.getMethod("setCancelled", boolean.class);
 
@@ -55,7 +59,7 @@ public final class DiscordSRVChatCaptureBridge {
             );
 
             plugin.getLogger().info("- Registered DiscordSRV captured-chat bridge");
-        } catch (ReflectiveOperationException | LinkageError e) {
+        } catch (ReflectiveOperationException | LinkageError | ClassCastException e) {
             plugin.getLogger().warning("Failed to register DiscordSRV captured-chat bridge: " + e.getMessage());
         }
     }
