@@ -7,6 +7,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
 /**
@@ -36,6 +37,20 @@ public class DescriptionChatListener implements Listener {
         
         event.setCancelled(true);
         plugin.runAtEntity(player, () -> manager.processInput(player, message));
+    }
+
+    @SuppressWarnings("deprecation")
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onLegacyPlayerChat(AsyncPlayerChatEvent event) {
+        if (!manager.hasPending(event.getPlayer().getUniqueId())) {
+            return;
+        }
+
+        if (event.getMessage().startsWith("/")) {
+            return;
+        }
+
+        event.setCancelled(true);
     }
     
     @EventHandler

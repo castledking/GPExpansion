@@ -30,7 +30,9 @@ import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.OfflinePlayer;
 
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Locale;
 
 public final class GPExpansionPlugin extends JavaPlugin {
 
@@ -122,257 +124,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Start confirmation service
         confirmationService = new dev.towki.gpexpansion.confirm.ConfirmationService(this);
 
-        // Delay until server tick using Folia global scheduler when available
-        // Use runLaterGlobal with 1 tick delay to ensure server is fully ready (fixes Purpur startup issues)
-        SchedulerAdapter.runLaterGlobal(this, () -> {
-            ClaimCommand claimCommand = new ClaimCommand(this);
-            boolean gp3dPresent = new dev.towki.gpexpansion.gp.GPBridge().isGP3D();
-            if (gp3dPresent) {
-                // GP3D present: keep GP3D's /claim (tab completion etc). Only take over claimlist/claimslist for enhanced ID+name display.
-                try {
-                    unregisterClaimlistCommands();
-                } catch (Exception e) {
-                    getLogger().warning("Failed to unregister claimlist for takeover: " + e.getMessage());
-                }
-                dev.towki.gpexpansion.gp.ClaimCommandAddonImpl.register(this);
-                getLogger().info("GP3D detected: GPExpansion takes claimslist/claimlist for enhanced display, intercepts /claim list");
-            } else {
-                try {
-                    unregisterExistingClaimCommands();
-                } catch (Exception e) {
-                    getLogger().warning("Failed to proactively unregister existing /claim: " + e.getMessage());
-                }
-            }
-
-            // Store claim command for CommandInterceptListener (used when GP3D present)
-            this.claimCommand = claimCommand;
-            this.gp3dClaimMode = gp3dPresent;
-
-            // Register command programmatically (Paper requires this) - only when NOT sharing with GP3D
-            Command wrapper = new PaperCommandWrapper(
-                    this, // Pass plugin instance
-                    "claim",
-                    "Unified GriefPrevention claim command",
-                    "/claim <sub>",
-                    java.util.Arrays.asList("claims"),
-                    claimCommand,
-                    claimCommand
-            );
-            // Standalone trustlist command that supports an <id> argument via our ClaimCommand
-            Command trustlistWrapper = new PaperCommandWrapper(
-                    this, // Pass plugin instance
-                    "trustlist",
-                    "Show GP trust list (supports optional claim ID)",
-                    "/trustlist [claimId]",
-                    Collections.emptyList(),
-                    claimCommand,
-                    claimCommand
-            );
-            // Standalone adminclaimlist command to take over GP's default and route to our expanded list
-            Command adminClaimListWrapper = new PaperCommandWrapper(
-                    this, // Pass plugin instance
-                    "adminclaimlist",
-                    "Show expanded admin claims list (with IDs and subclaims)",
-                    "/adminclaimlist",
-                    java.util.Arrays.asList("adminclaimslist"),
-                    claimCommand,
-                    claimCommand
-            );
-            // Standalone claimslist command to take over GP's default and route to our expanded list with IDs
-            Command claimsListWrapper = new PaperCommandWrapper(
-                    this, // Pass plugin instance
-                    "claimslist",
-                    "Show your claims list (with IDs and names)",
-                    "/claimslist",
-                    java.util.Arrays.asList("claimlist"),
-                    claimCommand,
-                    claimCommand
-            );
-            // Standalone globalclaim command - /globalclaim [true|false] [claimId]
-            Command globalClaimWrapper = new PaperCommandWrapper(
-                    this,
-                    "globalclaim",
-                    "Toggle or set global listing for a claim",
-                    "/globalclaim [true|false] [claimId]",
-                    java.util.Arrays.asList("toggleglobal"),
-                    claimCommand,
-                    claimCommand
-            );
-            // Get CommandMap for registering commands
-            CommandMap map = null;
-            try {
-                Object mapObj = getServer().getClass().getMethod("getCommandMap").invoke(getServer());
-                if (mapObj instanceof CommandMap) {
-                    map = (CommandMap) mapObj;
-                }
-            } catch (ReflectiveOperationException e) {
-                getLogger().severe("Failed to get CommandMap: " + e.getMessage());
-            }
-            
-            if (map == null) {
-                getLogger().severe("Could not obtain CommandMap to register commands");
-                return;
-            }
-            
-            // Register core commands - try Paper's registerCommand first, fallback to CommandMap
-            // When GP3D present, don't register our claim - GP3D keeps /claim (tab completion for abandon all/toplevel etc)
-            try {
-                java.lang.reflect.Method reg = JavaPlugin.class.getMethod("registerCommand", Command.class);
-                if (!gp3dPresent) reg.invoke(this, wrapper);
-                reg.invoke(this, trustlistWrapper);
-                reg.invoke(this, adminClaimListWrapper);
-                reg.invoke(this, claimsListWrapper);
-                reg.invoke(this, globalClaimWrapper);
-            } catch (NoSuchMethodException missing) {
-                // Paper registerCommand not available, use CommandMap
-                if (!gp3dPresent) map.register("gpexpansion", wrapper);
-                map.register("gpexpansion", trustlistWrapper);
-                map.register("gpexpansion", adminClaimListWrapper);
-                map.register("gpexpansion", claimsListWrapper);
-                map.register("gpexpansion", globalClaimWrapper);
-            } catch (ReflectiveOperationException e) {
-                getLogger().severe("Failed to register core commands: " + e.getMessage());
-            }
-            
-            // Register all additional commands via CommandMap (always needed)
-            // Register /gpxconfirm command
-            dev.towki.gpexpansion.command.ConfirmCommand confirm = new dev.towki.gpexpansion.command.ConfirmCommand(this);
-            Command confirmWrapper = new PaperCommandWrapper(
-                    this,
-                    "gpxconfirm",
-                    "Confirm GPExpansion actions",
-                    "/gpxconfirm [accept|cancel]",
-                    Collections.emptyList(),
-                    confirm,
-                    confirm
-            );
-            map.register("gpexpansion", confirmWrapper);
-            
-            // Register /gpx command
-            GPXCommand gpxCommand = new GPXCommand(this);
-            Command gpxWrapper = new PaperCommandWrapper(
-                    this,
-                    "gpx",
-                    "GPExpansion admin commands",
-                    "/gpx <subcommand>",
-                    Collections.emptyList(),
-                    gpxCommand,
-                    gpxCommand
-            );
-            map.register("gpexpansion", gpxWrapper);
-            
-            // Initialize setup wizard manager
-            setupWizardManager = new SetupWizardManager(this);
-            
-            // Register chat listener for wizard
-            Bukkit.getPluginManager().registerEvents(new SetupChatListener(GPExpansionPlugin.this, setupWizardManager), GPExpansionPlugin.this);
-            getLogger().info("- Registered SetupChatListener for wizard commands");
-            
-            // Initialize description input manager
-            descriptionInputManager = new dev.towki.gpexpansion.gui.DescriptionInputManager(this);
-            Bukkit.getPluginManager().registerEvents(new dev.towki.gpexpansion.gui.DescriptionChatListener(GPExpansionPlugin.this, descriptionInputManager), GPExpansionPlugin.this);
-            getLogger().info("- Registered DescriptionChatListener for claim descriptions");
-            new DiscordSRVChatCaptureBridge(this, player ->
-                setupWizardManager.hasActiveSession(player.getUniqueId())
-                    || descriptionInputManager.hasPending(player.getUniqueId())
-            ).registerIfAvailable();
-            
-            // Register /mailbox command
-            MailboxCommand mailboxCommand = new MailboxCommand(this);
-            mailboxCommand.setWizardManager(setupWizardManager);
-            Command mailboxWrapper = new PaperCommandWrapper(
-                    this,
-                    "mailbox",
-                    "Mailbox management command",
-                    "/mailbox <subcommand>",
-                    Collections.emptyList(),
-                    mailboxCommand,
-                    mailboxCommand
-            );
-            map.register("gpexpansion", mailboxWrapper);
-            
-            // Register /rentclaim command
-            RentClaimCommand rentClaimCommand = new RentClaimCommand(this, setupWizardManager);
-            Command rentClaimWrapper = new PaperCommandWrapper(
-                    this,
-                    "rentclaim",
-                    "Start rental sign setup wizard",
-                    "/rentclaim [claimId]",
-                    Collections.emptyList(),
-                    rentClaimCommand,
-                    rentClaimCommand
-            );
-            map.register("gpexpansion", rentClaimWrapper);
-            
-            // Register /sellclaim command
-            SellClaimCommand sellClaimCommand = new SellClaimCommand(this, setupWizardManager);
-            Command sellClaimWrapper = new PaperCommandWrapper(
-                    this,
-                    "sellclaim",
-                    "Start sell sign setup wizard",
-                    "/sellclaim [claimId]",
-                    Collections.emptyList(),
-                    sellClaimCommand,
-                    sellClaimCommand
-            );
-            map.register("gpexpansion", sellClaimWrapper);
-            
-            // Register /claiminfo command
-            ClaimInfoCommand claimInfoCommand = new ClaimInfoCommand(this);
-            Command claimInfoWrapper = new PaperCommandWrapper(
-                    this,
-                    "claiminfo",
-                    "Show detailed claim information",
-                    "/claiminfo [claimId]",
-                    Collections.emptyList(),
-                    claimInfoCommand,
-                    claimInfoCommand
-            );
-            map.register("gpexpansion", claimInfoWrapper);
-            
-            // Register /cancelsetup command
-            CancelSetupCommand cancelSetupCommand = new CancelSetupCommand(setupWizardManager);
-            Command cancelSetupWrapper = new PaperCommandWrapper(
-                    this,
-                    "cancelsetup",
-                    "Cancel setup wizard or auto-paste mode",
-                    "/cancelsetup",
-                    Collections.emptyList(),
-                    cancelSetupCommand,
-                    cancelSetupCommand
-            );
-            map.register("gpexpansion", cancelSetupWrapper);
-            
-            // Register /claimtp command
-            Command claimTpWrapper = new PaperCommandWrapper(
-                    this,
-                    "claimtp",
-                    "Teleport to a claim",
-                    "/claimtp <claimId> [player]",
-                    Collections.emptyList(),
-                    claimCommand,
-                    claimCommand
-            );
-            map.register("gpexpansion", claimTpWrapper);
-            
-            // Register /setclaimspawn command
-            Command setClaimSpawnWrapper = new PaperCommandWrapper(
-                    this,
-                    "setclaimspawn",
-                    "Set the teleport spawn point for a claim",
-                    "/setclaimspawn",
-                    Collections.emptyList(),
-                    claimCommand,
-                    claimCommand
-            );
-            map.register("gpexpansion", setClaimSpawnWrapper);
-            
-            // Register sign auto-paste listener (fallback for SignChangeEvent injection)
-            SignAutoPasteListener autoPasteListener = new SignAutoPasteListener(GPExpansionPlugin.this, setupWizardManager);
-            Bukkit.getPluginManager().registerEvents(autoPasteListener, GPExpansionPlugin.this);
-            getLogger().info("- Registered SignAutoPasteListener for auto-paste mode");
-            getLogger().info("Registered /claim, /trustlist, /adminclaimlist, /gpx, /rentclaim, /sellclaim, /cancelsetup commands under GPExpansion");
-        }, 1L);
+        registerPluginCommands();
 
         // Register listeners
         getLogger().info("Registering event listeners...");
@@ -456,6 +208,307 @@ public final class GPExpansionPlugin extends JavaPlugin {
                 known.remove(label);
                 getLogger().info("Unregistered existing command label: " + label);
             }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void unregisterExistingCommands(String... labels) throws ReflectiveOperationException {
+        Object mapObj = getServer().getClass().getMethod("getCommandMap").invoke(getServer());
+        if (!(mapObj instanceof CommandMap)) return;
+        CommandMap map = (CommandMap) mapObj;
+
+        Class<?> cls = map.getClass();
+        java.lang.reflect.Field f = null;
+        while (cls != null && f == null) {
+            try {
+                f = cls.getDeclaredField("knownCommands");
+            } catch (NoSuchFieldException ignored) {
+                cls = cls.getSuperclass();
+            }
+        }
+        if (f == null) {
+            getLogger().warning("Could not reflectively access knownCommands; cannot clean up duplicate command labels");
+            return;
+        }
+
+        f.setAccessible(true);
+        Object raw = f.get(map);
+        if (!(raw instanceof java.util.Map)) return;
+        java.util.Map<String, Command> known = (java.util.Map<String, Command>) raw;
+        String pluginNamespace = getName().toLowerCase(Locale.ROOT);
+
+        for (String label : Arrays.asList(labels)) {
+            for (String key : Arrays.asList(label, pluginNamespace + ":" + label)) {
+                Command existing = known.get(key);
+                if (existing == null) continue;
+                try {
+                    existing.unregister(map);
+                } catch (Throwable ignored) { }
+                known.remove(key);
+                getLogger().info("Unregistered existing command label: " + key);
+            }
+        }
+    }
+
+    private void registerPluginCommands() {
+        ClaimCommand claimCommand = new ClaimCommand(this);
+        boolean gp3dPresent = new dev.towki.gpexpansion.gp.GPBridge().isGP3D();
+        if (gp3dPresent) {
+            try {
+                unregisterClaimlistCommands();
+            } catch (Exception e) {
+                getLogger().warning("Failed to unregister claimlist for takeover: " + e.getMessage());
+            }
+            dev.towki.gpexpansion.gp.ClaimCommandAddonImpl.register(this);
+            getLogger().info("GP3D detected: GPExpansion takes claimslist/claimlist for enhanced display, intercepts /claim list");
+        } else {
+            try {
+                unregisterExistingClaimCommands();
+            } catch (Exception e) {
+                getLogger().warning("Failed to proactively unregister existing /claim: " + e.getMessage());
+            }
+        }
+
+        this.claimCommand = claimCommand;
+        this.gp3dClaimMode = gp3dPresent;
+
+        Command wrapper = new PaperCommandWrapper(
+                this,
+                "claim",
+                "Unified GriefPrevention claim command",
+                "/claim <sub>",
+                java.util.Arrays.asList("claims"),
+                claimCommand,
+                claimCommand
+        );
+        Command trustlistWrapper = new PaperCommandWrapper(
+                this,
+                "trustlist",
+                "Show GP trust list (supports optional claim ID)",
+                "/trustlist [claimId]",
+                Collections.emptyList(),
+                claimCommand,
+                claimCommand
+        );
+        Command adminClaimListWrapper = new PaperCommandWrapper(
+                this,
+                "adminclaimlist",
+                "Show expanded admin claims list (with IDs and subclaims)",
+                "/adminclaimlist",
+                java.util.Arrays.asList("adminclaimslist"),
+                claimCommand,
+                claimCommand
+        );
+        Command claimsListWrapper = new PaperCommandWrapper(
+                this,
+                "claimslist",
+                "Show your claims list (with IDs and names)",
+                "/claimslist",
+                java.util.Arrays.asList("claimlist"),
+                claimCommand,
+                claimCommand
+        );
+        Command globalClaimWrapper = new PaperCommandWrapper(
+                this,
+                "globalclaim",
+                "Toggle or set global listing for a claim",
+                "/globalclaim [true|false] [claimId]",
+                java.util.Arrays.asList("toggleglobal"),
+                claimCommand,
+                claimCommand
+        );
+
+        CommandMap map = null;
+        try {
+            Object mapObj = getServer().getClass().getMethod("getCommandMap").invoke(getServer());
+            if (mapObj instanceof CommandMap) {
+                map = (CommandMap) mapObj;
+            }
+        } catch (ReflectiveOperationException e) {
+            getLogger().severe("Failed to get CommandMap: " + e.getMessage());
+        }
+
+        if (map == null) {
+            getLogger().severe("Could not obtain CommandMap to register commands");
+            return;
+        }
+
+        try {
+            unregisterExistingCommands(
+                    "gpx",
+                    "claiminfo",
+                    "globalclaim",
+                    "claimtp",
+                    "setclaimspawn"
+            );
+        } catch (ReflectiveOperationException e) {
+            getLogger().warning("Failed to clean up duplicate command labels: " + e.getMessage());
+        }
+
+        try {
+            java.lang.reflect.Method reg = JavaPlugin.class.getMethod("registerCommand", Command.class);
+            if (!gp3dPresent) reg.invoke(this, wrapper);
+            reg.invoke(this, trustlistWrapper);
+            reg.invoke(this, adminClaimListWrapper);
+            reg.invoke(this, claimsListWrapper);
+            reg.invoke(this, globalClaimWrapper);
+        } catch (NoSuchMethodException missing) {
+            if (!gp3dPresent) map.register("gpexpansion", wrapper);
+            map.register("gpexpansion", trustlistWrapper);
+            map.register("gpexpansion", adminClaimListWrapper);
+            map.register("gpexpansion", claimsListWrapper);
+            map.register("gpexpansion", globalClaimWrapper);
+        } catch (ReflectiveOperationException e) {
+            getLogger().severe("Failed to register core commands: " + e.getMessage());
+        }
+
+        dev.towki.gpexpansion.command.ConfirmCommand confirm = new dev.towki.gpexpansion.command.ConfirmCommand(this);
+        Command confirmWrapper = new PaperCommandWrapper(
+                this,
+                "gpxconfirm",
+                "Confirm GPExpansion actions",
+                "/gpxconfirm [accept|cancel]",
+                Collections.emptyList(),
+                confirm,
+                confirm
+        );
+        registerRuntimeCommand(map, confirmWrapper);
+
+        GPXCommand gpxCommand = new GPXCommand(this);
+        Command gpxWrapper = new PaperCommandWrapper(
+                this,
+                "gpx",
+                "GPExpansion admin commands",
+                "/gpx <subcommand>",
+                Collections.emptyList(),
+                gpxCommand,
+                gpxCommand
+        );
+        registerRuntimeCommand(map, gpxWrapper);
+
+        setupWizardManager = new SetupWizardManager(this);
+
+        Bukkit.getPluginManager().registerEvents(new SetupChatListener(this, setupWizardManager), this);
+        getLogger().info("- Registered SetupChatListener for wizard commands");
+
+        descriptionInputManager = new dev.towki.gpexpansion.gui.DescriptionInputManager(this);
+        Bukkit.getPluginManager().registerEvents(new dev.towki.gpexpansion.gui.DescriptionChatListener(this, descriptionInputManager), this);
+        getLogger().info("- Registered DescriptionChatListener for claim descriptions");
+
+        MailboxCommand mailboxCommand = new MailboxCommand(this);
+        mailboxCommand.setWizardManager(setupWizardManager);
+        Command mailboxWrapper = new PaperCommandWrapper(
+                this,
+                "mailbox",
+                "Mailbox management command",
+                "/mailbox <subcommand>",
+                Collections.emptyList(),
+                mailboxCommand,
+                mailboxCommand
+        );
+        registerRuntimeCommand(map, mailboxWrapper);
+
+        RentClaimCommand rentClaimCommand = new RentClaimCommand(this, setupWizardManager);
+        Command rentClaimWrapper = new PaperCommandWrapper(
+                this,
+                "rentclaim",
+                "Start rental sign setup wizard",
+                "/rentclaim [claimId]",
+                Collections.emptyList(),
+                rentClaimCommand,
+                rentClaimCommand
+        );
+        registerRuntimeCommand(map, rentClaimWrapper);
+
+        SellClaimCommand sellClaimCommand = new SellClaimCommand(this, setupWizardManager);
+        Command sellClaimWrapper = new PaperCommandWrapper(
+                this,
+                "sellclaim",
+                "Start sell sign setup wizard",
+                "/sellclaim [claimId]",
+                Collections.emptyList(),
+                sellClaimCommand,
+                sellClaimCommand
+        );
+        registerRuntimeCommand(map, sellClaimWrapper);
+
+        ClaimInfoCommand claimInfoCommand = new ClaimInfoCommand(this);
+        Command claimInfoWrapper = new PaperCommandWrapper(
+                this,
+                "claiminfo",
+                "Show detailed claim information",
+                "/claiminfo [claimId]",
+                Collections.emptyList(),
+                claimInfoCommand,
+                claimInfoCommand
+        );
+        registerRuntimeCommand(map, claimInfoWrapper);
+
+        CancelSetupCommand cancelSetupCommand = new CancelSetupCommand(setupWizardManager);
+        Command cancelSetupWrapper = new PaperCommandWrapper(
+                this,
+                "cancelsetup",
+                "Cancel setup wizard or auto-paste mode",
+                "/cancelsetup",
+                Collections.emptyList(),
+                cancelSetupCommand,
+                cancelSetupCommand
+        );
+        registerRuntimeCommand(map, cancelSetupWrapper);
+
+        Command claimTpWrapper = new PaperCommandWrapper(
+                this,
+                "claimtp",
+                "Teleport to a claim",
+                "/claimtp <claimId> [player]",
+                Collections.emptyList(),
+                claimCommand,
+                claimCommand
+        );
+        registerRuntimeCommand(map, claimTpWrapper);
+
+        Command setClaimSpawnWrapper = new PaperCommandWrapper(
+                this,
+                "setclaimspawn",
+                "Set the teleport spawn point for a claim",
+                "/setclaimspawn",
+                Collections.emptyList(),
+                claimCommand,
+                claimCommand
+        );
+        registerRuntimeCommand(map, setClaimSpawnWrapper);
+
+        SignAutoPasteListener autoPasteListener = new SignAutoPasteListener(this, setupWizardManager);
+        Bukkit.getPluginManager().registerEvents(autoPasteListener, this);
+        getLogger().info("- Registered SignAutoPasteListener for auto-paste mode");
+        syncCommandTree();
+        getLogger().info("Registered /claim, /trustlist, /adminclaimlist, /gpx, /rentclaim, /sellclaim, /cancelsetup commands under GPExpansion");
+    }
+
+    private void syncCommandTree() {
+        try {
+            java.lang.reflect.Method sync = getServer().getClass().getMethod("syncCommands");
+            sync.invoke(getServer());
+        } catch (ReflectiveOperationException e) {
+            getLogger().warning("Failed to sync command tree after dynamic registration: " + e.getMessage());
+        }
+
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            try {
+                player.updateCommands();
+            } catch (Throwable ignored) { }
+        }
+    }
+
+    private void registerRuntimeCommand(CommandMap map, Command command) {
+        try {
+            java.lang.reflect.Method reg = JavaPlugin.class.getMethod("registerCommand", Command.class);
+            reg.invoke(this, command);
+        } catch (NoSuchMethodException missing) {
+            map.register("gpexpansion", command);
+        } catch (ReflectiveOperationException e) {
+            getLogger().warning("Falling back to CommandMap registration for /" + command.getName() + ": " + e.getMessage());
+            map.register("gpexpansion", command);
         }
     }
 

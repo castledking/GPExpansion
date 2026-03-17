@@ -9,6 +9,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
 /**
@@ -47,6 +48,20 @@ public class SetupChatListener implements Listener {
         dev.towki.gpexpansion.scheduler.SchedulerAdapter.runEntity(plugin, player, () -> {
             wizardManager.processInput(player, message);
         }, null);
+    }
+
+    @SuppressWarnings("deprecation")
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onLegacyPlayerChat(AsyncPlayerChatEvent event) {
+        if (!wizardManager.hasActiveSession(event.getPlayer().getUniqueId())) {
+            return;
+        }
+
+        if (event.getMessage().startsWith("/")) {
+            return;
+        }
+
+        event.setCancelled(true);
     }
     
     @EventHandler
