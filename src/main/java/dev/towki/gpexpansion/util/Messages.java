@@ -84,6 +84,8 @@ public class Messages {
         DEFAULTS.put("claim.teleport-no-location", "&cCould not find a teleport location for claim &6{id}&c.");
         DEFAULTS.put("claim.teleport-unsafe", "&cThe spawn location for claim &6{id}&c is unsafe and cannot be teleported to.");
         DEFAULTS.put("claim.teleport-unsafe-confirm", "&eWarning: The spawn location for claim &6{id}&c is unsafe. Running this command again will confirm teleport to a nearby safe location.");
+        DEFAULTS.put("claim.teleport-delay-start", "&eTeleporting to claim &6{id}&e in &6{time}&e.");
+        DEFAULTS.put("claim.teleport-cooldown", "&cYou must wait &6{time}&c before teleporting to another claim.");
         DEFAULTS.put("claim.player-not-found", "&cPlayer not found: &6{player}");
         DEFAULTS.put("claim.setspawn-not-in-claim", "&cYou must be standing inside a claim to set its spawn point.");
         DEFAULTS.put("claim.setspawn-not-owner", "&cYou must be the owner of this claim to set its spawn point.");

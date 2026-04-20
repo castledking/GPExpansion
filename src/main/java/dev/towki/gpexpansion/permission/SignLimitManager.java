@@ -59,7 +59,7 @@ public class SignLimitManager {
         defaultRentLimit = config.getInt("defaults.max-rent-signs", 5);
         defaultMailboxLimit = config.getInt("defaults.max-mailbox-signs", 5);
         defaultSelfMailboxLimit = config.getInt("defaults.max-self-mailboxes-per-claim", 1);
-        defaultGlobalClaimLimit = config.getInt("defaults.max-global-claims", 5);
+        defaultGlobalClaimLimit = config.getInt("defaults.max-global-claims", 1);
     }
     
     /**

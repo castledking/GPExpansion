@@ -120,6 +120,23 @@ public class ClaimCommandAddonImpl {
                 if (args != null && args.length == 1) out.add("[claimId]");
                 break;
             case "trust":
+                if (args != null && args.length == 1) {
+                    out.add("[claimId]");
+                    out.add("build");
+                    out.add("access");
+                    out.add("containers");
+                    out.add("manage");
+                }
+                if (args != null && args.length == 2) {
+                    String second = args[1] == null ? "" : args[1].toLowerCase(Locale.ROOT);
+                    if ("build".startsWith(second)) out.add("build");
+                    if ("access".startsWith(second)) out.add("access");
+                    if ("containers".startsWith(second)) out.add("containers");
+                    if ("manage".startsWith(second)) out.add("manage");
+                    if ("[claimid]".startsWith(second)) out.add("[claimId]");
+                }
+                if (args != null && args.length == 3) out.add("[claimId]");
+                break;
             case "untrust":
             case "containertrust":
             case "accesstrust":
@@ -145,6 +162,9 @@ public class ClaimCommandAddonImpl {
             case "global":
                 if (args != null && args.length == 2) out.add("[claimId]");
                 break;
+            case "resize":
+                if (args != null && args.length == 1) out.add("<blocks>");
+                break;
             case "flags":
                 if (sender.hasPermission("griefprevention.claim.gui.flags")) {
                     if (args != null && args.length == 1) out.add("[claimId]");
@@ -155,7 +175,6 @@ public class ClaimCommandAddonImpl {
                     if (args != null && args.length == 1) out.add("[claimId]");
                 }
                 break;
-            case "trustlist":
             case "restrictsubclaim":
             case "explosions":
             case "icon":
@@ -235,6 +254,7 @@ public class ClaimCommandAddonImpl {
         }
         if (sender.hasPermission("griefprevention.claim.gui.options")) {
             out.add("options");
+            out.add("resize");
         }
         if (sender.hasPermission("griefprevention.adminclaimslist")) {
             out.add("adminlist");

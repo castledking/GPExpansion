@@ -204,6 +204,8 @@ public class VersionManager {
 
         // Ensure eviction section is present and valid (for 0.1.9a+ with empty/corrupted eviction)
         ensureEvictionSectionPresent();
+        ensureGlobalClaimPlayerCommandDefault();
+        ensureClaimMapEditorModeSlotPresent();
 
         // Auto-bump version if no migrations needed and version is older than project version
         // Only auto-bump if player-commands section exists (to avoid bumping before migration)
@@ -340,14 +342,6 @@ public class VersionManager {
             
             File guisFolder = new File(dataFolder, "guis");
             if (guisFolder.exists()) {
-                // Check for deprecated claim-options.yml
-                File claimOptionsFile = new File(guisFolder, "claim-options.yml");
-                if (claimOptionsFile.exists()) {
-                    foundDeprecatedFiles = true;
-                    plugin.getLogger().info(plainText(plugin.getMessages().get("migration.console-deprecated-file"))
-                        .replace("{file}", "claim-options.yml"));
-                }
-                
                 // Backup and recreate claim-settings.yml
                 File claimSettingsFile = new File(guisFolder, "claim-settings.yml");
                 if (claimSettingsFile.exists()) {
@@ -529,7 +523,7 @@ public class VersionManager {
             playerCommandsSection.append("  - claim.gui.globallist\n");
             playerCommandsSection.append("  - claim.toggleglobal\n");
             playerCommandsSection.append("  - claim.toggleglobal.anywhere\n");
-            playerCommandsSection.append("  - claim.toggleglobal.5\n");
+            playerCommandsSection.append("  - claim.toggleglobal.1\n");
             playerCommandsSection.append("  - claim.color.black\n");
             playerCommandsSection.append("  - claim.color.dark_blue\n");
             playerCommandsSection.append("  - claim.color.dark_green\n");
@@ -832,6 +826,62 @@ public class VersionManager {
             plugin.getLogger().info("VersionManager: Repaired empty/corrupted eviction section (notice-period: " + noticePeriodValue + ")");
         } catch (IOException e) {
             plugin.getLogger().warning("VersionManager: Could not repair eviction section: " + e.getMessage());
+        }
+    }
+
+    private void ensureGlobalClaimPlayerCommandDefault() {
+        File configFile = new File(dataFolder, "config.yml");
+        if (!configFile.exists()) return;
+
+        try {
+            String content = Files.readString(configFile.toPath());
+            if (!content.contains("player-commands:")) return;
+
+            int configuredDefault = Math.max(0, plugin.getConfig().getInt("defaults.max-global-claims", 1));
+            String desiredLine = "  - claim.toggleglobal." + configuredDefault;
+            if (content.contains(desiredLine)) return;
+
+            String updated = content.replaceFirst("(?m)^\\s*-\\s*claim\\.toggleglobal\\.(\\d+)\\s*$", desiredLine);
+            if (updated.equals(content)) return;
+
+            Files.writeString(configFile.toPath(), updated);
+            plugin.reloadConfig();
+            plugin.getLogger().info("VersionManager: Updated player-commands global claim permission to match defaults.max-global-claims = " + configuredDefault);
+        } catch (IOException e) {
+            plugin.getLogger().warning("VersionManager: Failed to normalize player-commands global claim permission: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Ensure guis/claim-map-editor.yml contains items.mode.slot for the Claim Mode toggle.
+     * This keeps existing installations compatible without forcing a full GUI file reset.
+     */
+    private void ensureClaimMapEditorModeSlotPresent() {
+        File guiFile = new File(new File(dataFolder, "guis"), "claim-map-editor.yml");
+        if (!guiFile.exists()) return;
+
+        try {
+            String content = Files.readString(guiFile.toPath());
+            if (content.contains("  mode:\n") || content.contains("  mode:")) {
+                return;
+            }
+
+            String updated = content;
+            if (updated.matches("(?s).*\\n\\s{2}zoom:\\s*\\n.*")) {
+                updated = updated.replaceFirst("(?m)^\\s{2}zoom:\\s*$", "  mode:\n    slot: 47\n  zoom:");
+            } else if (updated.matches("(?s).*\\nitems:\\s*\\n.*")) {
+                updated = updated.replaceFirst("(?m)^items:\\s*$", "items:\n  mode:\n    slot: 47");
+            } else {
+                updated = updated + (updated.endsWith("\n") ? "" : "\n")
+                        + "\nitems:\n  mode:\n    slot: 47\n";
+            }
+
+            if (!updated.equals(content)) {
+                Files.writeString(guiFile.toPath(), updated);
+                plugin.getLogger().info("VersionManager: Added items.mode.slot to guis/claim-map-editor.yml");
+            }
+        } catch (IOException e) {
+            plugin.getLogger().warning("VersionManager: Failed to migrate claim-map-editor.yml mode slot: " + e.getMessage());
         }
     }
 

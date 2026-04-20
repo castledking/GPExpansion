@@ -1,6 +1,7 @@
 package dev.towki.gpexpansion.gui;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
+import dev.towki.gpexpansion.command.ClaimCommand;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
@@ -26,6 +27,7 @@ import java.util.Base64;
 import java.util.UUID;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 
 /**
  * Base class for all GUIs with common functionality.
@@ -102,10 +104,25 @@ public abstract class BaseGUI {
     protected ItemStack createItemFromConfig(String path, Map<String, String> placeholders) {
         if (config == null) return new ItemStack(Material.STONE);
         
-        ConfigurationSection section = config.getConfigurationSection(path);
+        ConfigurationSection section = getConfigSection(path);
         if (section == null) return new ItemStack(Material.STONE);
         
         return createItemFromSection(section, placeholders);
+    }
+
+    /**
+     * Resolve a configuration section from the loaded file first, then from jar defaults.
+     */
+    protected ConfigurationSection getConfigSection(String path) {
+        if (config == null) return null;
+
+        ConfigurationSection section = config.getConfigurationSection(path);
+        if (section != null) {
+            return section;
+        }
+
+        ConfigurationSection defaults = config.getDefaults();
+        return defaults != null ? defaults.getConfigurationSection(path) : null;
     }
     
     /**
@@ -591,5 +608,46 @@ public abstract class BaseGUI {
         // On Folia, commands with a player sender must be dispatched on the entity's region thread
         dev.towki.gpexpansion.scheduler.SchedulerAdapter.runEntity(plugin, player,
             () -> org.bukkit.Bukkit.dispatchCommand(player, command), null);
+    }
+
+    /**
+     * Invoke the plugin's claim command directly, matching the intercept listener path.
+     */
+    protected void runClaimCommand(String... args) {
+        ClaimCommand claimCmd = plugin.getClaimCommand();
+        if (claimCmd == null) {
+            return;
+        }
+
+        org.bukkit.command.Command stub = new org.bukkit.command.Command("claim") {
+            @Override
+            public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] commandArgs) {
+                return false;
+            }
+        };
+        claimCmd.onCommand(player, stub, "claim", args);
+    }
+
+    /**
+     * Invoke one of the standalone trust aliases directly, matching the intercept listener path.
+     */
+    protected void runStandaloneClaimCommand(String root, String... tailArgs) {
+        ClaimCommand claimCmd = plugin.getClaimCommand();
+        if (claimCmd == null || root == null || root.isBlank()) {
+            return;
+        }
+
+        String normalizedRoot = root.toLowerCase(Locale.ROOT);
+        String[] args = new String[tailArgs.length + 1];
+        args[0] = normalizedRoot;
+        System.arraycopy(tailArgs, 0, args, 1, tailArgs.length);
+
+        org.bukkit.command.Command stub = new org.bukkit.command.Command(normalizedRoot) {
+            @Override
+            public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] commandArgs) {
+                return false;
+            }
+        };
+        claimCmd.onCommand(player, stub, normalizedRoot, args);
     }
 }

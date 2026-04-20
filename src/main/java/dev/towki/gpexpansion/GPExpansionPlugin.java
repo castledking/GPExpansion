@@ -281,15 +281,6 @@ public final class GPExpansionPlugin extends JavaPlugin {
                 claimCommand,
                 claimCommand
         );
-        Command trustlistWrapper = new PaperCommandWrapper(
-                this,
-                "trustlist",
-                "Show GP trust list (supports optional claim ID)",
-                "/trustlist [claimId]",
-                Collections.emptyList(),
-                claimCommand,
-                claimCommand
-        );
         Command adminClaimListWrapper = new PaperCommandWrapper(
                 this,
                 "adminclaimlist",
@@ -339,7 +330,9 @@ public final class GPExpansionPlugin extends JavaPlugin {
                     "claiminfo",
                     "globalclaim",
                     "claimtp",
-                    "setclaimspawn"
+                    "setclaimspawn",
+                    "resizeclaim",
+                    "claimmap"
             );
         } catch (ReflectiveOperationException e) {
             getLogger().warning("Failed to clean up duplicate command labels: " + e.getMessage());
@@ -348,13 +341,11 @@ public final class GPExpansionPlugin extends JavaPlugin {
         try {
             java.lang.reflect.Method reg = JavaPlugin.class.getMethod("registerCommand", Command.class);
             if (!gp3dPresent) reg.invoke(this, wrapper);
-            reg.invoke(this, trustlistWrapper);
             reg.invoke(this, adminClaimListWrapper);
             reg.invoke(this, claimsListWrapper);
             reg.invoke(this, globalClaimWrapper);
         } catch (NoSuchMethodException missing) {
             if (!gp3dPresent) map.register("gpexpansion", wrapper);
-            map.register("gpexpansion", trustlistWrapper);
             map.register("gpexpansion", adminClaimListWrapper);
             map.register("gpexpansion", claimsListWrapper);
             map.register("gpexpansion", globalClaimWrapper);
@@ -478,11 +469,54 @@ public final class GPExpansionPlugin extends JavaPlugin {
         );
         registerRuntimeCommand(map, setClaimSpawnWrapper);
 
+        Command expandClaimWrapper = new PaperCommandWrapper(
+                this,
+                "resizeclaim",
+                "Open the claim resize menu or forward a resize request",
+                "/resizeclaim [blocks]",
+                java.util.Collections.emptyList(),
+                claimCommand,
+                claimCommand
+        );
+        registerRuntimeCommand(map, expandClaimWrapper);
+
+        Command claimMapWrapper = new PaperCommandWrapper(
+                this,
+                "claimmap",
+                "Open the claim map editor for the claim you are standing in",
+                "/claimmap",
+                java.util.Collections.emptyList(),
+                claimCommand,
+                claimCommand
+        );
+        registerRuntimeCommand(map, claimMapWrapper);
+
+        // /buyclaimblocks - opens the hopper confirmation GUI (migrated from GP3D).
+        // Unregister any prior owner (GP3D itself or other plugins) first so our
+        // handler wins the command dispatch.
+        try {
+            unregisterExistingCommands("buyclaimblocks");
+        } catch (ReflectiveOperationException e) {
+            getLogger().warning("Failed to clean up existing /buyclaimblocks registration: " + e.getMessage());
+        }
+        dev.towki.gpexpansion.command.BuyClaimBlocksCommand buyCommand =
+                new dev.towki.gpexpansion.command.BuyClaimBlocksCommand(this);
+        Command buyWrapper = new PaperCommandWrapper(
+                this,
+                "buyclaimblocks",
+                "Purchase additional claim blocks (opens confirmation GUI)",
+                "/buyclaimblocks <amount>",
+                java.util.Collections.emptyList(),
+                buyCommand,
+                buyCommand
+        );
+        registerRuntimeCommand(map, buyWrapper);
+
         SignAutoPasteListener autoPasteListener = new SignAutoPasteListener(this, setupWizardManager);
         Bukkit.getPluginManager().registerEvents(autoPasteListener, this);
         getLogger().info("- Registered SignAutoPasteListener for auto-paste mode");
         syncCommandTree();
-        getLogger().info("Registered /claim, /trustlist, /adminclaimlist, /gpx, /rentclaim, /sellclaim, /cancelsetup commands under GPExpansion");
+        getLogger().info("Registered /claim, /claimmap, /adminclaimlist, /gpx, /rentclaim, /sellclaim, /cancelsetup commands under GPExpansion");
     }
 
     private void syncCommandTree() {

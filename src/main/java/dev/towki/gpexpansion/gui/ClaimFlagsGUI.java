@@ -275,7 +275,7 @@ public class ClaimFlagsGUI extends BaseGUI {
 
     private ItemStack createBackItem() {
         return createItem(Material.ARROW, "&c&lBack", 
-                Collections.singletonList("&7Return to claim settings"));
+                Collections.singletonList("&7Return to claim options"));
     }
 
     private ItemStack createPrevPageItem(int current, int total) {
@@ -298,13 +298,7 @@ public class ClaimFlagsGUI extends BaseGUI {
         
         // Navigation
         if (slot == backSlot) {
-            // Use GUI state tracker to go back to the previous menu
-            if (GUIStateTracker.hasState(player.getUniqueId())) {
-                GUIStateTracker.restoreLastGUI(manager, player);
-            } else {
-                // Fallback to claim settings if no previous state
-                manager.openClaimSettings(player, claim, claimId);
-            }
+            manager.openClaimOptions(player, claim, claimId);
             return;
         }
         

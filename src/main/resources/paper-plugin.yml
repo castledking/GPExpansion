@@ -85,10 +85,22 @@ commands:
     description: Teleport to a claim
     usage: /<command> <claimId> [player]
     permission: griefprevention.claim.teleport
+  resizeclaim:
+    description: Resize the claim you're standing in or open the resize menu
+    usage: /<command> [blocks]
+    permission: griefprevention.claims
+  claimmap:
+    description: Open the claim map editor for the claim you're standing in
+    usage: /<command>
+    permission: griefprevention.claims
   setclaimspawn:
     description: Set the teleport spawn point for a claim
     usage: /<command>
     permission: griefprevention.claim.setspawn
+  buyclaimblocks:
+    description: Purchase additional claim blocks (opens confirmation GUI)
+    usage: /<command> <amount>
+    permission: griefprevention.buysellclaimblocks
 
 permissions:
   gpx.player:
@@ -180,6 +192,10 @@ permissions:
   griefprevention.claim.banlist.other:
     description: Allows using /claim banlist on other claims
     default: op
+
+  griefprevention.trust.anywhere:
+    description: Allows using trust commands with an explicit claim ID
+    default: true
 
   # === RENT SIGN PERMISSIONS ===
   griefprevention.sign.create.rent:
@@ -509,9 +525,13 @@ permissions:
     description: Allows unlimited global claims
     default: op
 
+  griefprevention.claim.toggleglobal.1:
+    description: Allows up to 1 global claim (default)
+    default: false
+
   griefprevention.claim.toggleglobal.5:
-    description: Allows up to 5 global claims (default)
-    default: op
+    description: Allows up to 5 global claims
+    default: false
 
   griefprevention.claim.toggleglobal.10:
     description: Allows up to 10 global claims

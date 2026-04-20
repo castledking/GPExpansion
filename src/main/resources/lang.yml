@@ -233,6 +233,8 @@ claim:
   teleport-no-location: "&cCould not find a teleport location for claim &6{id}&c."
   teleport-unsafe: "&cThe spawn location for claim &6{id}&c is unsafe and cannot be teleported to."
   teleport-unsafe-confirm: "&eWarning: The spawn location for claim &6{id}&c is unsafe. Running this command again will confirm teleport to a nearby safe location."
+  teleport-delay-start: "&eTeleporting to claim &6{id}&e in &6{time}&e."
+  teleport-cooldown: "&cYou must wait &6{time}&c before teleporting to another claim."
   player-not-found: "&cPlayer not found: &6{player}"
   setspawn-not-in-claim: "&cYou must be standing inside a claim to set its spawn point."
   setspawn-not-owner: "&cYou must be the owner of this claim to set its spawn point."
@@ -472,6 +474,13 @@ claim:
   trustlist-header: "&6=== Trust List for Claim {id} ==="
   trustlist-empty: "&7No players are trusted in this claim."
   trustlist-entry: "&7- &e{player}&7: {level}"
+  trust-usage: "&eUsage: /claim trust <player> [build|access|containers|manage] [claimId]"
+  trust-anywhere-required: "&cYou need &egriefprevention.trust.anywhere &cto use a claim ID with trust commands."
+  resize-too-narrow: "&cThis new size would be too small. Claims must be at least &e{min} &cblocks wide."
+  resize-too-small-area: "&cThis claim would be too small. Any claim must use at least &e{min} &ctotal claim blocks."
+  resize-fail-subdivision: "&cCannot resize claim: The new boundaries would exclude an existing subdivision. Please remove or move the subdivision first."
+  resize-fail-overlap-subdivision: "&cYou can't create a subdivision here because it would overlap another subdivision. Consider /abandonclaim to delete it, or use your shovel at a corner to resize it."
+  inner-subdivision-too-close: "&cThis subdivision must stay at least one block inside its parent on all sides."
   
   # Claim not found / claiminfo
   not-standing-in-claim: "You are not standing in a claim."

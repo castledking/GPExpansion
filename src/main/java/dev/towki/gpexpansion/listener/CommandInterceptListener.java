@@ -67,6 +67,45 @@ public class CommandInterceptListener implements Listener {
             return;
         }
 
+        if (isStandaloneTrustCommand(lower)) {
+            if ((lower.equals("untrust") || lower.startsWith("untrust ")) && interceptUntrustCommand(event)) {
+                return;
+            }
+            ClaimCommand claimCmd = plugin.getClaimCommand();
+            if (claimCmd != null) {
+                event.setCancelled(true);
+                String[] args = noSlash.trim().split("\\s+", -1);
+                Command stub = new Command(args[0].toLowerCase(Locale.ROOT)) {
+                    @Override
+                    public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] a) {
+                        return false;
+                    }
+                };
+                String[] claimArgs = new String[args.length];
+                claimArgs[0] = args[0].toLowerCase(Locale.ROOT);
+                if (args.length > 1) {
+                    System.arraycopy(args, 1, claimArgs, 1, args.length - 1);
+                }
+                claimCmd.onCommand(event.getPlayer(), stub, args[0].toLowerCase(Locale.ROOT), claimArgs);
+            }
+            return;
+        }
+
+        if (lower.equals("expandclaim") || lower.equals("extendclaim")) {
+            ClaimCommand claimCmd = plugin.getClaimCommand();
+            if (claimCmd != null) {
+                event.setCancelled(true);
+                Command stub = new Command("resizeclaim") {
+                    @Override
+                    public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] a) {
+                        return false;
+                    }
+                };
+                claimCmd.onCommand(event.getPlayer(), stub, "resizeclaim", new String[0]);
+                return;
+            }
+        }
+
         // Support overriding /claimlist and /claimslist by rerouting to our /claim list
         if (lower.equals("claimlist") || lower.startsWith("claimlist ") || lower.equals("claimslist") || lower.startsWith("claimslist ")) {
             int prefixLen = lower.startsWith("claimslist") ? 10 : 9;
@@ -116,6 +155,19 @@ public class CommandInterceptListener implements Listener {
                 return;
             }
         }
+    }
+
+    private boolean isStandaloneTrustCommand(String lower) {
+        return lower.equals("trust")
+            || lower.startsWith("trust ")
+            || lower.equals("untrust")
+            || lower.startsWith("untrust ")
+            || lower.equals("accesstrust")
+            || lower.startsWith("accesstrust ")
+            || lower.equals("containertrust")
+            || lower.startsWith("containertrust ")
+            || lower.equals("permissiontrust")
+            || lower.startsWith("permissiontrust ");
     }
 
     /**

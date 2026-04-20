@@ -44,6 +44,9 @@ public class GUIStateTracker {
         ADMIN_CLAIMS,
         GLOBAL_CLAIM_LIST,
         CLAIM_OPTIONS,
+        CLAIM_TRUSTED_PLAYERS,
+        CLAIM_RESIZE,
+        CLAIM_MAP_EDITOR,
         BANNED_PLAYERS,
         CHILDREN_CLAIMS,
         CLAIM_SETTINGS,
@@ -131,15 +134,39 @@ public class GUIStateTracker {
             case CLAIM_OPTIONS:
                 if (state.claimId != null) {
                     new dev.towki.gpexpansion.gp.GPBridge().findClaimById(state.claimId).ifPresent(claim -> {
-                        manager.openClaimSettings(player, claim, state.claimId);
+                        manager.openClaimOptions(player, claim, state.claimId);
                     });
                 }
                 break;
-                
+
+            case CLAIM_TRUSTED_PLAYERS:
+                if (state.claimId != null) {
+                    new dev.towki.gpexpansion.gp.GPBridge().findClaimById(state.claimId).ifPresent(claim -> {
+                        manager.openClaimTrustedPlayers(player, claim, state.claimId);
+                    });
+                }
+                break;
+
+            case CLAIM_RESIZE:
+                if (state.claimId != null) {
+                    new dev.towki.gpexpansion.gp.GPBridge().findClaimById(state.claimId).ifPresent(claim -> {
+                        manager.openClaimResize(player, claim, state.claimId);
+                    });
+                }
+                break;
+
+            case CLAIM_MAP_EDITOR:
+                if (state.claimId != null) {
+                    new dev.towki.gpexpansion.gp.GPBridge().findClaimById(state.claimId).ifPresent(claim -> {
+                        manager.openClaimMapEditor(player, claim, state.claimId);
+                    });
+                }
+                break;
+
             case BANNED_PLAYERS:
                 if (state.claimId != null) {
                     new dev.towki.gpexpansion.gp.GPBridge().findClaimById(state.claimId).ifPresent(claim -> {
-                        BannedPlayersGUI.openAsyncWithState(manager, player, claim, state.claimId, state.searchQuery, state.page);
+                        manager.openBannedPlayers(player, claim, state.claimId);
                     });
                 }
                 break;

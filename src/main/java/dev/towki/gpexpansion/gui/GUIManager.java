@@ -1,6 +1,8 @@
 package dev.towki.gpexpansion.gui;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
+import org.bukkit.ChatColor;
+import org.bukkit.Material;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -53,6 +55,11 @@ public class GUIManager implements Listener {
             "owned-claims.yml",
             "trusted-claims.yml",
             "claim-options.yml",
+            "claim-resize.yml",
+            "claim-map-editor.yml",
+            "claim-trusted-players.yml",
+            "claim-trust-editor.yml",
+            "banned-players.yml",
             "children-claims.yml",
             "claim-settings.yml",
             "setup-wizards.yml",
@@ -72,14 +79,17 @@ public class GUIManager implements Listener {
     
     private void loadOrCreateConfig(File folder, String fileName) {
         File file = new File(folder, fileName);
+        boolean createdFile = false;
         if (!file.exists()) {
             // Try to save from resources
             try (InputStream in = plugin.getResource("guis/" + fileName)) {
                 if (in != null) {
                     plugin.saveResource("guis/" + fileName, false);
+                    createdFile = true;
                 } else {
                     // Create empty file
                     file.createNewFile();
+                    createdFile = true;
                 }
             } catch (IOException e) {
                 plugin.getLogger().warning("Failed to create GUI config: " + fileName);
@@ -93,10 +103,23 @@ public class GUIManager implements Listener {
             if (defStream != null) {
                 YamlConfiguration defConfig = YamlConfiguration.loadConfiguration(
                     new InputStreamReader(defStream, StandardCharsets.UTF_8));
+                boolean needsSave = createdFile;
+                if (!needsSave) {
+                    for (String key : defConfig.getKeys(true)) {
+                        if (!config.contains(key)) {
+                            needsSave = true;
+                            break;
+                        }
+                    }
+                }
                 config.setDefaults(defConfig);
+                config.options().copyDefaults(true);
+                if (needsSave) {
+                    config.save(file);
+                }
             }
         } catch (IOException e) {
-            // Ignore
+            plugin.getLogger().warning("Failed to merge GUI defaults for " + fileName + ": " + e.getMessage());
         }
         
         String key = fileName.replace(".yml", "");
@@ -201,9 +224,43 @@ public class GUIManager implements Listener {
     
     // Open claim options menu (hopper style)
     public void openClaimOptions(Player player, Object claim, String claimId) {
-        openGUI(player, new ClaimSettingsGUI(this, player, claim, claimId));
+        openGUI(player, new ClaimOptionsGUI(this, player, claim, claimId));
     }
-    
+
+    public void openClaimOptions(Player player, Object claim, String claimId, boolean armAbandonConfirm) {
+        openGUI(player, new ClaimOptionsGUI(this, player, claim, claimId, armAbandonConfirm));
+    }
+
+    // Open claim resize controls
+    public void openClaimResize(Player player, Object claim, String claimId) {
+        if (!canOpenClaimEditGUI(player, "/resizeclaim", "Resize GUI")) {
+            return;
+        }
+        openGUI(player, new ClaimResizeGUI(this, player, claim, claimId));
+    }
+
+    // Open map-based claim editor
+    public void openClaimMapEditor(Player player, Object claim, String claimId) {
+        if (!canOpenClaimEditGUI(player, "/claimmap", "Claim Map Editor")) {
+            return;
+        }
+        openGUI(player, new ClaimMapEditorGUI(this, player, claim, claimId));
+    }
+
+    // Open claim trusted players menu
+    public void openClaimTrustedPlayers(Player player, Object claim, String claimId) {
+        openGUI(player, new ClaimTrustedPlayersGUI(this, player, claim, claimId));
+    }
+
+    // Open trust editor for a single player
+    public void openClaimTrustEditor(Player player, Object claim, String claimId, String targetName) {
+        openGUI(player, new ClaimTrustEditorGUI(this, player, claim, claimId, targetName));
+    }
+
+    public void openClaimTrustEditor(Player player, Object claim, String claimId, String targetName, java.util.UUID targetId) {
+        openGUI(player, new ClaimTrustEditorGUI(this, player, claim, claimId, targetName, targetId));
+    }
+
     // Open children claims menu
     public void openChildrenClaims(Player player, Object parentClaim, String parentClaimId) {
         openGUI(player, new ChildrenClaimsGUI(this, player, parentClaim, parentClaimId));
@@ -223,10 +280,10 @@ public class GUIManager implements Listener {
     public void openGlobalClaimList(Player player) {
         GlobalClaimListGUI.openAsync(this, player, null);
     }
-    
-    // Open banned players menu
+
+    // Open banned players menu for a claim
     public void openBannedPlayers(Player player, Object claim, String claimId) {
-        openGUI(player, new BannedPlayersGUI(this, player, claim, claimId));
+        BannedPlayersGUI.openAsync(this, player, claim, claimId);
     }
     
     // Open admin menu
@@ -257,5 +314,17 @@ public class GUIManager implements Listener {
     // Open global claim settings menu with fromSign flag
     public void openGlobalClaimSettings(Player player, Object claim, String claimId, boolean fromSign) {
         openGUI(player, new GlobalClaimSettingsGUI(this, player, claim, claimId, fromSign));
+    }
+
+    private boolean canOpenClaimEditGUI(Player player, String retryCommand, String guiName) {
+        if (player.hasPermission("griefprevention.extendclaim.toolbypass")) {
+            return true;
+        }
+        Material held = player.getInventory().getItemInMainHand().getType();
+        if (held == Material.GOLDEN_SHOVEL) {
+            return true;
+        }
+        player.sendMessage(ChatColor.RED + "Try doing " + retryCommand + " again while holding golden shovel to access the " + guiName + ".");
+        return false;
     }
 }

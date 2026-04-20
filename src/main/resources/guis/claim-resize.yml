@@ -1,0 +1,33 @@
+title: "&6&lResize Claim - #{id}"
+size: 45
+
+filler:
+  material: GRAY_STAINED_GLASS_PANE
+
+items:
+  summary:
+    slot: 22
+
+  info:
+    slot: 40
+
+  north:
+    slot: 13
+
+  south:
+    slot: 31
+
+  west:
+    slot: 21
+
+  east:
+    slot: 23
+
+  up:
+    slot: 24
+
+  down:
+    slot: 33
+
+  back:
+    slot: 44

@@ -17,6 +17,8 @@ mailbox-protocol: virtual
 
 # Default limits for sign creation (can be overridden by permissions)
 defaults:
+  # Default maximum number of global claims a player can have
+  max-global-claims: 1
   # Default maximum number of sell signs a player can create
   max-sell-signs: 5
   # Default maximum number of rent signs a player can create
@@ -30,7 +32,6 @@ defaults:
 # A list of permissions starting from griefprevention.<permission> that the gpx.player permission should have
 # Permissions are dynamically updated on /gpx reload
 player-commands:
-  # - restoresnapshot
   - claims
   - claim.name
   - claim.name.anywhere
@@ -62,7 +63,7 @@ player-commands:
   - claim.gui.globallist
   - claim.toggleglobal
   - claim.toggleglobal.anywhere
-  - claim.toggleglobal.5
+  - claim.toggleglobal.1
   - claim.color.black
   - claim.color.dark_blue
   - claim.color.dark_green
@@ -95,6 +96,13 @@ gui:
   # Enable GUI mode for /claim command
   # When enabled, /claim opens an interactive menu instead of showing subcommand list
   enabled: true
+
+# Claim teleport settings
+teleport:
+  # Delay before a player is teleported to a claim (0 to disable)
+  delay-seconds: 3
+  # Cooldown after teleporting to a claim before another claim teleport can be used (0 to disable)
+  cooldown-seconds: 10
 
 # Tax settings (requires Vault economy)
 tax:

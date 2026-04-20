@@ -186,11 +186,13 @@ public class TrustedClaimsGUI extends BaseGUI {
         if (currentPage < maxPage) {
             inventory.setItem(NEXT_PAGE_SLOT, createNextPageItem());
         }
+
+        String currentTrustedClaimId = getCurrentTrustedClaimId();
         
         int startIndex = currentPage * CLAIM_SLOTS.length;
         for (int i = 0; i < CLAIM_SLOTS.length && startIndex + i < filteredClaims.size(); i++) {
             ClaimInfo info = filteredClaims.get(startIndex + i);
-            inventory.setItem(CLAIM_SLOTS[i], createClaimItem(info));
+            inventory.setItem(CLAIM_SLOTS[i], createClaimItem(info, currentTrustedClaimId));
         }
     }
     
@@ -214,7 +216,69 @@ public class TrustedClaimsGUI extends BaseGUI {
         return createItem(Material.ARROW, "&e&lNext Page »", List.of("&7Page " + (currentPage + 2) + "/" + ((filteredClaims.size() - 1) / CLAIM_SLOTS.length + 1)));
     }
     
-    private ItemStack createClaimItem(ClaimInfo info) {
+    private String getCurrentTrustedClaimId() {
+        Location location = player.getLocation();
+        if (location.getWorld() == null) return null;
+
+        String worldName = location.getWorld().getName();
+        String currentClaimId = null;
+        long smallestContainingClaim = Long.MAX_VALUE;
+
+        for (ClaimInfo info : filteredClaims) {
+            if (info.claim == null || info.claimId == null) continue;
+            if (!worldName.equals(gp.getClaimWorld(info.claim).orElse(null))) continue;
+            if (!containsLocation(info.claim, location)) continue;
+
+            long sizeMetric = getClaimSizeMetric(info.claim);
+            if (sizeMetric < smallestContainingClaim) {
+                smallestContainingClaim = sizeMetric;
+                currentClaimId = info.claimId;
+            }
+        }
+
+        return currentClaimId;
+    }
+
+    private boolean containsLocation(Object claim, Location location) {
+        GPBridge.ClaimCorners corners = gp.getClaimCorners(claim).orElse(null);
+        if (corners == null || location.getWorld() == null) return false;
+
+        String claimWorld = gp.getClaimWorld(claim).orElse(null);
+        if (claimWorld == null || !claimWorld.equals(location.getWorld().getName())) {
+            return false;
+        }
+
+        int x = location.getBlockX();
+        int y = location.getBlockY();
+        int z = location.getBlockZ();
+
+        if (x < corners.x1 || x > corners.x2 || z < corners.z1 || z > corners.z2) {
+            return false;
+        }
+
+        if (gp.is3DClaim(claim)) {
+            return y >= corners.y1 && y <= corners.y2;
+        }
+
+        return true;
+    }
+
+    private long getClaimSizeMetric(Object claim) {
+        GPBridge.ClaimCorners corners = gp.getClaimCorners(claim).orElse(null);
+        if (corners == null) return Long.MAX_VALUE;
+
+        long width = (long) corners.x2 - corners.x1 + 1L;
+        long length = (long) corners.z2 - corners.z1 + 1L;
+
+        if (gp.is3DClaim(claim)) {
+            long height = (long) corners.y2 - corners.y1 + 1L;
+            return width * length * height;
+        }
+
+        return width * length;
+    }
+
+    private ItemStack createClaimItem(ClaimInfo info, String currentTrustedClaimId) {
         Material material = Material.GRASS_BLOCK;
         if (info.isRented) material = Material.CLOCK;
         else if (info.isSold) material = Material.EMERALD;
@@ -249,8 +313,14 @@ public class TrustedClaimsGUI extends BaseGUI {
         if (info.canRenew) {
             lore.add("&b▸ Right-click to renew rental");
         }
-        
-        return createItem(material, "&a" + info.name, lore);
+
+        if (info.claimId != null && info.claimId.equals(currentTrustedClaimId)) {
+            lore.add("");
+            lore.add("&b✦ You are here");
+        }
+
+        boolean glow = info.claimId != null && info.claimId.equals(currentTrustedClaimId);
+        return createItem(material, "&a" + info.name, lore, glow);
     }
     
     @Override
