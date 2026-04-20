@@ -9,7 +9,6 @@ filler:
 
 slots:
   view-children: 0
-  banned-players: 2
   claim-flags: 4
   global-settings: 6
   back: 8
@@ -29,19 +28,6 @@ items:
       - "&7through nested subdivisions"
       - ""
       - "&eClick to view children"
-  
-  banned-players:
-    material: BARRIER
-    name: "&c&lBanned Players"
-    lore:
-      - "&7Manage players banned from this claim"
-      - ""
-      - "&7Currently banned: &6{count}"
-      - ""
-      - "&a✓ You can manage bans"
-      - "&8Missing: griefprevention.claim.ban"
-      - ""
-      - "&eClick to manage banned players"
   
   claim-flags:
     material: COMPARATOR
@@ -77,8 +63,5 @@ items:
 
 # Permission-based lore
 permissions:
-  ban-allowed: "&a✓ You can manage bans"
-  ban-denied: "&c✗ No permission to manage bans"
-  ban-denied-detail: "&8Missing: griefprevention.claim.ban"
   flags-available: "&a✓ GPFlags available"
   flags-unavailable: "&c✗ GPFlags not available"

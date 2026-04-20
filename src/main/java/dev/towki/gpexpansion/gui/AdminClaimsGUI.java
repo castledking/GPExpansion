@@ -303,9 +303,8 @@ public class AdminClaimsGUI extends BaseGUI {
         }
         
         lore.add("");
-        lore.add("&a▸ Left-click to teleport");
+        lore.add("&a▸ Left-click to view options");
         lore.add("&b▸ Right-click to rename");
-        lore.add("&e▸ Shift+Left-click for options");
         if (info.claimId != null && info.claimId.equals(currentMainClaimId)) {
             lore.add("");
             lore.add("&b✦ You are here");
@@ -379,9 +378,8 @@ public class AdminClaimsGUI extends BaseGUI {
     }
     
     private void handleClaimClick(InventoryClickEvent event, ClaimInfo info) {
-        if (isLeftClick(event) && !event.isShiftClick()) {
-            // Teleport to claim
-            closeAndRunOnMainThread("claimtp " + info.claimId);
+        if (isLeftClick(event)) {
+            manager.openClaimOptions(player, info.claim, info.claimId);
         } else if (isRightClick(event) && !event.isShiftClick()) {
             // Rename claim via sign editor
             player.closeInventory();
@@ -395,9 +393,6 @@ public class AdminClaimsGUI extends BaseGUI {
                     manager.openAdminClaims(player);
                 },
                 () -> manager.openAdminClaims(player));
-        } else if (isShiftLeftClick(event)) {
-            // Open options menu
-            manager.openClaimOptions(player, info.claim, info.claimId);
         }
     }
     

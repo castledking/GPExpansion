@@ -1,8 +1,6 @@
 package dev.towki.gpexpansion.gui;
 
 import dev.towki.gpexpansion.gp.GPBridge;
-import dev.towki.gpexpansion.gp.GPFlagsBridge;
-import dev.towki.gpexpansion.storage.ClaimDataStore;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -24,7 +22,6 @@ public class ClaimSettingsGUI extends BaseGUI {
     private final GPBridge gp;
     
     private int viewChildrenSlot = 0;
-    private int bannedPlayersSlot = 2;
     private int claimFlagsSlot = 4;
     private int globalSettingsSlot = 6;
     private int backSlot = 8;
@@ -37,7 +34,6 @@ public class ClaimSettingsGUI extends BaseGUI {
         
         if (config != null) {
             viewChildrenSlot = config.getInt("slots.view-children", 0);
-            bannedPlayersSlot = config.getInt("slots.banned-players", 2);
             claimFlagsSlot = config.getInt("slots.claim-flags", 4);
             globalSettingsSlot = config.getInt("slots.global-settings", 6);
             backSlot = config.getInt("slots.back", 8);
@@ -52,7 +48,6 @@ public class ClaimSettingsGUI extends BaseGUI {
         fillEmpty(createFiller());
         
         inventory.setItem(viewChildrenSlot, createViewChildrenItem());
-        inventory.setItem(bannedPlayersSlot, createBannedPlayersItem());
         
         if (canShowClaimFlags()) {
             inventory.setItem(claimFlagsSlot, createClaimFlagsItem());
@@ -89,37 +84,6 @@ public class ClaimSettingsGUI extends BaseGUI {
         lore.add("");
         lore.add("&eClick to view children");
         return createItem(Material.CHEST, "&b&lView Children", lore);
-    }
-    
-    private ItemStack createBannedPlayersItem() {
-        ClaimDataStore dataStore = plugin.getClaimDataStore();
-        int banCount = dataStore.getBannedPlayers(claimId).size();
-        boolean canBan = player.hasPermission("griefprevention.claim.ban");
-        
-        Map<String, String> placeholders = new HashMap<>();
-        placeholders.put("{count}", String.valueOf(banCount));
-        placeholders.put("{ban_permission}", canBan ? getString("permissions.ban-allowed", "&a✓ You can manage bans")
-            : getString("permissions.ban-denied", "&c✗ No permission to manage bans"));
-        placeholders.put("{ban_permission_detail}", canBan ? "" : getString("permissions.ban-denied-detail", "&8Missing: griefprevention.claim.ban"));
-        
-        if (config != null && config.contains("items.banned-players")) {
-            return createItemFromConfig("items.banned-players", placeholders);
-        }
-        
-        List<String> lore = new ArrayList<>();
-        lore.add("&7Manage players banned from this claim");
-        lore.add("");
-        lore.add("&7Currently banned: &6" + banCount);
-        lore.add("");
-        if (canBan) {
-            lore.add("&a✓ You can manage bans");
-            lore.add("");
-            lore.add("&eClick to manage banned players");
-        } else {
-            lore.add("&c✗ No permission to manage bans");
-            lore.add("&8Missing: griefprevention.claim.ban");
-        }
-        return createItem(Material.BARRIER, "&c&lBanned Players", lore);
     }
     
     private boolean canShowClaimFlags() {
@@ -177,12 +141,6 @@ public class ClaimSettingsGUI extends BaseGUI {
         
         if (slot == viewChildrenSlot) {
             manager.openChildrenClaims(player, claim, claimId);
-        } else if (slot == bannedPlayersSlot) {
-            if (player.hasPermission("griefprevention.claim.ban")) {
-                manager.openBannedPlayers(player, claim, claimId);
-            } else {
-                plugin.getMessages().send(player, "general.no-permission");
-            }
         } else if (slot == claimFlagsSlot) {
             if (canShowClaimFlags()) {
                 manager.openClaimFlags(player, claim, claimId);

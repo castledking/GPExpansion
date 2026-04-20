@@ -167,11 +167,13 @@ public class ChildrenClaimsGUI extends BaseGUI {
         if (currentPage < maxPage) {
             inventory.setItem(NEXT_PAGE_SLOT, createNextPageItem());
         }
+
+        String currentChildClaimId = getCurrentChildClaimId();
         
         int startIndex = currentPage * CLAIM_SLOTS.length;
         for (int i = 0; i < CLAIM_SLOTS.length && startIndex + i < filteredChildren.size(); i++) {
             ChildInfo info = filteredChildren.get(startIndex + i);
-            inventory.setItem(CLAIM_SLOTS[i], createChildItem(info));
+            inventory.setItem(CLAIM_SLOTS[i], createChildItem(info, currentChildClaimId));
         }
     }
     
@@ -197,7 +199,7 @@ public class ChildrenClaimsGUI extends BaseGUI {
         return createItem(Material.ARROW, "&e&lNext Page »", List.of("&7Page " + (currentPage + 2) + "/" + maxPage));
     }
     
-    private ItemStack createChildItem(ChildInfo info) {
+    private ItemStack createChildItem(ChildInfo info, String currentChildClaimId) {
         Material material = info.is3D ? Material.STONE : Material.GRASS_BLOCK;
         
         List<String> lore = new ArrayList<>();
@@ -212,19 +214,55 @@ public class ChildrenClaimsGUI extends BaseGUI {
         
         lore.add("");
         
-        if (player.hasPermission("griefprevention.claim.teleport")) {
-            lore.add("&a▸ Left-click to teleport");
-        }
+        lore.add("&a▸ Left-click for options");
         if (player.hasPermission("griefprevention.claim.name")) {
-            lore.add("&b▸ Right-click to rename");
+            lore.add("&e▸ Shift-click to rename");
         }
-        if (info.hasChildren) {
-            lore.add("&e▸ Shift+Left-click to view inner subdivisions");
-        } else {
-            lore.add("&e▸ Shift+Left-click for options");
+
+        if (info.claimId != null && info.claimId.equals(currentChildClaimId)) {
+            lore.add("");
+            lore.add("&b✦ You are here");
         }
         
-        return createItem(material, "&e" + info.name, lore);
+        boolean glow = info.claimId != null && info.claimId.equals(currentChildClaimId);
+        return createItem(material, "&e" + info.name, lore, glow);
+    }
+
+    private String getCurrentChildClaimId() {
+        Location location = player.getLocation();
+        Object bestMatch = null;
+        int bestArea = Integer.MAX_VALUE;
+
+        for (Object child : gp.getSubclaims(parentClaim)) {
+            if (!containsLocation(child, location)) continue;
+            int area = getClaimArea(child);
+            if (bestMatch == null || area < bestArea) {
+                bestMatch = child;
+                bestArea = area;
+            }
+        }
+
+        if (bestMatch == null) return null;
+        return gp.getClaimId(bestMatch).orElse(null);
+    }
+
+    private boolean containsLocation(Object claim, Location location) {
+        GPBridge.ClaimCorners corners = gp.getClaimCorners(claim).orElse(null);
+        if (corners == null || location.getWorld() == null) return false;
+
+        int x = location.getBlockX();
+        int y = location.getBlockY();
+        int z = location.getBlockZ();
+
+        if (x < corners.x1 || x > corners.x2 || z < corners.z1 || z > corners.z2) {
+            return false;
+        }
+
+        if (gp.is3DClaim(claim)) {
+            return y >= corners.y1 && y <= corners.y2;
+        }
+
+        return true;
     }
     
     @Override
@@ -278,13 +316,7 @@ public class ChildrenClaimsGUI extends BaseGUI {
     }
     
     private void handleChildClick(InventoryClickEvent event, ChildInfo info) {
-        if (isLeftClick(event) && !event.isShiftClick()) {
-            if (player.hasPermission("griefprevention.claim.teleport")) {
-                closeAndRunOnMainThread("claimtp " + info.claimId);
-            } else {
-                plugin.getMessages().send(player, "general.no-permission");
-            }
-        } else if (isRightClick(event) && !event.isShiftClick()) {
+        if (event.isShiftClick()) {
             if (player.hasPermission("griefprevention.claim.name")) {
                 player.closeInventory();
                 String displayName = (info.name != null && !info.name.isEmpty() && !info.name.startsWith("Claim #"))
@@ -300,14 +332,8 @@ public class ChildrenClaimsGUI extends BaseGUI {
             } else {
                 plugin.getMessages().send(player, "general.no-permission");
             }
-        } else if (isShiftLeftClick(event)) {
-            if (info.hasChildren) {
-                // Open nested children view (recursive)
-                manager.openChildrenClaims(player, info.claim, info.claimId);
-            } else {
-                // Open options for this subdivision
-                manager.openClaimOptions(player, info.claim, info.claimId);
-            }
+        } else if (isLeftClick(event)) {
+            manager.openClaimOptions(player, info.claim, info.claimId);
         }
     }
     

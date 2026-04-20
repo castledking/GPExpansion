@@ -2,6 +2,7 @@ package dev.towki.gpexpansion.command;
 
 import dev.towki.gpexpansion.GPExpansionPlugin;
 import dev.towki.gpexpansion.gp.GPBridge;
+import dev.towki.gpexpansion.scheduler.TaskHandle;
 import dev.towki.gpexpansion.storage.ClaimDataStore;
 import dev.towki.gpexpansion.util.SafeTeleportUtil;
 import net.kyori.adventure.text.Component;
@@ -25,6 +26,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
@@ -33,6 +35,18 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private final GPBridge gp;
     private final GPExpansionPlugin plugin;
+    private final Map<UUID, Long> claimTeleportCooldowns = new ConcurrentHashMap<>();
+    private final Map<UUID, PendingClaimTeleport> pendingClaimTeleports = new ConcurrentHashMap<>();
+
+    private static final class PendingClaimTeleport {
+        private final TaskHandle task;
+        private final String claimId;
+
+        private PendingClaimTeleport(TaskHandle task, String claimId) {
+            this.task = task;
+            this.claimId = claimId;
+        }
+    }
     
     // Helper method to check if running on Folia
     private boolean isFolia() {
@@ -94,7 +108,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     /** Subcommands we handle - used when sharing /claim with GP3D (only intercept these) */
     public static final java.util.Set<String> HANDLED_SUBCOMMANDS = java.util.Collections.unmodifiableSet(
             new java.util.HashSet<>(Arrays.asList(
-            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options",
+            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -103,12 +117,12 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             "untrust",           // -> untrust (supports 'all')
             "accesstrust",       // -> accesstrust
             "containertrust",    // -> containertrust
-            "trustlist",         // -> trustlist
             "subdivideclaim",    // -> subdivideclaims
             "3dsubdivideclaim",  // -> 3dsubdivideclaims
             "restrictsubclaim",  // -> restrictsubclaim
             "basic",             // -> basicclaims
             "permissiontrust",   // -> permissiontrust
+            "expand",            // legacy alias -> resize
             "abandonall",        // -> abandonallclaims
             "transfer",          // -> transfer (wraps GP's transferclaim and adds ID support)
             "rentalsignconfirm",
@@ -121,7 +135,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBS = Arrays.asList(
             // Our features
-            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options",
+            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -130,7 +144,6 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             "untrust",           // -> untrust (supports 'all')
             "accesstrust",       // -> accesstrust
             "containertrust",    // -> containertrust
-            "trustlist",         // -> trustlist
             "subdivideclaim",    // -> subdivideclaims
             "3dsubdivideclaim",  // -> 3dsubdivideclaims
             "restrictsubclaim",  // -> restrictsubclaim
@@ -263,10 +276,6 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     }
     
     private boolean executeCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
-        // Support standalone /trustlist command routed through this executor
-        if (command.getName().equalsIgnoreCase("trustlist") || label.equalsIgnoreCase("trustlist")) {
-            return handleDispatch(sender, "trustlist", args);
-        }
         // Support standalone /adminclaimlist command routed through this executor (including alias adminclaimslist)
         if (command.getName().equalsIgnoreCase("adminclaimlist") || label.equalsIgnoreCase("adminclaimlist") || label.equalsIgnoreCase("adminclaimslist")) {
             return handleAdminClaimsList(sender, args);
@@ -278,6 +287,20 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         // Support standalone /claimtp command
         if (command.getName().equalsIgnoreCase("claimtp") || label.equalsIgnoreCase("claimtp")) {
             return handleTeleport(sender, args);
+        }
+        // Support standalone /resizeclaim and GP-native aliases /expandclaim, /extendclaim
+        if (command.getName().equalsIgnoreCase("resizeclaim")
+            || label.equalsIgnoreCase("resizeclaim")
+            || command.getName().equalsIgnoreCase("expandclaim")
+            || label.equalsIgnoreCase("expandclaim")
+            || command.getName().equalsIgnoreCase("extendclaim")
+            || label.equalsIgnoreCase("extendclaim")) {
+            return handleResizeCommand(sender, args);
+        }
+        // Support standalone /claimmap
+        if (command.getName().equalsIgnoreCase("claimmap")
+            || label.equalsIgnoreCase("claimmap")) {
+            return handleMapCommand(sender, args);
         }
         // Support standalone /setclaimspawn command
         if (command.getName().equalsIgnoreCase("setclaimspawn") || label.equalsIgnoreCase("setclaimspawn")) {
@@ -308,7 +331,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             case "!":
                 return handleReturnToGUI(sender);
             case "trust":
-                return handleDispatch(sender, "trust", subArgs);
+                return handleTrustDispatch(sender, subArgs);
             case "untrust":
                 return handleDispatch(sender, "untrust", subArgs);
             case "containertrust":
@@ -331,13 +354,16 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 return handleDispatch(sender, "basicclaims", subArgs);
             case "explosions":
                 return handleDispatch(sender, "claimexplosions", subArgs);
-            case "trustlist":
-                return handleDispatch(sender, "trustlist", subArgs);
             case "name":
                 return handleName(sender, subArgs);
             case "create":
                 // Alias to GP's /createclaim [radius] to avoid recursion
                 return handleDispatch(sender, "createclaim", subArgs);
+            case "resize":
+            case "expand":
+                return handleResizeCommand(sender, subArgs);
+            case "map":
+                return handleMapCommand(sender, subArgs);
             case "ban":
                 return handleBan(sender, subArgs);
             case "unban":
@@ -435,8 +461,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         boolean supportsIdWithArgs = base.equals("trust") || base.equals("untrust") || base.equals("containertrust") || 
                            base.equals("accesstrust") || base.equals("permissiontrust");
         // Commands that can take just an ID with no other args (e.g., abandonclaim [id])
-        boolean supportsIdOnly = base.equals("abandonclaim") || base.equals("claimexplosions") || 
-                           base.equals("restrictsubclaim") || base.equals("trustlist");
+        boolean supportsIdOnly = base.equals("abandonclaim") || base.equals("claimexplosions") ||
+                           base.equals("restrictsubclaim");
         
         // Check if we have an ID at the end
         boolean hasIdArg = false;
@@ -444,6 +470,11 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             hasIdArg = isNumeric(args[args.length - 1]);
         } else if (supportsIdOnly && args.length >= 1) {
             hasIdArg = isNumeric(args[args.length - 1]);
+        }
+
+        if (hasIdArg && isTrustCommand(base) && !sender.hasPermission("griefprevention.trust.anywhere")) {
+            sender.sendMessage(plugin.getMessages().get("claim.trust-anywhere-required"));
+            return true;
         }
         
         if (hasIdArg) {
@@ -481,6 +512,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                         boolean ok = Bukkit.dispatchCommand(sender, cmd);
                         if (!ok) {
                             sender.sendMessage(plugin.getMessages().get("commands.exec-failed", "{command}", "/" + finalBaseCmd));
+                        } else {
+                            maybeTrackTrustedPlayerChange(player, finalBaseCmd, passArgs, possibleId);
                         }
                         
                         // Teleport back
@@ -510,12 +543,177 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             boolean ok = Bukkit.dispatchCommand(sender, finalCmd);
             if (!ok) {
                 sender.sendMessage(plugin.getMessages().get("commands.exec-failed", "{command}", "/" + base));
+            } else {
+                maybeTrackTrustedPlayerChange(player, base, args, null);
             }
         } catch (Exception e) {
             sender.sendMessage(plugin.getMessages().get("commands.exec-error", "{error}", e.getMessage()));
             e.printStackTrace();
         }
         return true;
+    }
+
+    private boolean handleTrustDispatch(CommandSender sender, String[] args) {
+        TrustCommandDispatch dispatch = normalizeTrustCommand(args);
+        if (dispatch == null) {
+            sender.sendMessage(plugin.getMessages().get("claim.trust-usage"));
+            return true;
+        }
+        return handleDispatch(sender, dispatch.base, dispatch.args);
+    }
+
+    private boolean handleResizeCommand(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+
+        if (args.length == 0) {
+            if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
+                return handleDispatch(sender, "expandclaim", args);
+            }
+
+            Optional<Object> claimOpt = gp.getClaimAt(player.getLocation(), player);
+            if (claimOpt.isEmpty()) {
+                sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+                return true;
+            }
+
+            Object claim = claimOpt.get();
+            String claimId = gp.getClaimId(claim).orElse(null);
+            if (claimId == null) {
+                sender.sendMessage(plugin.getMessages().get("claim.id-missing"));
+                return true;
+            }
+
+            plugin.getGUIManager().openClaimResize(player, claim, claimId);
+            return true;
+        }
+
+        return handleDispatch(sender, "expandclaim", args);
+    }
+
+    private boolean handleMapCommand(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+
+        if (args.length > 0) {
+            sender.sendMessage(plugin.getMessages().get("commands.claim-usage",
+                    "{label}", "claim",
+                    "{subs}", String.join("|", SUBS)));
+            return true;
+        }
+
+        if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
+            sender.sendMessage(plugin.getMessages().get("gui.not-enabled"));
+            return true;
+        }
+
+        Optional<Object> claimOpt = gp.getClaimAt(player.getLocation(), player);
+        if (claimOpt.isEmpty()) {
+            sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+            return true;
+        }
+
+        Object claim = claimOpt.get();
+        String claimId = gp.getClaimId(claim).orElse(null);
+        if (claimId == null) {
+            sender.sendMessage(plugin.getMessages().get("claim.id-missing"));
+            return true;
+        }
+
+        plugin.getGUIManager().openClaimMapEditor(player, claim, claimId);
+        return true;
+    }
+
+    private TrustCommandDispatch normalizeTrustCommand(String[] args) {
+        if (args.length < 1 || args.length > 3) {
+            return null;
+        }
+
+        if (args.length == 1) {
+            return new TrustCommandDispatch("trust", args);
+        }
+
+        String playerArg = args[0];
+        String second = args[1];
+
+        if (args.length == 2) {
+            if (isNumeric(second)) {
+                return new TrustCommandDispatch("trust", args);
+            }
+
+            String mappedBase = mapTrustTypeToBase(second);
+            if (mappedBase == null) {
+                return null;
+            }
+            return new TrustCommandDispatch(mappedBase, new String[]{playerArg});
+        }
+
+        String mappedBase = mapTrustTypeToBase(second);
+        if (mappedBase == null || !isNumeric(args[2])) {
+            return null;
+        }
+        return new TrustCommandDispatch(mappedBase, new String[]{playerArg, args[2]});
+    }
+
+    private String mapTrustTypeToBase(String trustType) {
+        if (trustType == null || trustType.isBlank()) {
+            return null;
+        }
+
+        return switch (trustType.toLowerCase(Locale.ROOT)) {
+            case "build", "builder", "builders" -> "trust";
+            case "access", "accessor", "accessors" -> "accesstrust";
+            case "container", "containers", "inventory", "inventories" -> "containertrust";
+            case "manage", "manager", "managers", "permission", "permissions" -> "permissiontrust";
+            default -> null;
+        };
+    }
+
+    private boolean isTrustCommand(String base) {
+        return base.equals("trust")
+            || base.equals("untrust")
+            || base.equals("containertrust")
+            || base.equals("accesstrust")
+            || base.equals("permissiontrust");
+    }
+
+    private void maybeTrackTrustedPlayerChange(Player player, String base, String[] args, String explicitClaimId) {
+        if (!isTrustCommand(base) || args.length == 0) {
+            return;
+        }
+
+        String targetName = args[0];
+        if (targetName == null || targetName.isBlank() || targetName.equalsIgnoreCase("all") || targetName.equalsIgnoreCase("public")) {
+            return;
+        }
+
+        UUID targetUuid = resolvePlayerUuid(targetName);
+        if (targetUuid == null) {
+            return;
+        }
+
+        String claimId = explicitClaimId;
+        if (claimId == null) {
+            claimId = gp.getClaimAt(player.getLocation(), player)
+                .flatMap(gp::getClaimId)
+                .orElse(null);
+        }
+        if (claimId == null) {
+            return;
+        }
+
+        plugin.getClaimDataStore().addTrustedPlayer(claimId, targetUuid, targetName);
+        plugin.getClaimDataStore().save();
+    }
+
+    private static final class TrustCommandDispatch {
+        private final String base;
+        private final String[] args;
+
+        private TrustCommandDispatch(String base, String[] args) {
+            this.base = base;
+            this.args = args;
+        }
     }
     // Helper methods for command handling
     private boolean handleList(CommandSender sender, String[] args) {
@@ -1320,7 +1518,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         }
         try {
             OfflinePlayer offline = Bukkit.getOfflinePlayer(name);
-            if (offline != null && offline.getUniqueId() != null) {
+            if (offline != null && offline.getUniqueId() != null && (offline.isOnline() || offline.hasPlayedBefore())) {
                 return offline.getUniqueId();
             }
         } catch (Exception ignored) { }
@@ -1911,6 +2109,93 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         // Do NOT use blocking operations like CompletableFuture.join() here
         return completeTab(sender, command, alias, args);
     }
+
+    private long getClaimTeleportCooldownRemaining(Player player) {
+        UUID uuid = player.getUniqueId();
+        Long until = claimTeleportCooldowns.get(uuid);
+        if (until == null) return 0L;
+
+        long remaining = until - System.currentTimeMillis();
+        if (remaining <= 0L) {
+            claimTeleportCooldowns.remove(uuid, until);
+            return 0L;
+        }
+        return remaining;
+    }
+
+    private void applyClaimTeleportCooldown(Player player) {
+        int cooldownSeconds = plugin.getConfigManager().getClaimTeleportCooldownSeconds();
+        if (cooldownSeconds <= 0) return;
+        claimTeleportCooldowns.put(player.getUniqueId(), System.currentTimeMillis() + (cooldownSeconds * 1000L));
+    }
+
+    private void cancelPendingClaimTeleport(UUID playerId) {
+        PendingClaimTeleport pending = pendingClaimTeleports.remove(playerId);
+        if (pending != null) {
+            pending.task.cancel();
+        }
+    }
+
+    private void completeClaimTeleport(CommandSender sender, Player targetPlayer, String claimId, Location destination) {
+        plugin.teleportEntity(targetPlayer, destination);
+        if (sender == targetPlayer) {
+            applyClaimTeleportCooldown(targetPlayer);
+        }
+        sendTeleportMessages(sender, targetPlayer, claimId);
+    }
+
+    private void queueClaimTeleport(CommandSender sender, Player targetPlayer, String claimId, Location destination) {
+        if (sender != targetPlayer) {
+            completeClaimTeleport(sender, targetPlayer, claimId, destination);
+            return;
+        }
+
+        long cooldownRemaining = getClaimTeleportCooldownRemaining(targetPlayer);
+        if (cooldownRemaining > 0L) {
+            sender.sendMessage(plugin.getMessages().get("claim.teleport-cooldown",
+                "{time}", formatDuration(cooldownRemaining)));
+            return;
+        }
+
+        int delaySeconds = plugin.getConfigManager().getClaimTeleportDelaySeconds();
+        UUID playerId = targetPlayer.getUniqueId();
+        cancelPendingClaimTeleport(playerId);
+
+        if (delaySeconds <= 0) {
+            completeClaimTeleport(sender, targetPlayer, claimId, destination);
+            return;
+        }
+
+        sender.sendMessage(plugin.getMessages().get("claim.teleport-delay-start",
+            "{id}", claimId,
+            "{time}", formatDuration(delaySeconds * 1000L)));
+
+        final PendingClaimTeleport[] pendingRef = new PendingClaimTeleport[1];
+        TaskHandle task = dev.towki.gpexpansion.scheduler.SchedulerAdapter.runLaterEntity(plugin, targetPlayer, () -> {
+            PendingClaimTeleport pending = pendingRef[0];
+            if (pending == null || pendingClaimTeleports.get(playerId) != pending) {
+                return;
+            }
+
+            pendingClaimTeleports.remove(playerId, pending);
+            if (!targetPlayer.isOnline() || !targetPlayer.isValid()) {
+                return;
+            }
+
+            long remaining = getClaimTeleportCooldownRemaining(targetPlayer);
+            if (remaining > 0L) {
+                targetPlayer.sendMessage(plugin.getMessages().get("claim.teleport-cooldown",
+                    "{time}", formatDuration(remaining)));
+                return;
+            }
+
+            completeClaimTeleport(sender, targetPlayer, claimId, destination);
+        }, Math.max(1L, delaySeconds * 20L));
+
+        PendingClaimTeleport pending = new PendingClaimTeleport(task, claimId);
+        pendingRef[0] = pending;
+        pendingClaimTeleports.put(playerId, pending);
+    }
     
     // /claim tp|teleport <claimId> [player]
     private boolean handleTeleport(CommandSender sender, String[] args) {
@@ -1982,8 +2267,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
             
-            plugin.teleportEntity(finalTarget, safeLoc);
-            sendTeleportMessages(finalSender, finalTarget, finalClaimId);
+            queueClaimTeleport(finalSender, finalTarget, finalClaimId, safeLoc);
         } else {
             // Use claim center as fallback - need to get Y on correct region thread
             Optional<Location> centerXZOpt = gp.getClaimCenterXZ(claim);
@@ -2016,8 +2300,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                     return;
                 }
                 
-                plugin.teleportEntity(finalTarget, safeLoc);
-                sendTeleportMessages(finalSender, finalTarget, finalClaimId);
+                queueClaimTeleport(finalSender, finalTarget, finalClaimId, safeLoc);
             });
         }
         
@@ -2390,6 +2673,21 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             }
             return Collections.emptyList();
         }
+        // Tab completion for /resizeclaim
+        if (command.getName().equalsIgnoreCase("resizeclaim")
+            || alias.equalsIgnoreCase("resizeclaim")) {
+            if (args.length == 1) {
+                return Arrays.asList("1", "5", "10").stream()
+                    .filter(s -> s.startsWith(args[0]))
+                    .collect(Collectors.toList());
+            }
+            return Collections.emptyList();
+        }
+        // Tab completion for /claimmap
+        if (command.getName().equalsIgnoreCase("claimmap")
+            || alias.equalsIgnoreCase("claimmap")) {
+            return Collections.emptyList();
+        }
         // Tab completion for /globalclaim [true|false] [claimId]
         if (command.getName().equalsIgnoreCase("globalclaim") || alias.equalsIgnoreCase("globalclaim")) {
             if (!sender.hasPermission("griefprevention.claim.toggleglobal")) return Collections.emptyList();
@@ -2432,6 +2730,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 if (!allCommands.contains("list")) allCommands.add("list");
                 if (!allCommands.contains("create")) allCommands.add("create");
                 if (!allCommands.contains("!")) allCommands.add("!");
+                if (!allCommands.contains("resize")) allCommands.add("resize");
+                if (!allCommands.contains("map")) allCommands.add("map");
             }
             
             if (sender.hasPermission("griefprevention.adminclaimslist")) {
@@ -2443,7 +2743,6 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 // Trust commands
                 if (!allCommands.contains("trust")) allCommands.add("trust");
                 if (!allCommands.contains("untrust")) allCommands.add("untrust");
-                if (!allCommands.contains("trustlist")) allCommands.add("trustlist");
                 if (!allCommands.contains("accesstrust")) allCommands.add("accesstrust");
                 if (!allCommands.contains("containertrust")) allCommands.add("containertrust");
                 if (!allCommands.contains("permissiontrust")) allCommands.add("permissiontrust");
@@ -2488,6 +2787,10 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                     return Collections.singletonList("<name...>");
                 case "create":
                     return Collections.singletonList("<radius>");
+                case "resize":
+                case "expand":
+                    if (args.length == 2) return Collections.singletonList("<blocks>");
+                    return new ArrayList<>();
                 case "adminclaimslist":
                 case "adminlist":
                 case "globallist":
@@ -2498,6 +2801,12 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                     if (args.length == 3) return Collections.singletonList("[claimId]");
                     return new ArrayList<>();
                 case "trust":
+                    if (args.length == 2) return Collections.singletonList("<player>");
+                    if (args.length == 3) {
+                        return Arrays.asList("build", "access", "containers", "manage", "[claimId]");
+                    }
+                    if (args.length == 4) return Collections.singletonList("[claimId]");
+                    return new ArrayList<>();
                 case "untrust":
                 case "containertrust":
                 case "accesstrust":
@@ -2525,7 +2834,6 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                     if (args.length == 2) return Arrays.asList("true", "false");
                     if (args.length == 3) return Collections.singletonList("[claimId]");
                     return new ArrayList<>();
-                case "trustlist":
                 case "restrictsubclaim":
                 case "explosions":
                     if (args.length == 2) return Collections.singletonList("[claimId]");

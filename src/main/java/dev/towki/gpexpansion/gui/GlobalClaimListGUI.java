@@ -229,12 +229,14 @@ public class GlobalClaimListGUI extends BaseGUI {
         if (currentPage < maxPage) {
             inventory.setItem(nextPageSlot, createNextPageItem());
         }
+
+        String currentListedClaimId = getCurrentListedClaimId();
         
         // Claim items
         int startIndex = currentPage * claimSlots.length;
         for (int i = 0; i < claimSlots.length && startIndex + i < publicClaims.size(); i++) {
             ClaimInfo info = publicClaims.get(startIndex + i);
-            inventory.setItem(claimSlots[i], createClaimItem(info));
+            inventory.setItem(claimSlots[i], createClaimItem(info, currentListedClaimId));
         }
     }
     
@@ -276,7 +278,69 @@ public class GlobalClaimListGUI extends BaseGUI {
         return createItem(Material.ARROW, "&e&lNext Page »", List.of("&7Page " + (currentPage + 2) + "/" + maxPage));
     }
     
-    private ItemStack createClaimItem(ClaimInfo info) {
+    private String getCurrentListedClaimId() {
+        Location location = player.getLocation();
+        if (location.getWorld() == null) return null;
+
+        String worldName = location.getWorld().getName();
+        String currentClaimId = null;
+        long smallestContainingClaim = Long.MAX_VALUE;
+
+        for (ClaimInfo info : publicClaims) {
+            if (info.claim == null || info.claimId == null) continue;
+            if (!worldName.equals(gp.getClaimWorld(info.claim).orElse(null))) continue;
+            if (!containsLocation(info.claim, location)) continue;
+
+            long sizeMetric = getClaimSizeMetric(info.claim);
+            if (sizeMetric < smallestContainingClaim) {
+                smallestContainingClaim = sizeMetric;
+                currentClaimId = info.claimId;
+            }
+        }
+
+        return currentClaimId;
+    }
+
+    private boolean containsLocation(Object claim, Location location) {
+        GPBridge.ClaimCorners corners = gp.getClaimCorners(claim).orElse(null);
+        if (corners == null || location.getWorld() == null) return false;
+
+        String claimWorld = gp.getClaimWorld(claim).orElse(null);
+        if (claimWorld == null || !claimWorld.equals(location.getWorld().getName())) {
+            return false;
+        }
+
+        int x = location.getBlockX();
+        int y = location.getBlockY();
+        int z = location.getBlockZ();
+
+        if (x < corners.x1 || x > corners.x2 || z < corners.z1 || z > corners.z2) {
+            return false;
+        }
+
+        if (gp.is3DClaim(claim)) {
+            return y >= corners.y1 && y <= corners.y2;
+        }
+
+        return true;
+    }
+
+    private long getClaimSizeMetric(Object claim) {
+        GPBridge.ClaimCorners corners = gp.getClaimCorners(claim).orElse(null);
+        if (corners == null) return Long.MAX_VALUE;
+
+        long width = (long) corners.x2 - corners.x1 + 1L;
+        long length = (long) corners.z2 - corners.z1 + 1L;
+
+        if (gp.is3DClaim(claim)) {
+            long height = (long) corners.y2 - corners.y1 + 1L;
+            return width * length * height;
+        }
+
+        return width * length;
+    }
+
+    private ItemStack createClaimItem(ClaimInfo info, String currentListedClaimId) {
         Material material = info.icon != null ? info.icon : Material.GRASS_BLOCK;
         
         List<String> lore = new ArrayList<>();
@@ -289,8 +353,14 @@ public class GlobalClaimListGUI extends BaseGUI {
         if (player.hasPermission("griefprevention.claim.teleport")) {
             lore.add("&a▸ Click to teleport");
         }
-        
-        return createItem(material, "&6" + info.name, lore);
+
+        if (info.claimId != null && info.claimId.equals(currentListedClaimId)) {
+            lore.add("");
+            lore.add("&b✦ You are here");
+        }
+
+        boolean glow = info.claimId != null && info.claimId.equals(currentListedClaimId);
+        return createItem(material, "&6" + info.name, lore, glow);
     }
     
     @Override

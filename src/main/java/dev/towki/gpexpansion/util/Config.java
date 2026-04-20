@@ -37,6 +37,7 @@ public class Config {
         DEFAULTS.put("messages.show-permission-details", true);
         
         // Default limits
+        DEFAULTS.put("defaults.max-global-claims", 1);
         DEFAULTS.put("defaults.max-sell-signs", 5);
         DEFAULTS.put("defaults.max-rent-signs", 5);
         DEFAULTS.put("defaults.max-mailbox-signs", 5);
@@ -50,6 +51,10 @@ public class Config {
         
         // GUI settings
         DEFAULTS.put("gui.enabled", true);
+
+        // Claim teleport settings
+        DEFAULTS.put("teleport.delay-seconds", 3);
+        DEFAULTS.put("teleport.cooldown-seconds", 10);
         
         // Tax settings
         DEFAULTS.put("tax.percent", 5);
@@ -412,6 +417,18 @@ public class Config {
     
     public int getMaxSelfMailboxesPerClaim() {
         return config.getInt("defaults.max-self-mailboxes-per-claim", 1);
+    }
+
+    public int getMaxGlobalClaims() {
+        return config.getInt("defaults.max-global-claims", 1);
+    }
+
+    public int getClaimTeleportDelaySeconds() {
+        return Math.max(0, config.getInt("teleport.delay-seconds", 0));
+    }
+
+    public int getClaimTeleportCooldownSeconds() {
+        return Math.max(0, config.getInt("teleport.cooldown-seconds", 0));
     }
     
     /** "real" = create subdivision + container trust public, owner opens real container; "virtual" = no subdivision, virtual view only */

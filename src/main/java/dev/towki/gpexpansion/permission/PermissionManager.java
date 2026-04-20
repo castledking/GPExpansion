@@ -76,7 +76,7 @@ public class PermissionManager {
      * Clean up global claim permissions for a player
      */
     public boolean cleanupGlobalClaimPermissions(Player player, int newLimit) {
-        return cleanupPermissions(player, "griefprevention.claim.makeglobal.", newLimit, "global claim");
+        return cleanupPermissions(player, "griefprevention.claim.toggleglobal.", newLimit, "global claim");
     }
     
     /**

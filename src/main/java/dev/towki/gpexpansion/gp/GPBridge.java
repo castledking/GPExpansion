@@ -1,7 +1,9 @@
 package dev.towki.gpexpansion.gp;
 
+import dev.towki.gpexpansion.GPExpansionPlugin;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 
 import java.lang.reflect.Field;
@@ -12,6 +14,16 @@ import java.util.*;
  * Bridge to GriefPrevention main fork (compile-time dependency, provided scope).
  */
 public class GPBridge {
+    private static final double DOMINANT_CELL_COVERAGE_THRESHOLD = 0.50D;
+
+    private enum GetClaimAtMode {
+        TWO_ARG,
+        THREE_ARG_PLAYER,
+        THREE_ARG_PLAYER_DATA,
+        THREE_ARG_CACHED_CLAIM,
+        FOUR_ARG
+    }
+
 
     // Debug logging toggle (verbose). Defaults to false.
     private static volatile boolean DEBUG = false;
@@ -26,6 +38,19 @@ public class GPBridge {
     private Class<?> claimClass;
     private Object gpInstance;
     private Object dataStore;
+    private volatile Method cachedGetClaimAtMethod;
+    private volatile GetClaimAtMode cachedGetClaimAtMode;
+    private volatile boolean cachedGetClaimAtResolved;
+    private volatile Method cachedGetPlayerDataMethod;
+
+    // Cached reflective accessors for OrthogonalPolygon/OrthogonalPoint2i. Resolving
+    // Method handles via Paper's reflection remapper is expensive, so we resolve them
+    // once per polygon class/point class and reuse them for every subsequent query.
+    private volatile Class<?> cachedPolygonClass;
+    private volatile Method cachedPolygonCornersMethod;
+    private volatile Class<?> cachedPointClass;
+    private volatile Method cachedPointXMethod;
+    private volatile Method cachedPointZMethod;
 
     public GPBridge() {
         // Try both CamelCase and lowercase packages for compatibility across forks
@@ -329,8 +354,252 @@ public class GPBridge {
         return "plugin=" + pluginPresent + ", gpClass=" + gpCls + ", gpInstance=" + gpInst + ", dataStore=" + ds;
     }
 
+    /**
+     * Check whether a claim contains a specific X/Z column (ignore Y bounds).
+     */
+    public boolean claimContains(Object claim, World world, int x, int y, int z) {
+        if (!isAvailable() || claim == null || world == null) {
+            return false;
+        }
+
+        Location probe = new Location(world, x + 0.5D, y, z + 0.5D);
+        try {
+            for (Method method : claim.getClass().getMethods()) {
+                if (!method.getName().equals("contains")) continue;
+                Class<?>[] params = method.getParameterTypes();
+
+                Object result = null;
+                if (params.length == 3
+                        && Location.class.isAssignableFrom(params[0])
+                        && params[1] == boolean.class
+                        && params[2] == boolean.class) {
+                    result = method.invoke(claim, probe, true, false);
+                } else if (params.length == 2
+                        && Location.class.isAssignableFrom(params[0])
+                        && params[1] == boolean.class) {
+                    result = method.invoke(claim, probe, true);
+                } else if (params.length == 1
+                        && Location.class.isAssignableFrom(params[0])) {
+                    result = method.invoke(claim, probe);
+                }
+
+                if (result instanceof Boolean b) {
+                    return b;
+                }
+            }
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+        }
+
+        // Fallback: compare claim identity from lookup API.
+        Object lookedUp = getClaimAt(probe, null).orElse(null);
+        if (lookedUp == null) {
+            return false;
+        }
+        String expectedId = getClaimId(claim).orElse(null);
+        String actualId = getClaimId(lookedUp).orElse(null);
+        return expectedId != null && expectedId.equals(actualId);
+    }
+
+    public int getClaimCoverageInCell(
+            Object claim,
+            World world,
+            int minX,
+            int maxX,
+            int minZ,
+            int maxZ
+    ) {
+        if (!isAvailable() || claim == null || world == null) {
+            return 0;
+        }
+
+        int lowX = Math.min(minX, maxX);
+        int highX = Math.max(minX, maxX);
+        int lowZ = Math.min(minZ, maxZ);
+        int highZ = Math.max(minZ, maxZ);
+
+        Object polygon = resolveClaimBoundaryPolygon(claim);
+        if (polygon != null) {
+            try {
+                return countPolygonCoverageInCell(polygon, lowX, highX, lowZ, highZ);
+            } catch (ReflectiveOperationException e) {
+                if (DEBUG) e.printStackTrace();
+            }
+        }
+
+        ClaimCorners corners = getClaimCorners(claim).orElse(null);
+        if (corners == null) {
+            return 0;
+        }
+
+        if (!isShapedClaim(claim)) {
+            int overlapMinX = Math.max(lowX, Math.min(corners.x1, corners.x2));
+            int overlapMaxX = Math.min(highX, Math.max(corners.x1, corners.x2));
+            int overlapMinZ = Math.max(lowZ, Math.min(corners.z1, corners.z2));
+            int overlapMaxZ = Math.min(highZ, Math.max(corners.z1, corners.z2));
+            if (overlapMinX > overlapMaxX || overlapMinZ > overlapMaxZ) {
+                return 0;
+            }
+            return (overlapMaxX - overlapMinX + 1) * (overlapMaxZ - overlapMinZ + 1);
+        }
+
+        int sampleY = world.getMinHeight() + 1;
+        int covered = 0;
+        for (int x = lowX; x <= highX; x++) {
+            for (int z = lowZ; z <= highZ; z++) {
+                if (claimContains(claim, world, x, sampleY, z)) {
+                    covered++;
+                }
+            }
+        }
+        return covered;
+    }
+
+    public int getCellArea(int minX, int maxX, int minZ, int maxZ) {
+        int width = Math.abs(maxX - minX) + 1;
+        int depth = Math.abs(maxZ - minZ) + 1;
+        return width * depth;
+    }
+
+    /**
+     * Re-show GP's native claim boundary visualization for the player.
+     * Useful after map/GUI edits so the player immediately sees updated geometry.
+     */
+    public boolean refreshClaimVisualization(Player player, Object claim) {
+        if (!isAvailable() || player == null || claim == null) {
+            return false;
+        }
+
+        try {
+            ClassLoader loader = claim.getClass().getClassLoader();
+            Class<?> typeClass = loadFirstClass(loader,
+                    "com.griefprevention.visualization.VisualizationType",
+                    "me.ryanhamshire.GriefPrevention.VisualizationType",
+                    "me.ryanhamshire.griefprevention.VisualizationType");
+            Class<?> visualizationClass = loadFirstClass(loader,
+                    "com.griefprevention.visualization.BoundaryVisualization",
+                    "me.ryanhamshire.GriefPrevention.BoundaryVisualization",
+                    "me.ryanhamshire.griefprevention.BoundaryVisualization");
+            if (typeClass == null || visualizationClass == null) {
+                return false;
+            }
+
+            Object visualizationType = resolveVisualizationType(typeClass, claim);
+            if (visualizationType == null) {
+                return false;
+            }
+
+            Method visualize = findVisualizationMethod(visualizationClass, claim.getClass(), typeClass);
+            if (visualize == null) {
+                return false;
+            }
+
+            visualize.invoke(null, player, claim, visualizationType);
+            return true;
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return false;
+        }
+    }
+
     public Optional<Object> getClaimAt(Location location) {
         return getClaimAt(location, null);
+    }
+
+    /**
+     * Resolve the most representative claim within a map cell rectangle by sampling
+     * multiple points across the cell (instead of only center point lookups).
+     */
+    public Optional<Object> getDominantClaimInCell(
+            World world,
+            int minX,
+            int maxX,
+            int minZ,
+            int maxZ,
+            Player player
+    ) {
+        if (!isAvailable() || world == null) {
+            return Optional.empty();
+        }
+
+        int lowX = Math.min(minX, maxX);
+        int highX = Math.max(minX, maxX);
+        int lowZ = Math.min(minZ, maxZ);
+        int highZ = Math.max(minZ, maxZ);
+        int width = highX - lowX + 1;
+        int depth = highZ - lowZ + 1;
+        int stepX = width <= 20 ? 1 : Math.max(1, width / 10);
+        int stepZ = depth <= 20 ? 1 : Math.max(1, depth / 10);
+        int sampleY = world.getMinHeight() + 1;
+
+        Set<Long> samplePoints = new LinkedHashSet<>();
+        for (int x = lowX; x <= highX; x += stepX) {
+            for (int z = lowZ; z <= highZ; z += stepZ) {
+                samplePoints.add(packXZ(x, z));
+            }
+        }
+        // Ensure right/bottom boundaries and center are always sampled.
+        for (int x = lowX; x <= highX; x += stepX) {
+            samplePoints.add(packXZ(x, highZ));
+        }
+        for (int z = lowZ; z <= highZ; z += stepZ) {
+            samplePoints.add(packXZ(highX, z));
+        }
+        samplePoints.add(packXZ((lowX + highX) / 2, (lowZ + highZ) / 2));
+        samplePoints.add(packXZ(lowX, lowZ));
+        samplePoints.add(packXZ(lowX, highZ));
+        samplePoints.add(packXZ(highX, lowZ));
+        samplePoints.add(packXZ(highX, highZ));
+
+        record ClaimHit(Object claim, int hits, int area) {}
+        Map<String, ClaimHit> hitMap = new LinkedHashMap<>();
+        for (long packed : samplePoints) {
+            int x = unpackX(packed);
+            int z = unpackZ(packed);
+            Location probe = new Location(world, x + 0.5, sampleY, z + 0.5);
+            Object claim = getClaimAt(probe, player).orElse(null);
+            if (claim == null) continue;
+
+            String key = getClaimId(claim).orElse("identity:" + System.identityHashCode(claim));
+            ClaimHit current = hitMap.get(key);
+            int area = getClaimAreaSafe(claim);
+            if (current == null) {
+                hitMap.put(key, new ClaimHit(claim, 1, area));
+            } else {
+                hitMap.put(key, new ClaimHit(current.claim(), current.hits() + 1, current.area()));
+            }
+        }
+
+        if (hitMap.isEmpty()) {
+            return Optional.empty();
+        }
+
+        ClaimHit best = null;
+        for (ClaimHit hit : hitMap.values()) {
+            if (best == null) {
+                best = hit;
+                continue;
+            }
+
+            if (hit.hits() > best.hits()) {
+                best = hit;
+                continue;
+            }
+            if (hit.hits() == best.hits() && hit.area() > 0 && best.area() > 0 && hit.area() < best.area()) {
+                best = hit;
+            }
+        }
+
+        if (best == null || samplePoints.isEmpty()) {
+            return Optional.empty();
+        }
+
+        double coverage = best.hits() / (double) samplePoints.size();
+        if (coverage < DOMINANT_CELL_COVERAGE_THRESHOLD) {
+            return Optional.empty();
+        }
+
+        return Optional.of(best.claim());
     }
 
     public Optional<Object> getClaimAt(Location location, Player player) {
@@ -341,59 +610,15 @@ public class GPBridge {
             return Optional.empty();
         }
         try {
-            // Find a compatible getClaimAt method
-            Method target = null;
-            int arity = 0; // 2, 3, or 4
-            for (Method m : dataStore.getClass().getMethods()) {
-                if (!m.getName().equals("getClaimAt")) continue;
-                Class<?>[] p = m.getParameterTypes();
-                if (DEBUG) {
-                    try {
-                        // Debug logging removed
-                    } catch (Throwable ignored) {}
-                }
-                if (p.length == 4 && Location.class.isAssignableFrom(p[0]) && p[1] == boolean.class && p[2] == boolean.class) {
-                    target = m;
-                    arity = 4;
-                    break; // prefer the most specific variant
-                } else if (p.length == 3 && Location.class.isAssignableFrom(p[0]) && p[1] == boolean.class) {
-                    target = m;
-                    arity = 3;
-                    // don't break yet; continue to see if a 4-arg exists, but keep this as fallback
-                } else if (p.length == 2 && Location.class.isAssignableFrom(p[0]) && p[1] == boolean.class) {
-                    if (target == null) { // only keep if nothing else found
-                        target = m;
-                        arity = 2;
-                    }
-                }
-            }
-            if (target == null && claimClass != null) {
-                // Fallback to exact signature with claim class if present
-                try {
-                    target = dataStore.getClass().getMethod("getClaimAt", Location.class, boolean.class, claimClass);
-                    arity = 3;
-                } catch (NoSuchMethodException ignored) {}
-            }
-            if (target == null) return Optional.empty();
+            Method target = resolveCachedGetClaimAtMethod();
+            if (target == null || cachedGetClaimAtMode == null) return Optional.empty();
 
-            // Prepare third argument if required
-            Object thirdArg = null;
-            if (arity == 3) {
-                Class<?>[] p = target.getParameterTypes();
-                Class<?> third = p[2];
-                if (Player.class.isAssignableFrom(third)) {
-                    thirdArg = player; // may be null, but better than always null when available
-                } else if (third.getSimpleName().equals("PlayerData") || third.getName().endsWith(".PlayerData")) {
-                    if (player != null) {
-                        try {
-                            Method getPlayerData = dataStore.getClass().getMethod("getPlayerData", java.util.UUID.class);
-                            thirdArg = getPlayerData.invoke(dataStore, player.getUniqueId());
-                        } catch (ReflectiveOperationException ignored) {
-                            thirdArg = null;
-                        }
-                    }
-                }
-            }
+            Object thirdArg = switch (cachedGetClaimAtMode) {
+                case THREE_ARG_PLAYER -> player;
+                case THREE_ARG_PLAYER_DATA -> player != null ? resolvePlayerData(player.getUniqueId()) : null;
+                case THREE_ARG_CACHED_CLAIM -> null;
+                default -> null;
+            };
 
             // Try ignoreHeight = true first, then false
             if (DEBUG) {
@@ -402,18 +627,18 @@ public class GPBridge {
                 } catch (Throwable ignored) {}
             }
             Object claim;
-            if (arity == 4) {
+            if (cachedGetClaimAtMode == GetClaimAtMode.FOUR_ARG) {
                 // Signature: (Location, boolean ignoreHeight, boolean ignoreSubclaims, Claim cached)
                 claim = target.invoke(dataStore, location, true, false, null);
-            } else if (arity == 3) {
+            } else if (cachedGetClaimAtMode != GetClaimAtMode.TWO_ARG) {
                 claim = target.invoke(dataStore, location, true, thirdArg);
             } else {
                 claim = target.invoke(dataStore, location, true);
             }
             if (claim == null) {
-                if (arity == 4) {
+                if (cachedGetClaimAtMode == GetClaimAtMode.FOUR_ARG) {
                     claim = target.invoke(dataStore, location, false, false, null);
-                } else if (arity == 3) {
+                } else if (cachedGetClaimAtMode != GetClaimAtMode.TWO_ARG) {
                     claim = target.invoke(dataStore, location, false, thirdArg);
                 } else {
                     claim = target.invoke(dataStore, location, false);
@@ -445,6 +670,119 @@ public class GPBridge {
         } catch (ReflectiveOperationException e) {
             return Optional.empty();
         }
+    }
+
+    private Method resolveCachedGetClaimAtMethod() {
+        if (cachedGetClaimAtResolved) {
+            return cachedGetClaimAtMethod;
+        }
+
+        synchronized (this) {
+            if (cachedGetClaimAtResolved) {
+                return cachedGetClaimAtMethod;
+            }
+
+            Method resolved = null;
+            GetClaimAtMode resolvedMode = null;
+
+            for (Method method : dataStore.getClass().getMethods()) {
+                if (!method.getName().equals("getClaimAt")) continue;
+                Class<?>[] params = method.getParameterTypes();
+                if (params.length == 4
+                        && Location.class.isAssignableFrom(params[0])
+                        && params[1] == boolean.class
+                        && params[2] == boolean.class) {
+                    resolved = method;
+                    resolvedMode = GetClaimAtMode.FOUR_ARG;
+                    break;
+                }
+                if (params.length == 3
+                        && Location.class.isAssignableFrom(params[0])
+                        && params[1] == boolean.class) {
+                    resolved = method;
+                    Class<?> third = params[2];
+                    if (Player.class.isAssignableFrom(third)) {
+                        resolvedMode = GetClaimAtMode.THREE_ARG_PLAYER;
+                    } else if (third.getSimpleName().equals("PlayerData") || third.getName().endsWith(".PlayerData")) {
+                        resolvedMode = GetClaimAtMode.THREE_ARG_PLAYER_DATA;
+                    } else {
+                        resolvedMode = GetClaimAtMode.THREE_ARG_CACHED_CLAIM;
+                    }
+                    continue;
+                }
+                if (resolved == null
+                        && params.length == 2
+                        && Location.class.isAssignableFrom(params[0])
+                        && params[1] == boolean.class) {
+                    resolved = method;
+                    resolvedMode = GetClaimAtMode.TWO_ARG;
+                }
+            }
+
+            if (resolved == null && claimClass != null) {
+                try {
+                    resolved = dataStore.getClass().getMethod("getClaimAt", Location.class, boolean.class, claimClass);
+                    resolvedMode = GetClaimAtMode.THREE_ARG_CACHED_CLAIM;
+                } catch (NoSuchMethodException ignored) {}
+            }
+
+            cachedGetClaimAtMethod = resolved;
+            cachedGetClaimAtMode = resolvedMode;
+            cachedGetClaimAtResolved = true;
+            return cachedGetClaimAtMethod;
+        }
+    }
+
+    private Class<?> loadFirstClass(ClassLoader loader, String... classNames) {
+        if (loader == null) {
+            return null;
+        }
+
+        for (String className : classNames) {
+            try {
+                return loader.loadClass(className);
+            } catch (ClassNotFoundException ignored) {
+            }
+        }
+        return null;
+    }
+
+    private Object resolveVisualizationType(Class<?> typeClass, Object claim) {
+        if (!typeClass.isEnum()) {
+            return null;
+        }
+
+        String primary = isAdminClaim(claim) ? "ADMIN_CLAIM" : "CLAIM";
+        Object resolved = enumConstant(typeClass, primary);
+        if (resolved != null) {
+            return resolved;
+        }
+
+        return enumConstant(typeClass, "CLAIM");
+    }
+
+    private Object enumConstant(Class<?> enumClass, String name) {
+        try {
+            @SuppressWarnings("unchecked")
+            Class<? extends Enum> cast = (Class<? extends Enum>) enumClass.asSubclass(Enum.class);
+            return Enum.valueOf(cast, name);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private Method findVisualizationMethod(Class<?> visualizationClass, Class<?> claimRuntimeClass, Class<?> typeClass) {
+        for (Method method : visualizationClass.getMethods()) {
+            if (!method.getName().equals("visualizeClaim")) continue;
+            if (!java.lang.reflect.Modifier.isStatic(method.getModifiers())) continue;
+            Class<?>[] params = method.getParameterTypes();
+            if (params.length != 3) continue;
+            if (!Player.class.isAssignableFrom(params[0])) continue;
+            if (!params[1].isAssignableFrom(claimRuntimeClass)) continue;
+            if (!params[2].isAssignableFrom(typeClass)) continue;
+            return method;
+        }
+        return null;
     }
 
     private Object bruteForceFindClaim(Location location, boolean ignoreHeight) {
@@ -1348,6 +1686,2234 @@ public class GPBridge {
             .orElse(0);
     }
 
+    public enum ResizeDirection {
+        NORTH,
+        SOUTH,
+        EAST,
+        WEST,
+        UP,
+        DOWN
+    }
+
+    public enum ResizeFailureReason {
+        NONE,
+        NOT_AVAILABLE,
+        INVALID_INPUT,
+        UNSUPPORTED,
+        INVALID_OFFSET_RANGE,
+        TOO_SMALL,
+        NOT_ENOUGH_BLOCKS,
+        OUTSIDE_PARENT,
+        INNER_SUBDIVISION_TOO_CLOSE,
+        SIBLING_OVERLAP,
+        WOULD_CLIP_CHILD,
+        APPLY_FAILED
+    }
+
+    public static final class ResizePreview {
+        public final boolean supported;
+        public final boolean valid;
+        public final ResizeFailureReason failureReason;
+        public final int requestedOffset;
+        public final int clampedOffset;
+        public final int maxExpand;
+        public final int maxShrink;
+        public final int minWidth;
+        public final int minArea;
+        public final int remainingClaimBlocks;
+        public final int currentWidth;
+        public final int currentHeight;
+        public final int currentDepth;
+        public final int currentArea;
+        public final int newWidth;
+        public final int newHeight;
+        public final int newDepth;
+        public final int newArea;
+        public final int blockDelta;
+        public final ClaimCorners currentCorners;
+        public final ClaimCorners newCorners;
+
+        private ResizePreview(
+            boolean supported,
+            boolean valid,
+            ResizeFailureReason failureReason,
+            int requestedOffset,
+            int clampedOffset,
+            int maxExpand,
+            int maxShrink,
+            int minWidth,
+            int minArea,
+            int remainingClaimBlocks,
+            int currentWidth,
+            int currentHeight,
+            int currentDepth,
+            int currentArea,
+            int newWidth,
+            int newHeight,
+            int newDepth,
+            int newArea,
+            int blockDelta,
+            ClaimCorners currentCorners,
+            ClaimCorners newCorners
+        ) {
+            this.supported = supported;
+            this.valid = valid;
+            this.failureReason = failureReason;
+            this.requestedOffset = requestedOffset;
+            this.clampedOffset = clampedOffset;
+            this.maxExpand = maxExpand;
+            this.maxShrink = maxShrink;
+            this.minWidth = minWidth;
+            this.minArea = minArea;
+            this.remainingClaimBlocks = remainingClaimBlocks;
+            this.currentWidth = currentWidth;
+            this.currentHeight = currentHeight;
+            this.currentDepth = currentDepth;
+            this.currentArea = currentArea;
+            this.newWidth = newWidth;
+            this.newHeight = newHeight;
+            this.newDepth = newDepth;
+            this.newArea = newArea;
+            this.blockDelta = blockDelta;
+            this.currentCorners = currentCorners;
+            this.newCorners = newCorners;
+        }
+    }
+
+    public static final class ResizeResult {
+        public final boolean success;
+        public final ResizeFailureReason failureReason;
+        public final ResizePreview preview;
+        public final Object claim;
+
+        private ResizeResult(boolean success, ResizeFailureReason failureReason, ResizePreview preview, Object claim) {
+            this.success = success;
+            this.failureReason = failureReason;
+            this.preview = preview;
+            this.claim = claim;
+        }
+    }
+
+    public static final class SegmentEdgeInfo {
+        public final int edgeIndex;
+        public final ResizeDirection direction;
+        public final int axisCoordinate;
+        public final int minAlongAxis;
+        public final int maxAlongAxis;
+        public final boolean horizontal;
+
+        private SegmentEdgeInfo(
+                int edgeIndex,
+                ResizeDirection direction,
+                int axisCoordinate,
+                int minAlongAxis,
+                int maxAlongAxis,
+                boolean horizontal
+        ) {
+            this.edgeIndex = edgeIndex;
+            this.direction = direction;
+            this.axisCoordinate = axisCoordinate;
+            this.minAlongAxis = minAlongAxis;
+            this.maxAlongAxis = maxAlongAxis;
+            this.horizontal = horizontal;
+        }
+    }
+
+    public static final class CreateClaimResult {
+        public final boolean supported;
+        public final boolean success;
+        public final boolean dryRun;
+        public final String message;
+        public final Object claim;
+
+        private CreateClaimResult(boolean supported, boolean success, boolean dryRun, String message, Object claim) {
+            this.supported = supported;
+            this.success = success;
+            this.dryRun = dryRun;
+            this.message = message;
+            this.claim = claim;
+        }
+    }
+
+    private record GridPoint(int x, int z) { }
+
+    public boolean canResizeClaim(Object claim) {
+        if (!isAvailable() || claim == null || dataStore == null) return false;
+        return findResizeClaimMethod(claim.getClass()) != null;
+    }
+
+    /**
+     * Shaped top-level 2D claims use a segment-aware path instead of rectangular corner rewrites.
+     */
+    public boolean usesSegmentAwareResize(Object claim, ResizeDirection direction) {
+        if (claim == null || direction == null) return false;
+        return isShapedClaim(claim)
+                && !is3DClaim(claim)
+                && !isSubdivision(claim)
+                && isHorizontalDirection(direction);
+    }
+
+    /**
+     * Resolve the shaped boundary segment that would be edited for a directional push,
+     * using a reference location to pick the nearest matching edge run.
+     */
+    public Optional<SegmentEdgeInfo> resolveSegmentEdge(Object claim, ResizeDirection direction, Location reference) {
+        if (!usesSegmentAwareResize(claim, direction)) {
+            return Optional.empty();
+        }
+
+        SegmentAwareResizeSelection selection = resolveSegmentAwareSelection(claim, direction, reference);
+        if (selection == null) {
+            return Optional.empty();
+        }
+        SegmentEdgeInfo info = extractSegmentEdgeInfo(selection.polygon, selection.edgeIndex, direction);
+        return Optional.ofNullable(info);
+    }
+
+    /**
+     * Resolve all oriented boundary edges for a shaped top-level claim. The caller can
+     * then select the edge that best matches its own interaction model.
+     */
+    public List<SegmentEdgeInfo> resolveSegmentEdges(Object claim, ResizeDirection direction) {
+        if (!supportsMapSegmentizedShapedEdit(claim, direction)) {
+            return List.of();
+        }
+
+        Object polygon = resolveClaimBoundaryPolygon(claim);
+        if (polygon == null) {
+            return List.of();
+        }
+
+        boolean wantsHorizontal = direction == ResizeDirection.NORTH || direction == ResizeDirection.SOUTH;
+        boolean wantsVertical = direction == ResizeDirection.EAST || direction == ResizeDirection.WEST;
+        if (!wantsHorizontal && !wantsVertical) {
+            return List.of();
+        }
+
+        List<?> edges;
+        try {
+            Method edgesMethod = polygon.getClass().getMethod("edges");
+            Object raw = edgesMethod.invoke(polygon);
+            if (!(raw instanceof List<?> list)) {
+                return List.of();
+            }
+            edges = list;
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return List.of();
+        }
+
+        List<SegmentEdgeInfo> infos = new ArrayList<>(edges.size());
+        for (int index = 0; index < edges.size(); index++) {
+            Object edge = edges.get(index);
+            try {
+                boolean horizontal = invokeBoolean(edge, "isHorizontal");
+                boolean vertical = invokeBoolean(edge, "isVertical");
+                if (wantsHorizontal && !horizontal) {
+                    continue;
+                }
+                if (wantsVertical && !vertical) {
+                    continue;
+                }
+            } catch (ReflectiveOperationException e) {
+                if (DEBUG) e.printStackTrace();
+                continue;
+            }
+
+            SegmentEdgeInfo info = extractSegmentEdgeInfo(polygon, index, direction);
+            if (info != null) {
+                infos.add(info);
+            }
+        }
+
+        return infos;
+    }
+
+    /**
+     * Split the targeted shaped boundary edge at the requested along-axis range so a
+     * follow-up directional resize moves only that span (nib-style), not the whole side.
+     */
+    public CreateClaimResult ensureSegmentBoundariesForMapNib(
+            Player player,
+            Object claim,
+            SegmentEdgeInfo edgeInfo,
+            int segmentMinAlong,
+            int segmentMaxAlong
+    ) {
+        if (!isAvailable() || dataStore == null || player == null || claim == null || edgeInfo == null) {
+            return new CreateClaimResult(false, false, false, "GriefPrevention is not available.", claim);
+        }
+        if (!supportsMapSegmentizedShapedEdit(claim, edgeInfo.direction)) {
+            return new CreateClaimResult(false, false, false, "Claim does not support shaped segment-aware resizing.", claim);
+        }
+
+        int minAlong = Math.min(segmentMinAlong, segmentMaxAlong);
+        int maxAlong = Math.max(segmentMinAlong, segmentMaxAlong);
+        Object polygon = resolveClaimBoundaryPolygon(claim);
+        if (polygon == null) {
+            return new CreateClaimResult(true, false, false, "Could not resolve claim boundary polygon.", claim);
+        }
+
+        try {
+            ClassLoader loader = claim.getClass().getClassLoader();
+            Class<?> pointClass = loader.loadClass("com.griefprevention.geometry.OrthogonalPoint2i");
+            java.lang.reflect.Constructor<?> ctor = pointClass.getDeclaredConstructor(int.class, int.class);
+            ctor.setAccessible(true);
+
+            Object pointA;
+            Object pointB;
+            if (edgeInfo.horizontal) {
+                pointA = ctor.newInstance(minAlong, edgeInfo.axisCoordinate);
+                pointB = ctor.newInstance(maxAlong, edgeInfo.axisCoordinate);
+            } else {
+                pointA = ctor.newInstance(edgeInfo.axisCoordinate, minAlong);
+                pointB = ctor.newInstance(edgeInfo.axisCoordinate, maxAlong);
+            }
+
+            Object updatedPolygon = polygon;
+            boolean changed = false;
+
+            Object afterA = insertNodeIfInterior(updatedPolygon, pointA);
+            if (afterA != updatedPolygon) {
+                updatedPolygon = afterA;
+                changed = true;
+            }
+
+            Object afterB = insertNodeIfInterior(updatedPolygon, pointB);
+            if (afterB != updatedPolygon) {
+                updatedPolygon = afterB;
+                changed = true;
+            }
+
+            if (!changed) {
+                return new CreateClaimResult(true, true, false, "Segment boundaries already aligned.", claim);
+            }
+
+            Object playerData = resolvePlayerData(player.getUniqueId());
+            if (playerData == null) {
+                return new CreateClaimResult(false, false, false, "Could not resolve player data for shaped update.", claim);
+            }
+
+            Method updateShapedClaim = findUpdateShapedClaimMethod(claim.getClass(), updatedPolygon.getClass(), playerData.getClass());
+            if (updateShapedClaim == null) {
+                return new CreateClaimResult(false, false, false, "This GP build doesn't expose updateShapedClaim.", claim);
+            }
+
+            Object updateResult = updateShapedClaim.invoke(dataStore, player, playerData, claim, updatedPolygon);
+            if (!extractResizeSucceeded(updateResult)) {
+                String denial = extractDenialMessage(updateResult);
+                return new CreateClaimResult(
+                        true,
+                        false,
+                        false,
+                        denial == null || denial.isBlank()
+                                ? "Could not prepare a boundary segment for this map nib edit."
+                                : denial,
+                        claim
+                );
+            }
+
+            Object updatedClaim = extractResultClaim(updateResult);
+            if (updatedClaim == null) {
+                updatedClaim = claim;
+            }
+            return new CreateClaimResult(true, true, false, "Segment boundaries prepared.", updatedClaim);
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return new CreateClaimResult(true, false, false, "Failed to segmentize shaped boundary for map nib edit.", claim);
+        }
+    }
+
+    /**
+     * Merge a rectangular map cell patch into a top-level 2D claim by unioning occupied
+     * cells, then committing the resulting polygon through updateShapedClaim.
+     */
+    public CreateClaimResult mergeMapCellIntoClaim(
+            Player player,
+            Object claim,
+            World world,
+            int minX,
+            int maxX,
+            int minZ,
+            int maxZ,
+            boolean dryRun
+    ) {
+        if (!isAvailable() || dataStore == null || player == null || claim == null || world == null) {
+            return new CreateClaimResult(false, false, dryRun, "GriefPrevention is not available.", claim);
+        }
+        if (isSubdivision(claim) || is3DClaim(claim)) {
+            return new CreateClaimResult(false, false, dryRun, "This GP build only supports map patch merge on top-level 2D claims.", claim);
+        }
+
+        Object originalPolygon = resolveClaimBoundaryPolygon(claim);
+        if (originalPolygon == null) {
+            return new CreateClaimResult(true, false, dryRun, "Could not resolve the selected claim boundary polygon.", claim);
+        }
+
+        Set<GridPoint> occupied;
+        try {
+            occupied = extractOccupiedPolygonCells(originalPolygon);
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            ClaimCorners fallbackCorners = cornersFromPolygonBounds(getClaimCorners(claim).orElse(null), originalPolygon);
+            if (fallbackCorners == null) {
+                return new CreateClaimResult(true, false, dryRun, "Could not resolve the selected claim geometry.", claim);
+            }
+            occupied = extractOccupiedClaimCells(claim, world, fallbackCorners);
+        }
+        if (occupied.isEmpty()) {
+            return new CreateClaimResult(true, false, dryRun, "Could not resolve occupied claim cells for that merge.", claim);
+        }
+        if (!patchTouchesClaim(occupied, minX, maxX, minZ, maxZ)) {
+            return new CreateClaimResult(true, false, dryRun, "No adjacent boundary matched for that map cell.", claim);
+        }
+
+        Set<GridPoint> merged = new HashSet<>(occupied);
+        for (int x = Math.min(minX, maxX); x <= Math.max(minX, maxX); x++) {
+            for (int z = Math.min(minZ, maxZ); z <= Math.max(minZ, maxZ); z++) {
+                merged.add(new GridPoint(x, z));
+            }
+        }
+
+        List<Object> absorbedClaims = collectAbsorbableConnectedClaims(claim, world, merged);
+        Set<String> ignoredClaimIds = new HashSet<>();
+        String selectedClaimId = getClaimId(claim).orElse(null);
+        if (selectedClaimId != null) {
+            ignoredClaimIds.add(selectedClaimId);
+        }
+        List<String> absorbedClaimIds = new ArrayList<>();
+        for (Object absorbedClaim : absorbedClaims) {
+            String absorbedId = getClaimId(absorbedClaim).orElse(null);
+            if (absorbedId != null) {
+                absorbedClaimIds.add(absorbedId);
+                ignoredClaimIds.add(absorbedId);
+            }
+        }
+        if (hasExternalClaimConflict(world, merged, ignoredClaimIds)) {
+            return new CreateClaimResult(true, false, dryRun, "That map cell would collide with another claim.", claim);
+        }
+
+        Object candidatePolygon;
+        try {
+            candidatePolygon = buildPolygonFromOccupiedPoints(claim.getClass().getClassLoader(), merged);
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return new CreateClaimResult(true, false, dryRun, "That map cell could not be merged cleanly into the selected claim.", claim);
+        } catch (IllegalArgumentException e) {
+            return new CreateClaimResult(true, false, dryRun, e.getMessage(), claim);
+        }
+
+        if (dryRun) {
+            return new CreateClaimResult(true, true, true, "Ready to merge that map cell into the selected claim.", claim);
+        }
+
+        Object playerData = resolvePlayerData(player.getUniqueId());
+        if (playerData == null) {
+            return new CreateClaimResult(false, false, false, "Could not resolve player data for shaped update.", claim);
+        }
+
+        Method updateShapedClaim = findUpdateShapedClaimMethod(claim.getClass(), candidatePolygon.getClass(), playerData.getClass());
+        if (updateShapedClaim == null) {
+            return new CreateClaimResult(false, false, false, "This GP build doesn't expose updateShapedClaim.", claim);
+        }
+
+        try {
+            for (Object absorbedClaim : absorbedClaims) {
+                if (!deleteClaim(absorbedClaim)) {
+                    return new CreateClaimResult(true, false, false, "Failed to merge a connected detached claim into the selected claim.", claim);
+                }
+            }
+
+            Object updateResult = updateShapedClaim.invoke(dataStore, player, playerData, claim, candidatePolygon);
+            if (!extractResizeSucceeded(updateResult)) {
+                String denial = extractDenialMessage(updateResult);
+                return new CreateClaimResult(
+                        true,
+                        false,
+                        false,
+                        denial == null || denial.isBlank()
+                                ? "That map cell could not be merged into the selected claim."
+                                : denial,
+                        claim
+                );
+            }
+
+            Object updatedClaim = extractResultClaim(updateResult);
+            if (updatedClaim == null) {
+                updatedClaim = claim;
+            }
+
+            mergeAbsorbedClaimIcons(player, updatedClaim, claim, absorbedClaimIds);
+            return new CreateClaimResult(true, true, false, "Claimed that map cell into the selected claim.", updatedClaim);
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return new CreateClaimResult(true, false, false, "Failed to merge that map cell into the selected claim.", claim);
+        }
+    }
+
+    /**
+     * Remove a rectangular map cell patch from a top-level 2D claim by subtracting occupied
+     * cells, then committing the resulting polygon through updateShapedClaim.
+     */
+    public CreateClaimResult subtractMapCellFromClaim(
+            Player player,
+            Object claim,
+            World world,
+            int minX,
+            int maxX,
+            int minZ,
+            int maxZ,
+            boolean dryRun
+    ) {
+        if (!isAvailable() || dataStore == null || player == null || claim == null || world == null) {
+            return new CreateClaimResult(false, false, dryRun, "GriefPrevention is not available.", claim);
+        }
+        if (isSubdivision(claim) || is3DClaim(claim)) {
+            return new CreateClaimResult(false, false, dryRun, "This GP build only supports map cell unclaim on top-level 2D claims.", claim);
+        }
+
+        Object originalPolygon = resolveClaimBoundaryPolygon(claim);
+        if (originalPolygon == null) {
+            return new CreateClaimResult(true, false, dryRun, "Could not resolve the selected claim boundary polygon.", claim);
+        }
+
+        Set<GridPoint> occupied = resolveOccupiedClaimCells(claim, world);
+        if (occupied.isEmpty()) {
+            return new CreateClaimResult(true, false, dryRun, "Could not resolve occupied claim cells for that unclaim.", claim);
+        }
+
+        int patchMinX = Math.min(minX, maxX);
+        int patchMaxX = Math.max(minX, maxX);
+        int patchMinZ = Math.min(minZ, maxZ);
+        int patchMaxZ = Math.max(minZ, maxZ);
+
+        Set<GridPoint> remaining = new HashSet<>(occupied);
+        boolean removedAny = remaining.removeIf(point -> point.x() >= patchMinX
+                && point.x() <= patchMaxX
+                && point.z() >= patchMinZ
+                && point.z() <= patchMaxZ);
+        if (!removedAny) {
+            return new CreateClaimResult(true, false, dryRun, "That map cell is not part of the selected claim.", claim);
+        }
+
+        if (remaining.isEmpty()) {
+            if (dryRun) {
+                return new CreateClaimResult(true, true, true, "Ready to abandon the selected claim from the map editor.", claim);
+            }
+            if (!deleteClaim(claim)) {
+                return new CreateClaimResult(true, false, false, "Failed to abandon the selected claim.", claim);
+            }
+
+            removeDeletedClaimMetadata(getClaimId(claim).orElse(null));
+            return new CreateClaimResult(true, true, false, "Abandoned the selected claim from the map editor.", null);
+        }
+
+        Object patchPolygon;
+        try {
+            patchPolygon = buildRectanglePolygon(claim.getClass().getClassLoader(), patchMinX, patchMaxX, patchMinZ, patchMaxZ);
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return new CreateClaimResult(true, false, dryRun, "Could not prepare the selected map cell for unclaim.", claim);
+        }
+
+        Object candidatePolygon;
+        try {
+            candidatePolygon = subtractClaimPolygon(claim.getClass().getClassLoader(), originalPolygon, patchPolygon, remaining);
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return new CreateClaimResult(true, false, dryRun, "That map cell could not be removed cleanly from the selected claim.", claim);
+        } catch (IllegalArgumentException e) {
+            return new CreateClaimResult(true, false, dryRun, friendlyMapSubtractionFailure(e.getMessage()), claim);
+        }
+
+        if (dryRun) {
+            return new CreateClaimResult(true, true, true, "Ready to unclaim that map cell from the selected claim.", claim);
+        }
+
+        Object playerData = resolvePlayerData(player.getUniqueId());
+        if (playerData == null) {
+            return new CreateClaimResult(false, false, false, "Could not resolve player data for shaped update.", claim);
+        }
+
+        Method updateShapedClaim = findUpdateShapedClaimMethod(claim.getClass(), candidatePolygon.getClass(), playerData.getClass());
+        if (updateShapedClaim == null) {
+            return new CreateClaimResult(false, false, false, "This GP build doesn't expose updateShapedClaim.", claim);
+        }
+
+        try {
+            Object updateResult = updateShapedClaim.invoke(dataStore, player, playerData, claim, candidatePolygon);
+            if (!extractResizeSucceeded(updateResult)) {
+                String denial = extractDenialMessage(updateResult);
+                return new CreateClaimResult(
+                        true,
+                        false,
+                        false,
+                        denial == null || denial.isBlank()
+                                ? "That map cell could not be removed from the selected claim."
+                                : denial,
+                        claim
+                );
+            }
+
+            Object updatedClaim = extractResultClaim(updateResult);
+            if (updatedClaim == null) {
+                updatedClaim = claim;
+            }
+            return new CreateClaimResult(true, true, false, "Unclaimed that map cell from the selected claim.", updatedClaim);
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return new CreateClaimResult(true, false, false, "Failed to remove that map cell from the selected claim.", claim);
+        }
+    }
+
+    private List<Object> collectAbsorbableConnectedClaims(Object selectedClaim, World world, Set<GridPoint> mergedOccupied) {
+        List<Object> absorbedClaims = new ArrayList<>();
+        UUID ownerId = getClaimOwner(selectedClaim);
+        if (ownerId == null || world == null) {
+            return absorbedClaims;
+        }
+
+        String worldName = world.getName();
+        Set<Object> absorbedSet = Collections.newSetFromMap(new IdentityHashMap<>());
+        boolean changed;
+        do {
+            changed = false;
+            for (Object otherClaim : getAllClaims()) {
+                if (otherClaim == null
+                        || otherClaim == selectedClaim
+                        || absorbedSet.contains(otherClaim)
+                        || isSubdivision(otherClaim)
+                        || isAdminClaim(otherClaim)
+                        || is3DClaim(otherClaim)) {
+                    continue;
+                }
+
+                if (!ownerId.equals(getClaimOwner(otherClaim))) {
+                    continue;
+                }
+                if (!worldName.equals(getClaimWorld(otherClaim).orElse(null))) {
+                    continue;
+                }
+
+                Set<GridPoint> otherOccupied = resolveOccupiedClaimCells(otherClaim, world);
+                if (otherOccupied.isEmpty() || !occupiedSetsTouch(mergedOccupied, otherOccupied)) {
+                    continue;
+                }
+
+                mergedOccupied.addAll(otherOccupied);
+                absorbedClaims.add(otherClaim);
+                absorbedSet.add(otherClaim);
+                changed = true;
+            }
+        } while (changed);
+
+        return absorbedClaims;
+    }
+
+    private Set<GridPoint> resolveOccupiedClaimCells(Object claim, World world) {
+        Object polygon = resolveClaimBoundaryPolygon(claim);
+        if (polygon != null) {
+            try {
+                return extractOccupiedPolygonCells(polygon);
+            } catch (ReflectiveOperationException e) {
+                if (DEBUG) e.printStackTrace();
+            }
+        }
+
+        ClaimCorners corners = getClaimCorners(claim).orElse(null);
+        if (corners == null || world == null) {
+            return Set.of();
+        }
+        return extractOccupiedClaimCells(claim, world, corners);
+    }
+
+    private boolean occupiedSetsTouch(Set<GridPoint> left, Set<GridPoint> right) {
+        if (left.isEmpty() || right.isEmpty()) {
+            return false;
+        }
+
+        for (GridPoint point : left) {
+            if (right.contains(point)
+                    || right.contains(new GridPoint(point.x() + 1, point.z()))
+                    || right.contains(new GridPoint(point.x() - 1, point.z()))
+                    || right.contains(new GridPoint(point.x(), point.z() + 1))
+                    || right.contains(new GridPoint(point.x(), point.z() - 1))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean hasExternalClaimConflict(World world, Set<GridPoint> mergedOccupied, Set<String> ignoredClaimIds) {
+        if (world == null || mergedOccupied.isEmpty()) {
+            return false;
+        }
+
+        int minX = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+        for (GridPoint point : mergedOccupied) {
+            minX = Math.min(minX, point.x());
+            maxX = Math.max(maxX, point.x());
+            minZ = Math.min(minZ, point.z());
+            maxZ = Math.max(maxZ, point.z());
+        }
+
+        for (Object otherClaim : getAllClaims()) {
+            if (otherClaim == null || isSubdivision(otherClaim)) {
+                continue;
+            }
+
+            String claimId = getClaimId(otherClaim).orElse(null);
+            if (claimId != null && ignoredClaimIds.contains(claimId)) {
+                continue;
+            }
+            if (!world.getName().equals(getClaimWorld(otherClaim).orElse(null))) {
+                continue;
+            }
+
+            ClaimCorners corners = getClaimCorners(otherClaim).orElse(null);
+            if (corners == null
+                    || corners.x2 < minX
+                    || corners.x1 > maxX
+                    || corners.z2 < minZ
+                    || corners.z1 > maxZ) {
+                continue;
+            }
+
+            Set<GridPoint> otherOccupied = resolveOccupiedClaimCells(otherClaim, world);
+            for (GridPoint point : otherOccupied) {
+                if (mergedOccupied.contains(point)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private void mergeAbsorbedClaimIcons(Player player, Object updatedClaim, Object selectedClaim, List<String> absorbedClaimIds) {
+        if (absorbedClaimIds.isEmpty()) {
+            return;
+        }
+
+        GPExpansionPlugin plugin;
+        try {
+            plugin = org.bukkit.plugin.java.JavaPlugin.getPlugin(GPExpansionPlugin.class);
+        } catch (IllegalStateException e) {
+            return;
+        }
+
+        String targetClaimId = getClaimId(updatedClaim).orElseGet(() -> getClaimId(selectedClaim).orElse(null));
+        if (targetClaimId == null) {
+            return;
+        }
+
+        String preferredClaimId = targetClaimId;
+        if (player != null) {
+            Object standingClaim = getClaimAt(player.getLocation(), player).orElse(null);
+            String standingClaimId = getClaimId(standingClaim).orElse(null);
+            if (standingClaimId != null
+                    && (standingClaimId.equals(targetClaimId) || absorbedClaimIds.contains(standingClaimId))) {
+                preferredClaimId = standingClaimId;
+            }
+        }
+
+        List<String> sourceClaimIds = new ArrayList<>(absorbedClaimIds.size() + 1);
+        sourceClaimIds.add(targetClaimId);
+        sourceClaimIds.addAll(absorbedClaimIds);
+        plugin.getClaimDataStore().mergeIconHistories(targetClaimId, preferredClaimId, sourceClaimIds);
+        plugin.getClaimDataStore().save();
+    }
+
+    private Object unionClaimPolygon(
+            ClassLoader loader,
+            Object originalPolygon,
+            Object patchPolygon,
+            Set<GridPoint> mergedOccupied
+    ) throws ReflectiveOperationException {
+        Object candidate = tryUnionViaClaimEditorSkeleton(loader, originalPolygon, patchPolygon);
+        if (candidate != null) {
+            return candidate;
+        }
+        return buildPolygonFromOccupiedPoints(loader, mergedOccupied);
+    }
+
+    private Object subtractClaimPolygon(
+            ClassLoader loader,
+            Object originalPolygon,
+            Object patchPolygon,
+            Set<GridPoint> remainingOccupied
+    ) throws ReflectiveOperationException {
+        Object candidate = trySubtractViaClaimEditorSkeleton(loader, originalPolygon, patchPolygon);
+        if (candidate != null) {
+            return candidate;
+        }
+        return buildPolygonFromOccupiedPoints(loader, remainingOccupied);
+    }
+
+    private Object buildRectanglePolygon(ClassLoader loader, int minX, int maxX, int minZ, int maxZ)
+            throws ReflectiveOperationException {
+        if (loader == null) {
+            throw new IllegalArgumentException("Could not resolve claim geometry classes.");
+        }
+        Class<?> polygonClass = loader.loadClass("com.griefprevention.geometry.OrthogonalPolygon");
+        Method fromRectangle = polygonClass.getMethod(
+                "fromRectangle",
+                int.class,
+                int.class,
+                int.class,
+                int.class
+        );
+        return fromRectangle.invoke(
+                null,
+                Math.min(minX, maxX),
+                Math.min(minZ, maxZ),
+                Math.max(minX, maxX),
+                Math.max(minZ, maxZ)
+        );
+    }
+
+    private Object tryUnionViaClaimEditorSkeleton(ClassLoader loader, Object originalPolygon, Object patchPolygon)
+            throws ReflectiveOperationException {
+        if (loader == null || originalPolygon == null || patchPolygon == null) {
+            return null;
+        }
+
+        try {
+            Class<?> skeletonClass = loader.loadClass("com.griefprevention.claims.editor.ClaimEditorSkeleton");
+            Object skeleton = skeletonClass.getDeclaredConstructor().newInstance();
+            Method unionMethod = skeletonClass.getDeclaredMethod(
+                    "unionPolygons",
+                    originalPolygon.getClass(),
+                    patchPolygon.getClass()
+            );
+            unionMethod.setAccessible(true);
+            return unionMethod.invoke(skeleton, originalPolygon, patchPolygon);
+        } catch (ClassNotFoundException | NoSuchMethodException e) {
+            return null;
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof IllegalArgumentException illegalArgumentException) {
+                throw illegalArgumentException;
+            }
+            if (DEBUG) e.printStackTrace();
+            return null;
+        }
+    }
+
+    private Object trySubtractViaClaimEditorSkeleton(ClassLoader loader, Object originalPolygon, Object patchPolygon)
+            throws ReflectiveOperationException {
+        if (loader == null || originalPolygon == null || patchPolygon == null) {
+            return null;
+        }
+
+        try {
+            Class<?> skeletonClass = loader.loadClass("com.griefprevention.claims.editor.ClaimEditorSkeleton");
+            Object skeleton = skeletonClass.getDeclaredConstructor().newInstance();
+            Method subtractMethod = skeletonClass.getDeclaredMethod(
+                    "subtractPolygons",
+                    originalPolygon.getClass(),
+                    patchPolygon.getClass()
+            );
+            subtractMethod.setAccessible(true);
+            return subtractMethod.invoke(skeleton, originalPolygon, patchPolygon);
+        } catch (ClassNotFoundException | NoSuchMethodException e) {
+            return null;
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof IllegalArgumentException illegalArgumentException) {
+                throw illegalArgumentException;
+            }
+            if (DEBUG) e.printStackTrace();
+            return null;
+        }
+    }
+
+    private Set<GridPoint> extractOccupiedClaimCells(Object claim, World world, ClaimCorners corners) {
+        Set<GridPoint> occupied = new HashSet<>();
+        int sampleY = world.getMinHeight() + 1;
+        for (int x = corners.x1; x <= corners.x2; x++) {
+            for (int z = corners.z1; z <= corners.z2; z++) {
+                if (claimContains(claim, world, x, sampleY, z)) {
+                    occupied.add(new GridPoint(x, z));
+                }
+            }
+        }
+        return occupied;
+    }
+
+    private boolean patchTouchesClaim(Set<GridPoint> occupied, int minX, int maxX, int minZ, int maxZ) {
+        int patchMinX = Math.min(minX, maxX);
+        int patchMaxX = Math.max(minX, maxX);
+        int patchMinZ = Math.min(minZ, maxZ);
+        int patchMaxZ = Math.max(minZ, maxZ);
+
+        for (int x = patchMinX; x <= patchMaxX; x++) {
+            for (int z = patchMinZ; z <= patchMaxZ; z++) {
+                GridPoint point = new GridPoint(x, z);
+                if (occupied.contains(point)
+                        || occupied.contains(new GridPoint(x + 1, z))
+                        || occupied.contains(new GridPoint(x - 1, z))
+                        || occupied.contains(new GridPoint(x, z + 1))
+                        || occupied.contains(new GridPoint(x, z - 1))) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private String friendlyMapSubtractionFailure(String message) {
+        if (message == null || message.isBlank()) {
+            return "That map cell could not be removed cleanly from the selected claim.";
+        }
+        if (message.contains("split the claim") || message.contains("disconnected")) {
+            return "That map cell would split the selected claim into multiple pieces.";
+        }
+        if (message.contains("remove the claim")) {
+            return "That map cell would remove the selected claim.";
+        }
+        if (message.contains("follow") || message.contains("did not close")) {
+            return "That map cell would create a claim shape this editor can't represent cleanly.";
+        }
+        return message;
+    }
+
+    private void removeDeletedClaimMetadata(String claimId) {
+        if (claimId == null || claimId.isBlank()) {
+            return;
+        }
+
+        GPExpansionPlugin plugin;
+        try {
+            plugin = org.bukkit.plugin.java.JavaPlugin.getPlugin(GPExpansionPlugin.class);
+        } catch (IllegalStateException e) {
+            return;
+        }
+
+        plugin.getClaimDataStore().remove(claimId);
+        plugin.getClaimDataStore().save();
+    }
+
+    /**
+     * A pure-Java, allocation-free view of an orthogonal polygon's corners. We extract
+     * corner x/z values via reflection exactly once, then all subsequent point-in-polygon
+     * tests run without any reflection. This is critical because Paper's reflection
+     * remapper makes each getMethod("x")/invoke very slow, and the claim-map editor calls
+     * containsCell in tight W*H loops.
+     */
+    private static final class PolygonView {
+        final int[] xs;
+        final int[] zs;
+        final int minX;
+        final int maxX;
+        final int minZ;
+        final int maxZ;
+        final boolean isRectangle;
+
+        PolygonView(int[] xs, int[] zs, int minX, int maxX, int minZ, int maxZ) {
+            this.xs = xs;
+            this.zs = zs;
+            this.minX = minX;
+            this.maxX = maxX;
+            this.minZ = minZ;
+            this.maxZ = maxZ;
+            // Orthogonal polygons with exactly 4 corners are axis-aligned rectangles.
+            this.isRectangle = xs.length == 4;
+        }
+
+        boolean containsCell(int x, int z) {
+            if (x < minX || x > maxX || z < minZ || z > maxZ) {
+                return false;
+            }
+            if (isRectangle) {
+                return true;
+            }
+            // Treat corner lattice points and boundary edge points as inside.
+            // For an orthogonal polygon, a lattice point is on the boundary iff it lies
+            // on an axis-aligned segment between two consecutive corners.
+            int n = xs.length;
+            for (int i = 0, j = n - 1; i < n; j = i++) {
+                int ax = xs[i], az = zs[i];
+                int bx = xs[j], bz = zs[j];
+                if (ax == bx && x == ax && z >= Math.min(az, bz) && z <= Math.max(az, bz)) {
+                    return true;
+                }
+                if (az == bz && z == az && x >= Math.min(ax, bx) && x <= Math.max(ax, bx)) {
+                    return true;
+                }
+            }
+            // Ray cast using cell-center sample to classify interior.
+            double sampleX = x + 0.5D;
+            double sampleZ = z + 0.5D;
+            boolean inside = false;
+            for (int i = 0, j = n - 1; i < n; j = i++) {
+                int ax = xs[i], az = zs[i];
+                int bx = xs[j], bz = zs[j];
+                boolean crosses = (az > sampleZ) != (bz > sampleZ);
+                if (!crosses) continue;
+                double intersectionX = (double) (bx - ax) * (sampleZ - az) / (double) (bz - az) + ax;
+                if (sampleX < intersectionX) {
+                    inside = !inside;
+                }
+            }
+            return inside;
+        }
+    }
+
+    /**
+     * Reflectively read the polygon's corners and bounds exactly once, returning a
+     * PolygonView that supports fast, reflection-free containment tests.
+     */
+    private PolygonView buildPolygonView(Object polygon) throws ReflectiveOperationException {
+        Method cornersMethod = cachedPolygonCornersMethod;
+        if (cornersMethod == null || cachedPolygonClass != polygon.getClass()) {
+            cornersMethod = polygon.getClass().getMethod("corners");
+            cachedPolygonCornersMethod = cornersMethod;
+            cachedPolygonClass = polygon.getClass();
+        }
+        Object raw = cornersMethod.invoke(polygon);
+        if (!(raw instanceof List<?> list) || list.isEmpty()) {
+            return null;
+        }
+        int n = list.size();
+        int[] xs = new int[n];
+        int[] zs = new int[n];
+        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
+        int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
+
+        // Resolve x()/z() Methods from the concrete corner class just once, caching
+        // them on the bridge so subsequent polygon builds skip the remapper lookup.
+        Object first = list.get(0);
+        Method xMethod = cachedPointXMethod;
+        Method zMethod = cachedPointZMethod;
+        if (xMethod == null || zMethod == null || cachedPointClass != first.getClass()) {
+            xMethod = first.getClass().getMethod("x");
+            zMethod = first.getClass().getMethod("z");
+            cachedPointXMethod = xMethod;
+            cachedPointZMethod = zMethod;
+            cachedPointClass = first.getClass();
+        }
+
+        for (int i = 0; i < n; i++) {
+            Object corner = list.get(i);
+            int cx = ((Number) xMethod.invoke(corner)).intValue();
+            int cz = ((Number) zMethod.invoke(corner)).intValue();
+            xs[i] = cx;
+            zs[i] = cz;
+            if (cx < minX) minX = cx;
+            if (cx > maxX) maxX = cx;
+            if (cz < minZ) minZ = cz;
+            if (cz > maxZ) maxZ = cz;
+        }
+        return new PolygonView(xs, zs, minX, maxX, minZ, maxZ);
+    }
+
+    private Set<GridPoint> extractOccupiedPolygonCells(Object polygon) throws ReflectiveOperationException {
+        Set<GridPoint> occupied = new HashSet<>();
+        PolygonView view = buildPolygonView(polygon);
+        if (view == null) {
+            return occupied;
+        }
+        for (int x = view.minX; x <= view.maxX; x++) {
+            for (int z = view.minZ; z <= view.maxZ; z++) {
+                if (view.containsCell(x, z)) {
+                    occupied.add(new GridPoint(x, z));
+                }
+            }
+        }
+        return occupied;
+    }
+
+    private int countPolygonCoverageInCell(
+            Object polygon,
+            int minX,
+            int maxX,
+            int minZ,
+            int maxZ
+    ) throws ReflectiveOperationException {
+        PolygonView view = buildPolygonView(polygon);
+        if (view == null) return 0;
+        return countCoverage(view, minX, maxX, minZ, maxZ);
+    }
+
+    private static int countCoverage(PolygonView view, int minX, int maxX, int minZ, int maxZ) {
+        int lowX = Math.max(minX, view.minX);
+        int highX = Math.min(maxX, view.maxX);
+        int lowZ = Math.max(minZ, view.minZ);
+        int highZ = Math.min(maxZ, view.maxZ);
+        if (lowX > highX || lowZ > highZ) {
+            return 0;
+        }
+        // Rectangle polygons: overlap area is exact.
+        if (view.isRectangle) {
+            return (highX - lowX + 1) * (highZ - lowZ + 1);
+        }
+        int covered = 0;
+        for (int x = lowX; x <= highX; x++) {
+            for (int z = lowZ; z <= highZ; z++) {
+                if (view.containsCell(x, z)) {
+                    covered++;
+                }
+            }
+        }
+        return covered;
+    }
+
+    private Object buildPolygonFromOccupiedPoints(ClassLoader loader, Set<GridPoint> occupied)
+            throws ReflectiveOperationException {
+        if (loader == null) {
+            throw new IllegalArgumentException("Could not resolve claim geometry classes.");
+        }
+        if (occupied.isEmpty()) {
+            throw new IllegalArgumentException("That map merge would remove the claim body.");
+        }
+
+        List<ContourVertex> tracedContour = traceOccupiedContour(occupied);
+        List<ContourVertex> compressedContour = compressContourPath(tracedContour);
+        List<GridPoint> mappedCorners = mapContourCornersToOccupiedPoints(compressedContour, occupied);
+        List<GridPoint> compressed = compressBoundaryPath(mappedCorners);
+
+        Class<?> pointClass = loader.loadClass("com.griefprevention.geometry.OrthogonalPoint2i");
+        Class<?> polygonClass = loader.loadClass("com.griefprevention.geometry.OrthogonalPolygon");
+        java.lang.reflect.Constructor<?> pointCtor = pointClass.getDeclaredConstructor(int.class, int.class);
+        pointCtor.setAccessible(true);
+
+        List<Object> reflectedPath = new ArrayList<>(compressed.size());
+        for (GridPoint point : compressed) {
+            reflectedPath.add(pointCtor.newInstance(point.x(), point.z()));
+        }
+
+        Method fromClosedPath = polygonClass.getMethod("fromClosedPath", List.class);
+        return fromClosedPath.invoke(null, reflectedPath);
+    }
+
+    private List<ContourVertex> traceOccupiedContour(Set<GridPoint> occupied) {
+        List<ContourEdge> edges = new ArrayList<>();
+        for (GridPoint point : occupied) {
+            addContourEdgesForPoint(occupied, point, edges);
+        }
+
+        if (edges.isEmpty()) {
+            throw new IllegalArgumentException("Unable to trace merged claim boundary.");
+        }
+
+        Map<ContourVertex, List<ContourEdge>> outgoing = new HashMap<>();
+        for (ContourEdge edge : edges) {
+            outgoing.computeIfAbsent(edge.start(), ignored -> new ArrayList<>()).add(edge);
+        }
+
+        ContourEdge startEdge = edges.stream()
+                .min(Comparator.comparingInt((ContourEdge edge) -> edge.start().z())
+                        .thenComparingInt(edge -> edge.start().x())
+                        .thenComparingInt(edge -> edge.end().x())
+                        .thenComparingInt(edge -> edge.end().z()))
+                .orElseThrow();
+
+        List<ContourVertex> traced = new ArrayList<>();
+        traced.add(startEdge.start());
+
+        Set<ContourEdge> visited = new HashSet<>();
+        ContourEdge current = startEdge;
+        int guard = edges.size() + 1;
+        while (guard-- > 0) {
+            if (!visited.add(current)) {
+                throw new IllegalArgumentException("Merged claim boundary could not be followed.");
+            }
+
+            traced.add(current.end());
+            if (current.end().equals(startEdge.start())) {
+                break;
+            }
+
+            List<ContourEdge> nextEdges = outgoing.get(current.end());
+            if (nextEdges == null || nextEdges.size() != 1) {
+                throw new IllegalArgumentException("Merged claim boundary could not be followed.");
+            }
+
+            current = nextEdges.get(0);
+        }
+
+        if (!traced.get(traced.size() - 1).equals(startEdge.start())) {
+            throw new IllegalArgumentException("Merged claim boundary did not close.");
+        }
+
+        if (visited.size() != edges.size()) {
+            throw new IllegalArgumentException("Merged claim boundary is disconnected.");
+        }
+
+        return traced;
+    }
+
+    private void addContourEdgesForPoint(Set<GridPoint> occupied, GridPoint point, List<ContourEdge> edges) {
+        int x = point.x();
+        int z = point.z();
+
+        if (!occupied.contains(new GridPoint(x, z - 1))) {
+            edges.add(new ContourEdge(
+                    new ContourVertex(2 * x - 1, 2 * z - 1),
+                    new ContourVertex(2 * x + 1, 2 * z - 1)
+            ));
+        }
+
+        if (!occupied.contains(new GridPoint(x + 1, z))) {
+            edges.add(new ContourEdge(
+                    new ContourVertex(2 * x + 1, 2 * z - 1),
+                    new ContourVertex(2 * x + 1, 2 * z + 1)
+            ));
+        }
+
+        if (!occupied.contains(new GridPoint(x, z + 1))) {
+            edges.add(new ContourEdge(
+                    new ContourVertex(2 * x + 1, 2 * z + 1),
+                    new ContourVertex(2 * x - 1, 2 * z + 1)
+            ));
+        }
+
+        if (!occupied.contains(new GridPoint(x - 1, z))) {
+            edges.add(new ContourEdge(
+                    new ContourVertex(2 * x - 1, 2 * z + 1),
+                    new ContourVertex(2 * x - 1, 2 * z - 1)
+            ));
+        }
+    }
+
+    private List<ContourVertex> compressContourPath(List<ContourVertex> traced) {
+        if (traced.size() < 4) {
+            throw new IllegalArgumentException("Merged claim boundary is too small.");
+        }
+
+        List<ContourVertex> compressed = new ArrayList<>();
+        int cycleLength = traced.size() - 1;
+        for (int i = 0; i < cycleLength; i++) {
+            ContourVertex previous = traced.get((i - 1 + cycleLength) % cycleLength);
+            ContourVertex current = traced.get(i);
+            ContourVertex next = traced.get((i + 1) % cycleLength);
+
+            int dx1 = Integer.compare(current.x(), previous.x());
+            int dz1 = Integer.compare(current.z(), previous.z());
+            int dx2 = Integer.compare(next.x(), current.x());
+            int dz2 = Integer.compare(next.z(), current.z());
+
+            if (i == 0 || dx1 != dx2 || dz1 != dz2) {
+                compressed.add(current);
+            }
+        }
+
+        compressed.add(compressed.get(0));
+        return compressed;
+    }
+
+    private List<GridPoint> mapContourCornersToOccupiedPoints(List<ContourVertex> contour, Set<GridPoint> occupied) {
+        List<GridPoint> mapped = new ArrayList<>();
+        int cycleLength = contour.size() - 1;
+        for (int i = 0; i < cycleLength; i++) {
+            ContourVertex previous = contour.get((i - 1 + cycleLength) % cycleLength);
+            ContourVertex current = contour.get(i);
+            ContourVertex next = contour.get((i + 1) % cycleLength);
+            GridPoint point = resolveContourCornerPoint(previous, current, next, occupied);
+            if (mapped.isEmpty() || !mapped.get(mapped.size() - 1).equals(point)) {
+                mapped.add(point);
+            }
+        }
+
+        if (mapped.size() < 4) {
+            throw new IllegalArgumentException("Merged claim boundary is too small.");
+        }
+
+        mapped.add(mapped.get(0));
+        return mapped;
+    }
+
+    private GridPoint resolveContourCornerPoint(
+            ContourVertex previous,
+            ContourVertex vertex,
+            ContourVertex next,
+            Set<GridPoint> occupied
+    ) {
+        int lowX = Math.floorDiv(vertex.x(), 2);
+        int highX = Math.floorDiv(vertex.x() + 1, 2);
+        int lowZ = Math.floorDiv(vertex.z(), 2);
+        int highZ = Math.floorDiv(vertex.z() + 1, 2);
+
+        int incomingDirection = contourDirection(previous, vertex);
+        int outgoingDirection = contourDirection(vertex, next);
+        int interiorFromIncoming = rotateRight(incomingDirection);
+        int interiorFromOutgoing = rotateRight(outgoingDirection);
+
+        int resolvedX;
+        if (interiorFromIncoming == 0 || interiorFromOutgoing == 0) {
+            resolvedX = highX;
+        } else if (interiorFromIncoming == 2 || interiorFromOutgoing == 2) {
+            resolvedX = lowX;
+        } else {
+            throw new IllegalArgumentException("Merged claim boundary could not be followed.");
+        }
+
+        int resolvedZ;
+        if (interiorFromIncoming == 1 || interiorFromOutgoing == 1) {
+            resolvedZ = highZ;
+        } else if (interiorFromIncoming == 3 || interiorFromOutgoing == 3) {
+            resolvedZ = lowZ;
+        } else {
+            throw new IllegalArgumentException("Merged claim boundary could not be followed.");
+        }
+
+        GridPoint point = new GridPoint(resolvedX, resolvedZ);
+        if (!occupied.contains(point)) {
+            throw new IllegalArgumentException("Merged claim boundary could not be followed.");
+        }
+        return point;
+    }
+
+    private int contourDirection(ContourVertex start, ContourVertex end) {
+        if (end.x() > start.x()) {
+            return 0;
+        }
+        if (end.z() > start.z()) {
+            return 1;
+        }
+        if (end.x() < start.x()) {
+            return 2;
+        }
+        if (end.z() < start.z()) {
+            return 3;
+        }
+        throw new IllegalArgumentException("Contour path cannot contain duplicate vertices.");
+    }
+
+    private int rotateRight(int direction) {
+        return switch (direction) {
+            case 0 -> 1;
+            case 1 -> 2;
+            case 2 -> 3;
+            case 3 -> 0;
+            default -> throw new IllegalArgumentException("Unknown contour direction.");
+        };
+    }
+
+    private List<GridPoint> compressBoundaryPath(List<GridPoint> traced) {
+        List<GridPoint> path = new ArrayList<>(traced);
+        if (path.size() < 4) {
+            throw new IllegalArgumentException("Merged claim boundary is too small.");
+        }
+
+        List<GridPoint> compressed = new ArrayList<>();
+        for (int i = 0; i < path.size() - 1; i++) {
+            GridPoint previous = path.get((i - 1 + path.size() - 1) % (path.size() - 1));
+            GridPoint current = path.get(i);
+            GridPoint next = path.get((i + 1) % (path.size() - 1));
+
+            int dx1 = Integer.compare(current.x(), previous.x());
+            int dz1 = Integer.compare(current.z(), previous.z());
+            int dx2 = Integer.compare(next.x(), current.x());
+            int dz2 = Integer.compare(next.z(), current.z());
+
+            if (i == 0 || dx1 != dx2 || dz1 != dz2) {
+                compressed.add(current);
+            }
+        }
+
+        compressed.add(compressed.get(0));
+        return compressed;
+    }
+
+    private record ContourVertex(int x, int z) { }
+
+    private record ContourEdge(ContourVertex start, ContourVertex end) { }
+
+    /**
+     * Returns true when GP config has AllowShapedClaims enabled.
+     * Defaults to true when unavailable so we don't unexpectedly block UI in unknown builds.
+     */
+    public boolean isShapedClaimsAllowed() {
+        if (!isAvailable() || gpInstance == null) return true;
+        try {
+            // GP3D field
+            try {
+                Field field = gpInstance.getClass().getDeclaredField("config_claims_allowShapedClaims");
+                field.setAccessible(true);
+                Object value = field.get(gpInstance);
+                if (value instanceof Boolean) return (Boolean) value;
+            } catch (NoSuchFieldException ignored) { }
+
+            // Getter fallback
+            try {
+                Method getter = gpInstance.getClass().getMethod("isShapedClaimsAllowed");
+                Object value = getter.invoke(gpInstance);
+                if (value instanceof Boolean) return (Boolean) value;
+            } catch (NoSuchMethodException ignored) { }
+        } catch (ReflectiveOperationException ignored) {
+        }
+        return true;
+    }
+
+    /**
+     * Create a top-level square claim (or dry-run the same creation) using GP's own createClaim pipeline.
+     * This preserves GP minimum width/area and claim-block checks.
+     */
+    public CreateClaimResult createSquareClaim(Player player, World world, int minX, int maxX, int minZ, int maxZ, boolean dryRun) {
+        if (!isAvailable() || dataStore == null || player == null || world == null) {
+            return new CreateClaimResult(false, false, dryRun, "GriefPrevention is not available.", null);
+        }
+
+        int y1 = world.getMinHeight();
+        int y2 = world.getMaxHeight() - 1;
+        UUID owner = player.getUniqueId();
+
+        for (Method method : dataStore.getClass().getMethods()) {
+            if (!"createClaim".equals(method.getName())) continue;
+            Class<?>[] p = method.getParameterTypes();
+            try {
+                Object rawResult = null;
+
+                // GP/GP3D modern signature:
+                // createClaim(World, x1, x2, y1, y2, z1, z2, UUID, Claim parent, Long id, Player creatingPlayer, boolean dryRun)
+                if (p.length == 12
+                        && p[0] == World.class
+                        && p[1] == int.class
+                        && p[2] == int.class
+                        && p[3] == int.class
+                        && p[4] == int.class
+                        && p[5] == int.class
+                        && p[6] == int.class
+                        && p[7] == UUID.class
+                        && p[9] == Long.class
+                        && p[10] == Player.class
+                        && p[11] == boolean.class) {
+                    rawResult = method.invoke(dataStore, world, minX, maxX, y1, y2, minZ, maxZ, owner, null, null, player, dryRun);
+                }
+                // Legacy variant without dryRun:
+                else if (p.length == 11
+                        && p[0] == World.class
+                        && p[1] == int.class
+                        && p[2] == int.class
+                        && p[3] == int.class
+                        && p[4] == int.class
+                        && p[5] == int.class
+                        && p[6] == int.class
+                        && p[7] == UUID.class
+                        && p[9] == Long.class
+                        && p[10] == Player.class) {
+                    rawResult = method.invoke(dataStore, world, minX, maxX, y1, y2, minZ, maxZ, owner, null, null, player);
+                }
+                // Older 2D variant fallback:
+                else if (p.length >= 7
+                        && p[0] == World.class
+                        && p[1] == int.class
+                        && p[2] == int.class
+                        && p[3] == int.class
+                        && p[4] == int.class
+                        && p[5] == UUID.class) {
+                    rawResult = method.invoke(dataStore, world, minX, minZ, maxX, maxZ, owner, null);
+                }
+
+                if (rawResult == null) continue;
+                return parseCreateClaimResult(rawResult, dryRun);
+            } catch (Exception e) {
+                if (DEBUG) e.printStackTrace();
+            }
+        }
+
+        return new CreateClaimResult(false, false, dryRun, "This GP build doesn't expose createClaim.", null);
+    }
+
+    private CreateClaimResult parseCreateClaimResult(Object rawResult, boolean dryRun) {
+        boolean success = false;
+        Object claim = null;
+        String message = null;
+
+        try {
+            try {
+                Field f = rawResult.getClass().getField("succeeded");
+                Object v = f.get(rawResult);
+                if (v instanceof Boolean b) success = b;
+            } catch (NoSuchFieldException ignored) {
+                try {
+                    Method m = rawResult.getClass().getMethod("succeeded");
+                    Object v = m.invoke(rawResult);
+                    if (v instanceof Boolean b) success = b;
+                } catch (NoSuchMethodException ignored2) {
+                    try {
+                        Method m = rawResult.getClass().getMethod("getSucceeded");
+                        Object v = m.invoke(rawResult);
+                        if (v instanceof Boolean b) success = b;
+                    } catch (NoSuchMethodException ignored3) { }
+                }
+            }
+
+            try {
+                Field f = rawResult.getClass().getField("claim");
+                claim = f.get(rawResult);
+            } catch (NoSuchFieldException ignored) {
+                try {
+                    Method m = rawResult.getClass().getMethod("getClaim");
+                    claim = m.invoke(rawResult);
+                } catch (NoSuchMethodException ignored2) { }
+            }
+
+            if (!success) {
+                try {
+                    Field f = rawResult.getClass().getField("denialMessage");
+                    Object denial = f.get(rawResult);
+                    if (denial instanceof java.util.function.Supplier<?> supplier) {
+                        Object supplied = supplier.get();
+                        if (supplied != null) message = supplied.toString();
+                    } else if (denial != null) {
+                        message = denial.toString();
+                    }
+                } catch (NoSuchFieldException ignored) {
+                    // Optional field
+                }
+            }
+        } catch (ReflectiveOperationException ignored) {
+        }
+
+        if (message == null || message.isBlank()) {
+            message = success ? "Claim created." : "Claim creation failed.";
+        }
+        return new CreateClaimResult(true, success, dryRun, message, claim);
+    }
+
+    public ResizePreview previewResizeClaim(Player player, Object claim, ResizeDirection direction, int requestedOffset) {
+        return previewResizeClaim(player, claim, direction, requestedOffset, null);
+    }
+
+    public ResizePreview previewResizeClaim(
+            Player player,
+            Object claim,
+            ResizeDirection direction,
+            int requestedOffset,
+            Location referenceLocation
+    ) {
+        if (!isAvailable() || dataStore == null) {
+            return new ResizePreview(false, false, ResizeFailureReason.NOT_AVAILABLE, requestedOffset, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null, null);
+        }
+        if (player == null || claim == null || direction == null) {
+            return new ResizePreview(false, false, ResizeFailureReason.INVALID_INPUT, requestedOffset, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null, null);
+        }
+        if (usesSegmentAwareResize(claim, direction)) {
+            Location reference = referenceLocation != null ? referenceLocation : player.getLocation();
+            return previewSegmentAwareResize(player, claim, direction, requestedOffset, reference);
+        }
+        if (findResizeClaimMethod(claim.getClass()) == null) {
+            return new ResizePreview(false, false, ResizeFailureReason.UNSUPPORTED, requestedOffset, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null, null);
+        }
+
+        ClaimCorners current = getClaimCorners(claim).orElse(null);
+        if (current == null) {
+            return new ResizePreview(false, false, ResizeFailureReason.INVALID_INPUT, requestedOffset, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null, null);
+        }
+
+        int currentWidth = current.x2 - current.x1 + 1;
+        int currentHeight = current.y2 - current.y1 + 1;
+        int currentDepth = current.z2 - current.z1 + 1;
+        int currentArea = currentWidth * currentDepth;
+        int minWidth = getConfiguredMinWidth();
+        int minArea = getConfiguredMinArea(minWidth);
+        int remaining = getPlayerClaimStats(player).map(stats -> stats.remaining).orElse(0);
+        boolean enforceMinSize = usesMinimumSizeRules(claim);
+
+        int maxShrink = computeMaxShrink(claim, current, direction, currentWidth, currentHeight, currentDepth, minWidth, minArea, enforceMinSize);
+        int maxExpand = computeMaxExpand(claim, current, direction, remaining, currentWidth, currentDepth);
+        int clampedOffset = Math.max(-maxShrink, Math.min(maxExpand, requestedOffset));
+        ClaimCorners updated = newCornersForOffset(current, direction, clampedOffset);
+        int newWidth = updated.x2 - updated.x1 + 1;
+        int newHeight = updated.y2 - updated.y1 + 1;
+        int newDepth = updated.z2 - updated.z1 + 1;
+        int newArea = newWidth * newDepth;
+        int blockDelta = newArea - currentArea;
+
+        ResizeFailureReason failure = ResizeFailureReason.NONE;
+        boolean valid = true;
+
+        if (requestedOffset != clampedOffset) {
+            valid = false;
+            failure = ResizeFailureReason.INVALID_OFFSET_RANGE;
+        } else if (enforceMinSize && (newWidth < minWidth || newDepth < minWidth || newArea < minArea)) {
+            valid = false;
+            failure = ResizeFailureReason.TOO_SMALL;
+        } else if (blockDelta > remaining) {
+            valid = false;
+            failure = ResizeFailureReason.NOT_ENOUGH_BLOCKS;
+        } else if ((failure = validateParentBounds(claim, updated)) != ResizeFailureReason.NONE) {
+            valid = false;
+        } else if ((failure = validateSiblingSpacing(claim, updated)) != ResizeFailureReason.NONE) {
+            valid = false;
+        } else if ((failure = validateContainedChildren(claim, updated)) != ResizeFailureReason.NONE) {
+            valid = false;
+        }
+
+        return new ResizePreview(true, valid, failure, requestedOffset, clampedOffset, maxExpand, maxShrink, minWidth, minArea, remaining, currentWidth, currentHeight, currentDepth, currentArea, newWidth, newHeight, newDepth, newArea, blockDelta, current, updated);
+    }
+
+    public ResizeResult resizeClaim(Player player, Object claim, ResizeDirection direction, int requestedOffset) {
+        return resizeClaim(player, claim, direction, requestedOffset, null);
+    }
+
+    public ResizeResult resizeClaim(
+            Player player,
+            Object claim,
+            ResizeDirection direction,
+            int requestedOffset,
+            Location referenceLocation
+    ) {
+        if (usesSegmentAwareResize(claim, direction)) {
+            Location reference = referenceLocation != null ? referenceLocation : (player != null ? player.getLocation() : null);
+            return resizeSegmentAwareShapedClaim(player, claim, direction, requestedOffset, reference);
+        }
+
+        ResizePreview preview = previewResizeClaim(player, claim, direction, requestedOffset, referenceLocation);
+        if (!preview.supported || !preview.valid) {
+            return new ResizeResult(false, preview.failureReason, preview, claim);
+        }
+
+        Method resizeClaim = findResizeClaimMethod(claim.getClass());
+        if (resizeClaim == null) {
+            return new ResizeResult(false, ResizeFailureReason.UNSUPPORTED, preview, claim);
+        }
+
+        try {
+            Object result = resizeClaim.invoke(
+                dataStore,
+                claim,
+                preview.newCorners.x1,
+                preview.newCorners.x2,
+                preview.newCorners.y1,
+                preview.newCorners.y2,
+                preview.newCorners.z1,
+                preview.newCorners.z2,
+                player
+            );
+
+            if (!extractResizeSucceeded(result)) {
+                return new ResizeResult(false, ResizeFailureReason.APPLY_FAILED, preview, claim);
+            }
+
+            Object resizedClaim = extractResultClaim(result);
+            if (resizedClaim == null) resizedClaim = claim;
+            return new ResizeResult(true, ResizeFailureReason.NONE, preview, resizedClaim);
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return new ResizeResult(false, ResizeFailureReason.APPLY_FAILED, preview, claim);
+        }
+    }
+
+    private static final class SegmentAwareResizeSelection {
+        private final Object polygon;
+        private final int edgeIndex;
+
+        private SegmentAwareResizeSelection(Object polygon, int edgeIndex) {
+            this.polygon = polygon;
+            this.edgeIndex = edgeIndex;
+        }
+    }
+
+    private ResizePreview previewSegmentAwareResize(
+            Player player,
+            Object claim,
+            ResizeDirection direction,
+            int requestedOffset,
+            Location reference
+    ) {
+        ClaimCorners current = getClaimCorners(claim).orElse(null);
+        if (current == null) {
+            return new ResizePreview(false, false, ResizeFailureReason.INVALID_INPUT, requestedOffset, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null, null);
+        }
+
+        SegmentAwareResizeSelection selection = resolveSegmentAwareSelection(claim, direction, reference);
+        if (selection == null) {
+            return new ResizePreview(true, false, ResizeFailureReason.INVALID_INPUT, requestedOffset, 0, 0, 0, getConfiguredShapedMinWidth(), getConfiguredShapedMinArea(), getPlayerClaimStats(player).map(stats -> stats.remaining).orElse(0), current.x2 - current.x1 + 1, current.y2 - current.y1 + 1, current.z2 - current.z1 + 1, getClaimAreaSafe(claim), current.x2 - current.x1 + 1, current.y2 - current.y1 + 1, current.z2 - current.z1 + 1, getClaimAreaSafe(claim), 0, current, current);
+        }
+
+        int polygonOffset = translateSegmentOffsetForDirection(direction, requestedOffset);
+        Object polygonAfter = selection.polygon;
+        boolean valid = true;
+        ResizeFailureReason failure = ResizeFailureReason.NONE;
+        if (requestedOffset != 0) {
+            Object validation = applyPolygonEdgeOffset(selection.polygon, selection.edgeIndex, polygonOffset);
+            if (!extractValidationValid(validation)) {
+                valid = false;
+                failure = ResizeFailureReason.INVALID_OFFSET_RANGE;
+            } else {
+                Object candidate = extractValidationPolygon(validation);
+                if (candidate == null) {
+                    valid = false;
+                    failure = ResizeFailureReason.INVALID_OFFSET_RANGE;
+                } else {
+                    polygonAfter = candidate;
+                }
+            }
+        }
+
+        ClaimCorners updated = cornersFromPolygonBounds(current, polygonAfter);
+        int remaining = getPlayerClaimStats(player).map(stats -> stats.remaining).orElse(0);
+        int currentWidth = current.x2 - current.x1 + 1;
+        int currentHeight = current.y2 - current.y1 + 1;
+        int currentDepth = current.z2 - current.z1 + 1;
+        int currentArea = getClaimAreaSafe(claim);
+        int newWidth = updated.x2 - updated.x1 + 1;
+        int newHeight = updated.y2 - updated.y1 + 1;
+        int newDepth = updated.z2 - updated.z1 + 1;
+        int newArea = newWidth * newDepth;
+        int blockDelta = newArea - currentArea;
+        if (valid && blockDelta > remaining) {
+            valid = false;
+            failure = ResizeFailureReason.NOT_ENOUGH_BLOCKS;
+        }
+
+        return new ResizePreview(
+                true,
+                valid,
+                failure,
+                requestedOffset,
+                valid ? requestedOffset : 0,
+                0,
+                0,
+                getConfiguredShapedMinWidth(),
+                getConfiguredShapedMinArea(),
+                remaining,
+                currentWidth,
+                currentHeight,
+                currentDepth,
+                currentArea,
+                newWidth,
+                newHeight,
+                newDepth,
+                newArea,
+                blockDelta,
+                current,
+                updated
+        );
+    }
+
+    private ResizeResult resizeSegmentAwareShapedClaim(
+            Player player,
+            Object claim,
+            ResizeDirection direction,
+            int requestedOffset,
+            Location reference
+    ) {
+        ResizePreview preview = previewSegmentAwareResize(player, claim, direction, requestedOffset, reference);
+        if (!preview.supported || !preview.valid) {
+            return new ResizeResult(false, preview.failureReason, preview, claim);
+        }
+
+        SegmentAwareResizeSelection selection = resolveSegmentAwareSelection(claim, direction, reference);
+        if (selection == null) {
+            return new ResizeResult(false, ResizeFailureReason.INVALID_INPUT, preview, claim);
+        }
+
+        int polygonOffset = translateSegmentOffsetForDirection(direction, requestedOffset);
+        Object validation = applyPolygonEdgeOffset(selection.polygon, selection.edgeIndex, polygonOffset);
+        if (!extractValidationValid(validation)) {
+            return new ResizeResult(false, ResizeFailureReason.INVALID_OFFSET_RANGE, preview, claim);
+        }
+        Object candidatePolygon = extractValidationPolygon(validation);
+        if (candidatePolygon == null) {
+            return new ResizeResult(false, ResizeFailureReason.INVALID_OFFSET_RANGE, preview, claim);
+        }
+
+        Object playerData = resolvePlayerData(player.getUniqueId());
+        if (playerData == null) {
+            return new ResizeResult(false, ResizeFailureReason.NOT_AVAILABLE, preview, claim);
+        }
+
+        Method updateShapedClaim = findUpdateShapedClaimMethod(claim.getClass(), candidatePolygon.getClass(), playerData.getClass());
+        if (updateShapedClaim == null) {
+            return new ResizeResult(false, ResizeFailureReason.UNSUPPORTED, preview, claim);
+        }
+
+        try {
+            Object updateResult = updateShapedClaim.invoke(dataStore, player, playerData, claim, candidatePolygon);
+            if (!extractResizeSucceeded(updateResult)) {
+                String denial = extractDenialMessage(updateResult);
+                return new ResizeResult(false, mapShapedResizeFailure(denial), preview, claim);
+            }
+
+            Object resizedClaim = extractResultClaim(updateResult);
+            if (resizedClaim == null) resizedClaim = claim;
+
+            ClaimCorners current = getClaimCorners(claim).orElse(preview.currentCorners);
+            ClaimCorners updated = cornersFromPolygonBounds(current, candidatePolygon);
+            int remaining = getPlayerClaimStats(player).map(stats -> stats.remaining).orElse(0);
+            int currentWidth = current.x2 - current.x1 + 1;
+            int currentHeight = current.y2 - current.y1 + 1;
+            int currentDepth = current.z2 - current.z1 + 1;
+            int currentArea = getClaimAreaSafe(claim);
+            int newWidth = updated.x2 - updated.x1 + 1;
+            int newHeight = updated.y2 - updated.y1 + 1;
+            int newDepth = updated.z2 - updated.z1 + 1;
+            int newArea = newWidth * newDepth;
+            int blockDelta = newArea - currentArea;
+
+            ResizePreview appliedPreview = new ResizePreview(
+                    true,
+                    true,
+                    ResizeFailureReason.NONE,
+                    requestedOffset,
+                    requestedOffset,
+                    0,
+                    0,
+                    getConfiguredShapedMinWidth(),
+                    getConfiguredShapedMinArea(),
+                    remaining,
+                    currentWidth,
+                    currentHeight,
+                    currentDepth,
+                    currentArea,
+                    newWidth,
+                    newHeight,
+                    newDepth,
+                    newArea,
+                    blockDelta,
+                    current,
+                    updated
+            );
+            return new ResizeResult(true, ResizeFailureReason.NONE, appliedPreview, resizedClaim);
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return new ResizeResult(false, ResizeFailureReason.APPLY_FAILED, preview, claim);
+        }
+    }
+
+    private SegmentAwareResizeSelection resolveSegmentAwareSelection(Object claim, ResizeDirection direction, Location reference) {
+        Object polygon = resolveClaimBoundaryPolygon(claim);
+        if (polygon == null) {
+            return null;
+        }
+        Integer edgeIndex = selectDirectionalEdgeIndex(polygon, direction, reference);
+        if (edgeIndex == null) {
+            return null;
+        }
+        return new SegmentAwareResizeSelection(polygon, edgeIndex);
+    }
+
+    private SegmentEdgeInfo extractSegmentEdgeInfo(Object polygon, int edgeIndex, ResizeDirection direction) {
+        if (polygon == null || edgeIndex < 0) {
+            return null;
+        }
+        try {
+            Method edgesMethod = polygon.getClass().getMethod("edges");
+            Object rawEdges = edgesMethod.invoke(polygon);
+            if (!(rawEdges instanceof List<?> edges) || edgeIndex >= edges.size()) {
+                return null;
+            }
+
+            Object edge = edges.get(edgeIndex);
+            boolean horizontal = invokeBoolean(edge, "isHorizontal");
+            boolean vertical = invokeBoolean(edge, "isVertical");
+            if (!horizontal && !vertical) {
+                return null;
+            }
+
+            int axisCoordinate;
+            int minAlong;
+            int maxAlong;
+            if (horizontal) {
+                axisCoordinate = invokePointCoordinate(edge, "start", "z");
+                minAlong = invokeIntOr(edge, "minX", invokePointCoordinate(edge, "start", "x"));
+                maxAlong = invokeIntOr(edge, "maxX", invokePointCoordinate(edge, "end", "x"));
+            } else {
+                axisCoordinate = invokePointCoordinate(edge, "start", "x");
+                minAlong = invokeIntOr(edge, "minZ", invokePointCoordinate(edge, "start", "z"));
+                maxAlong = invokeIntOr(edge, "maxZ", invokePointCoordinate(edge, "end", "z"));
+            }
+
+            return new SegmentEdgeInfo(edgeIndex, direction, axisCoordinate, minAlong, maxAlong, horizontal);
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return null;
+        }
+    }
+
+    private Object resolveClaimBoundaryPolygon(Object claim) {
+        try {
+            Method getBoundaryPolygon = claim.getClass().getMethod("getBoundaryPolygon");
+            return getBoundaryPolygon.invoke(claim);
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return null;
+        }
+    }
+
+    private Integer selectDirectionalEdgeIndex(Object polygon, ResizeDirection direction, Location reference) {
+        boolean wantsHorizontal = direction == ResizeDirection.NORTH || direction == ResizeDirection.SOUTH;
+        boolean wantsVertical = direction == ResizeDirection.EAST || direction == ResizeDirection.WEST;
+        if (!wantsHorizontal && !wantsVertical) {
+            return null;
+        }
+
+        List<?> edges;
+        try {
+            Method edgesMethod = polygon.getClass().getMethod("edges");
+            Object raw = edgesMethod.invoke(polygon);
+            if (!(raw instanceof List<?> list)) {
+                return null;
+            }
+            edges = list;
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return null;
+        }
+
+        double refX = reference != null ? reference.getX() : Double.NaN;
+        double refZ = reference != null ? reference.getZ() : Double.NaN;
+        int bestIndex = -1;
+        double bestDistance = Double.MAX_VALUE;
+
+        // First pass: nearest edge with the expected orientation on the requested side
+        // of the reference point.
+        for (int index = 0; index < edges.size(); index++) {
+            Object edge = edges.get(index);
+            try {
+                boolean horizontal = invokeBoolean(edge, "isHorizontal");
+                boolean vertical = invokeBoolean(edge, "isVertical");
+                if (wantsHorizontal && !horizontal) {
+                    continue;
+                }
+                if (wantsVertical && !vertical) {
+                    continue;
+                }
+
+                if (!Double.isNaN(refX)
+                        && !Double.isNaN(refZ)
+                        && !isEdgeOnRequestedSide(direction, edge, refX, refZ, horizontal)) {
+                    continue;
+                }
+
+                double distance = distanceToEdge(edge, refX, refZ, horizontal);
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    bestIndex = index;
+                }
+            } catch (ReflectiveOperationException e) {
+                if (DEBUG) e.printStackTrace();
+            }
+        }
+
+        if (bestIndex >= 0) {
+            return bestIndex;
+        }
+
+        // Fallback: nearest oriented edge if side classification doesn't produce a match.
+        for (int index = 0; index < edges.size(); index++) {
+            Object edge = edges.get(index);
+            try {
+                boolean horizontal = invokeBoolean(edge, "isHorizontal");
+                boolean vertical = invokeBoolean(edge, "isVertical");
+                if (wantsHorizontal && !horizontal) {
+                    continue;
+                }
+                if (wantsVertical && !vertical) {
+                    continue;
+                }
+                double distance = distanceToEdge(edge, refX, refZ, horizontal);
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    bestIndex = index;
+                }
+            } catch (ReflectiveOperationException e) {
+                if (DEBUG) e.printStackTrace();
+            }
+        }
+
+        return bestIndex >= 0 ? bestIndex : null;
+    }
+
+    private boolean isEdgeOnRequestedSide(
+            ResizeDirection direction,
+            Object edge,
+            double refX,
+            double refZ,
+            boolean horizontal
+    ) throws ReflectiveOperationException {
+        if (horizontal) {
+            int edgeZ = invokePointCoordinate(edge, "start", "z");
+            return switch (direction) {
+                case NORTH -> edgeZ < refZ;
+                case SOUTH -> edgeZ > refZ;
+                default -> true;
+            };
+        }
+
+        int edgeX = invokePointCoordinate(edge, "start", "x");
+        return switch (direction) {
+            case WEST -> edgeX < refX;
+            case EAST -> edgeX > refX;
+            default -> true;
+        };
+    }
+
+    private int translateSegmentOffsetForDirection(ResizeDirection direction, int requestedOffset) {
+        return switch (direction) {
+            case NORTH, WEST -> -requestedOffset;
+            default -> requestedOffset;
+        };
+    }
+
+    private Object insertNodeIfInterior(Object polygon, Object point) throws ReflectiveOperationException {
+        if (polygon == null || point == null) {
+            return polygon;
+        }
+
+        Method matchesMethod = polygon.getClass().getMethod("edgeIndexesContainingInteriorPoint", point.getClass());
+        Object rawMatches = matchesMethod.invoke(polygon, point);
+        if (!(rawMatches instanceof List<?> matches) || matches.isEmpty()) {
+            return polygon;
+        }
+        if (matches.size() != 1) {
+            throw new IllegalArgumentException("That node point does not resolve to a single editable boundary segment.");
+        }
+
+        Object edgeIndexRaw = matches.get(0);
+        if (!(edgeIndexRaw instanceof Number number)) {
+            throw new IllegalArgumentException("Could not resolve boundary segment index for node insertion.");
+        }
+        int edgeIndex = number.intValue();
+
+        Method insertMethod = polygon.getClass().getMethod("insertNode", int.class, point.getClass());
+        return insertMethod.invoke(polygon, edgeIndex, point);
+    }
+
+    private boolean invokeBoolean(Object target, String methodName) throws ReflectiveOperationException {
+        Method method = target.getClass().getMethod(methodName);
+        Object value = method.invoke(target);
+        return value instanceof Boolean && (Boolean) value;
+    }
+
+    private double distanceToEdge(Object edge, double refX, double refZ, boolean horizontal) throws ReflectiveOperationException {
+        int minX = invokeIntOr(edge, "minX", 0);
+        int maxX = invokeIntOr(edge, "maxX", minX);
+        int minZ = invokeIntOr(edge, "minZ", 0);
+        int maxZ = invokeIntOr(edge, "maxZ", minZ);
+        if (horizontal) {
+            int edgeZ = invokePointCoordinate(edge, "start", "z");
+            double clampedX = Math.max(minX, Math.min(maxX, refX));
+            return Math.abs(refX - clampedX) + Math.abs(refZ - edgeZ);
+        }
+
+        int edgeX = invokePointCoordinate(edge, "start", "x");
+        double clampedZ = Math.max(minZ, Math.min(maxZ, refZ));
+        return Math.abs(refZ - clampedZ) + Math.abs(refX - edgeX);
+    }
+
+    private int invokePointCoordinate(Object edge, String endpointMethod, String coordinateMethod) throws ReflectiveOperationException {
+        Method endpoint = edge.getClass().getMethod(endpointMethod);
+        Object point = endpoint.invoke(edge);
+        if (point == null) {
+            return 0;
+        }
+        Method coordinate = point.getClass().getMethod(coordinateMethod);
+        Object value = coordinate.invoke(point);
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return 0;
+    }
+
+    private int invokeIntOr(Object target, String methodName, int fallback) throws ReflectiveOperationException {
+        Method method = target.getClass().getMethod(methodName);
+        Object value = method.invoke(target);
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return fallback;
+    }
+
+    private Object applyPolygonEdgeOffset(Object polygon, int edgeIndex, int amount) {
+        try {
+            Method expandEdge = polygon.getClass().getMethod("expandEdge", int.class, int.class);
+            return expandEdge.invoke(polygon, edgeIndex, amount);
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return null;
+        }
+    }
+
+    private boolean extractValidationValid(Object validationResult) {
+        if (validationResult == null) {
+            return false;
+        }
+        try {
+            Method isValid = validationResult.getClass().getMethod("isValid");
+            Object value = isValid.invoke(validationResult);
+            if (value instanceof Boolean) {
+                return (Boolean) value;
+            }
+        } catch (ReflectiveOperationException ignored) { }
+        try {
+            Field field = validationResult.getClass().getField("valid");
+            Object value = field.get(validationResult);
+            if (value instanceof Boolean) {
+                return (Boolean) value;
+            }
+        } catch (ReflectiveOperationException ignored) { }
+        return false;
+    }
+
+    private Object extractValidationPolygon(Object validationResult) {
+        if (validationResult == null) {
+            return null;
+        }
+        try {
+            Method polygon = validationResult.getClass().getMethod("polygon");
+            return polygon.invoke(validationResult);
+        } catch (ReflectiveOperationException ignored) { }
+        try {
+            Method polygon = validationResult.getClass().getMethod("getPolygon");
+            return polygon.invoke(validationResult);
+        } catch (ReflectiveOperationException ignored) { }
+        try {
+            Field field = validationResult.getClass().getField("polygon");
+            return field.get(validationResult);
+        } catch (ReflectiveOperationException ignored) { }
+        return null;
+    }
+
+    private Method findUpdateShapedClaimMethod(Class<?> claimCls, Class<?> polygonCls, Class<?> playerDataCls) {
+        if (dataStore == null || claimCls == null || polygonCls == null || playerDataCls == null) {
+            return null;
+        }
+
+        for (Method method : dataStore.getClass().getMethods()) {
+            if (!"updateShapedClaim".equals(method.getName())) continue;
+            Class<?>[] params = method.getParameterTypes();
+            if (params.length != 4) continue;
+            if (!Player.class.isAssignableFrom(params[0])) continue;
+            if (!params[1].isAssignableFrom(playerDataCls)) continue;
+            if (!params[2].isAssignableFrom(claimCls)) continue;
+            if (!params[3].isAssignableFrom(polygonCls)) continue;
+            return method;
+        }
+
+        for (Method method : dataStore.getClass().getDeclaredMethods()) {
+            if (!"updateShapedClaim".equals(method.getName())) continue;
+            Class<?>[] params = method.getParameterTypes();
+            if (params.length != 4) continue;
+            if (!Player.class.isAssignableFrom(params[0])) continue;
+            if (!params[1].isAssignableFrom(playerDataCls)) continue;
+            if (!params[2].isAssignableFrom(claimCls)) continue;
+            if (!params[3].isAssignableFrom(polygonCls)) continue;
+            method.setAccessible(true);
+            return method;
+        }
+
+        return null;
+    }
+
+    private Object resolvePlayerData(UUID playerId) {
+        if (dataStore == null || playerId == null) {
+            return null;
+        }
+        try {
+            Method method = cachedGetPlayerDataMethod;
+            if (method == null) {
+                method = dataStore.getClass().getMethod("getPlayerData", UUID.class);
+                cachedGetPlayerDataMethod = method;
+            }
+            return method.invoke(dataStore, playerId);
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return null;
+        }
+    }
+
+    private ClaimCorners cornersFromPolygonBounds(ClaimCorners fallback, Object polygon) {
+        if (fallback == null || polygon == null) {
+            return fallback;
+        }
+        try {
+            int minX = invokeIntOr(polygon, "minX", fallback.x1);
+            int maxX = invokeIntOr(polygon, "maxX", fallback.x2);
+            int minZ = invokeIntOr(polygon, "minZ", fallback.z1);
+            int maxZ = invokeIntOr(polygon, "maxZ", fallback.z2);
+            return new ClaimCorners(minX, fallback.y1, minZ, maxX, fallback.y2, maxZ);
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return fallback;
+        }
+    }
+
+    private String extractDenialMessage(Object result) {
+        if (result == null) {
+            return null;
+        }
+        for (String fieldName : new String[]{"denialMessage", "message"}) {
+            try {
+                Field field = result.getClass().getField(fieldName);
+                Object value = field.get(result);
+                String extracted = supplierToMessage(value);
+                if (extracted != null && !extracted.isBlank()) {
+                    return extracted;
+                }
+            } catch (ReflectiveOperationException ignored) { }
+        }
+        for (String methodName : new String[]{"getDenialMessage", "denialMessage", "getMessage"}) {
+            try {
+                Method method = result.getClass().getMethod(methodName);
+                Object value = method.invoke(result);
+                String extracted = supplierToMessage(value);
+                if (extracted != null && !extracted.isBlank()) {
+                    return extracted;
+                }
+            } catch (ReflectiveOperationException ignored) { }
+        }
+        return null;
+    }
+
+    private String supplierToMessage(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof java.util.function.Supplier<?> supplier) {
+            Object supplied = supplier.get();
+            return supplied == null ? null : supplied.toString();
+        }
+        return value.toString();
+    }
+
+    private ResizeFailureReason mapShapedResizeFailure(String message) {
+        if (message == null || message.isBlank()) {
+            return ResizeFailureReason.APPLY_FAILED;
+        }
+        String lower = message.toLowerCase(Locale.ROOT);
+        if (lower.contains("need") && lower.contains("claim block")) {
+            return ResizeFailureReason.NOT_ENOUGH_BLOCKS;
+        }
+        if (lower.contains("too small") || lower.contains("too narrow") || lower.contains("at least")) {
+            return ResizeFailureReason.TOO_SMALL;
+        }
+        if (lower.contains("outside") && lower.contains("parent")) {
+            return ResizeFailureReason.OUTSIDE_PARENT;
+        }
+        if (lower.contains("overlap")) {
+            return ResizeFailureReason.SIBLING_OVERLAP;
+        }
+        if (lower.contains("subdivision")) {
+            return ResizeFailureReason.WOULD_CLIP_CHILD;
+        }
+        return ResizeFailureReason.APPLY_FAILED;
+    }
+
+    private boolean isHorizontalDirection(ResizeDirection direction) {
+        return direction == ResizeDirection.NORTH
+                || direction == ResizeDirection.SOUTH
+                || direction == ResizeDirection.EAST
+                || direction == ResizeDirection.WEST;
+    }
+
+    private boolean supportsMapSegmentizedShapedEdit(Object claim, ResizeDirection direction) {
+        return claim != null
+                && isHorizontalDirection(direction)
+                && !is3DClaim(claim)
+                && !isSubdivision(claim);
+    }
+
     // =========================
     // Claim block mutation API
     // =========================
@@ -1388,10 +3954,29 @@ public class GPBridge {
      */
     public Optional<Object> getParentClaim(Object claim) {
         if (claim == null) return Optional.empty();
-        
-        // Try multiple possible method names
-        String[] methodNames = {"getParent", "getParentClaim", "getTopLevelClaim"};
-        
+
+        String[] fieldNames = {"parent", "parentClaim"};
+        for (String fieldName : fieldNames) {
+            Class<?> type = claim.getClass();
+            while (type != null) {
+                try {
+                    Field field = type.getDeclaredField(fieldName);
+                    field.setAccessible(true);
+                    Object parent = field.get(claim);
+                    if (parent != null && parent != claim) {
+                        return Optional.of(parent);
+                    }
+                    break;
+                } catch (NoSuchFieldException e) {
+                    type = type.getSuperclass();
+                } catch (ReflectiveOperationException e) {
+                    if (DEBUG) e.printStackTrace();
+                    break;
+                }
+            }
+        }
+
+        String[] methodNames = {"getParent", "getParentClaim"};
         for (String methodName : methodNames) {
             try {
                 Method method = claim.getClass().getMethod(methodName);
@@ -1400,7 +3985,6 @@ public class GPBridge {
                     return Optional.of(parent);
                 }
             } catch (NoSuchMethodException e) {
-                // Try next method
                 continue;
             } catch (ReflectiveOperationException e) {
                 if (DEBUG) e.printStackTrace();
@@ -1529,7 +4113,37 @@ public class GPBridge {
         if (isTrusted(claim, playerId, "build")) return true;
         if (isTrusted(claim, playerId, "inventory")) return true;
         if (isTrusted(claim, playerId, "access")) return true;
+        if (isTrusted(claim, playerId, "manager")) return true;
         return false;
+    }
+
+    public enum TrustLevel {
+        MANAGE,
+        BUILD,
+        CONTAINERS,
+        ACCESS
+    }
+
+    public EnumSet<TrustLevel> getTrustLevels(Object claim, UUID playerId) {
+        EnumSet<TrustLevel> levels = EnumSet.noneOf(TrustLevel.class);
+        if (claim == null || playerId == null) return levels;
+
+        if (isTrusted(claim, playerId, "manager")) levels.add(TrustLevel.MANAGE);
+        if (isTrusted(claim, playerId, "build")) levels.add(TrustLevel.BUILD);
+        if (isTrusted(claim, playerId, "inventory")) levels.add(TrustLevel.CONTAINERS);
+        if (isTrusted(claim, playerId, "access")) levels.add(TrustLevel.ACCESS);
+        return levels;
+    }
+
+    public Map<UUID, EnumSet<TrustLevel>> getTrustedPlayers(Object claim) {
+        Map<UUID, EnumSet<TrustLevel>> trusted = new LinkedHashMap<>();
+        if (claim == null) return trusted;
+
+        mergeTrustCollection(trusted, claim, TrustLevel.MANAGE, "manager", "permission");
+        mergeTrustCollection(trusted, claim, TrustLevel.BUILD, "build");
+        mergeTrustCollection(trusted, claim, TrustLevel.CONTAINERS, "inventory", "container");
+        mergeTrustCollection(trusted, claim, TrustLevel.ACCESS, "access");
+        return trusted;
     }
 
     /**
@@ -1707,6 +4321,7 @@ public class GPBridge {
             if (playerId.equals(ownerId)) return true;
             
             // Check explicit trust
+            if (isTrusted(claim, playerId, "manager")) return true;
             if (isTrusted(claim, playerId, "build")) return true;
             if (isTrusted(claim, playerId, "access")) return true;
             if (isTrusted(claim, playerId, "inventory")) return true;
@@ -1715,6 +4330,79 @@ public class GPBridge {
             if (DEBUG) e.printStackTrace();
         }
         return false;
+    }
+
+    private void mergeTrustCollection(Map<UUID, EnumSet<TrustLevel>> trusted, Object claim, TrustLevel level, String... trustTypes) {
+        for (String trustType : trustTypes) {
+            for (UUID playerId : getTrustedPlayersForType(claim, trustType)) {
+                trusted.computeIfAbsent(playerId, ignored -> EnumSet.noneOf(TrustLevel.class)).add(level);
+            }
+        }
+    }
+
+    private Set<UUID> getTrustedPlayersForType(Object claim, String trustType) {
+        Set<UUID> players = new LinkedHashSet<>();
+        if (claim == null || trustType == null || trustType.isEmpty()) return players;
+
+        String base = trustType.substring(0, 1).toUpperCase() + trustType.substring(1).toLowerCase(Locale.ROOT);
+        String upper = trustType.toUpperCase(Locale.ROOT);
+        String lower = trustType.toLowerCase(Locale.ROOT);
+        String[] methodNames = {
+            "get" + base + "Trusted",
+            "get" + base + "Trust",
+            "get" + upper + "Trust",
+            lower + "Trust"
+        };
+
+        for (String methodName : methodNames) {
+            try {
+                Method getTrust = claim.getClass().getMethod(methodName);
+                Object trusted = getTrust.invoke(claim);
+                players.addAll(normalizeTrustedEntries(trusted));
+                if (!players.isEmpty()) {
+                    return players;
+                }
+            } catch (NoSuchMethodException ignored) {
+            } catch (ReflectiveOperationException e) {
+                if (DEBUG) e.printStackTrace();
+                return players;
+            }
+        }
+
+        return players;
+    }
+
+    private Set<UUID> normalizeTrustedEntries(Object trusted) {
+        Set<UUID> players = new LinkedHashSet<>();
+        if (!(trusted instanceof Collection<?> collection)) {
+            return players;
+        }
+
+        for (Object entry : collection) {
+            if (entry instanceof UUID uuid) {
+                players.add(uuid);
+                continue;
+            }
+            if (!(entry instanceof String stringValue) || stringValue.isBlank()) {
+                continue;
+            }
+
+            try {
+                players.add(UUID.fromString(stringValue));
+                continue;
+            } catch (IllegalArgumentException ignored) {
+            }
+
+            try {
+                UUID offlineUuid = Bukkit.getOfflinePlayer(stringValue).getUniqueId();
+                if (offlineUuid != null) {
+                    players.add(offlineUuid);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        return players;
     }
     
     /**
@@ -1902,6 +4590,23 @@ public class GPBridge {
         }
         return false;
     }
+
+    /**
+     * Check if a claim uses shaped (non-rectangular) geometry.
+     */
+    public boolean isShapedClaim(Object claim) {
+        if (!isAvailable() || claim == null) return false;
+        try {
+            Method isShaped = claim.getClass().getMethod("isShaped");
+            Object result = isShaped.invoke(claim);
+            if (result instanceof Boolean) {
+                return (Boolean) result;
+            }
+        } catch (ReflectiveOperationException ignored) {
+            // Older GP builds may not expose shaped geometry.
+        }
+        return false;
+    }
     
     /**
      * Get the dimensions of a claim (width, height, depth)
@@ -1980,6 +4685,363 @@ public class GPBridge {
             this.y2 = Math.max(y1, y2);
             this.z2 = Math.max(z1, z2);
         }
+    }
+
+    private int computeMaxExpand(Object claim, ClaimCorners current, ResizeDirection direction, int remainingBlocks, int width, int depth) {
+        if (direction == ResizeDirection.UP || direction == ResizeDirection.DOWN) {
+            Object parent = getParentClaim(claim).orElse(null);
+            if (parent == null || parent == claim) return 0;
+
+            ClaimCorners parentCorners = getClaimCorners(parent).orElse(null);
+            if (parentCorners == null) return 0;
+
+            return switch (direction) {
+                case UP -> Math.max(0, parentCorners.y2 - current.y2);
+                case DOWN -> Math.max(0, current.y1 - parentCorners.y1);
+                default -> 0;
+            };
+        }
+
+        int oppositeAxis = (direction == ResizeDirection.NORTH || direction == ResizeDirection.SOUTH) ? width : depth;
+        if (oppositeAxis <= 0) return 0;
+        return Math.max(0, remainingBlocks / oppositeAxis);
+    }
+
+    private int computeMaxShrink(Object claim, ClaimCorners current, ResizeDirection direction, int width, int height, int depth, int minWidth, int minArea, boolean enforceMinSize) {
+        int maxShrink;
+        if (direction == ResizeDirection.UP || direction == ResizeDirection.DOWN) {
+            int minHeight = 1;
+            maxShrink = Math.max(0, height - minHeight);
+        } else {
+            boolean northSouth = direction == ResizeDirection.NORTH || direction == ResizeDirection.SOUTH;
+            int axisLength = northSouth ? depth : width;
+            int otherAxisLength = northSouth ? width : depth;
+            if (!enforceMinSize) {
+                maxShrink = Math.max(0, axisLength - 1);
+            } else {
+                int maxShrinkFromWidth = Math.max(0, axisLength - minWidth);
+                int minAxisForArea = otherAxisLength > 0 ? (int) Math.ceil((double) minArea / otherAxisLength) : axisLength;
+                maxShrink = Math.min(maxShrinkFromWidth, Math.max(0, axisLength - minAxisForArea));
+            }
+        }
+
+        for (Object child : getSubclaims(claim)) {
+            ClaimCorners childCorners = getClaimCorners(child).orElse(null);
+            if (childCorners == null) continue;
+            maxShrink = Math.min(maxShrink, computeChildShrinkLimit(claim, current, child, childCorners, direction));
+        }
+
+        return Math.max(0, maxShrink);
+    }
+
+    private int computeChildShrinkLimit(Object claim, ClaimCorners parent, Object childClaim, ClaimCorners child, ResizeDirection direction) {
+        boolean insetRequired = isSubdivision(claim);
+        int horizontalInset = insetRequired ? 1 : 0;
+        int verticalInset = insetRequired && is3DClaim(claim) && is3DClaim(childClaim) ? 1 : 0;
+        return switch (direction) {
+            case NORTH -> Math.max(0, child.z1 - parent.z1 - horizontalInset);
+            case SOUTH -> Math.max(0, parent.z2 - child.z2 - horizontalInset);
+            case WEST -> Math.max(0, child.x1 - parent.x1 - horizontalInset);
+            case EAST -> Math.max(0, parent.x2 - child.x2 - horizontalInset);
+            case UP -> Math.max(0, parent.y2 - child.y2 - verticalInset);
+            case DOWN -> Math.max(0, child.y1 - parent.y1 - verticalInset);
+        };
+    }
+
+    private ClaimCorners newCornersForOffset(ClaimCorners current, ResizeDirection direction, int offset) {
+        int newX1 = current.x1;
+        int newX2 = current.x2;
+        int newY1 = current.y1;
+        int newY2 = current.y2;
+        int newZ1 = current.z1;
+        int newZ2 = current.z2;
+
+        switch (direction) {
+            case NORTH -> newZ1 -= offset;
+            case SOUTH -> newZ2 += offset;
+            case WEST -> newX1 -= offset;
+            case EAST -> newX2 += offset;
+            case UP -> newY2 += offset;
+            case DOWN -> newY1 -= offset;
+        }
+
+        return new ClaimCorners(newX1, newY1, newZ1, newX2, newY2, newZ2);
+    }
+
+    private ResizeFailureReason validateParentBounds(Object claim, ClaimCorners proposed) {
+        Object parent = getParentClaim(claim).orElse(null);
+        if (parent == null || parent == claim) return ResizeFailureReason.NONE;
+
+        ClaimCorners parentCorners = getClaimCorners(parent).orElse(null);
+        if (parentCorners == null) return ResizeFailureReason.NONE;
+
+        if (isSubdivision(parent)) {
+            boolean violatesXZ = proposed.x1 < parentCorners.x1 + 1
+                || proposed.x2 > parentCorners.x2 - 1
+                || proposed.z1 < parentCorners.z1 + 1
+                || proposed.z2 > parentCorners.z2 - 1;
+            boolean violatesY = is3DClaim(parent) && (
+                proposed.y1 < parentCorners.y1 + 1
+                    || proposed.y2 > parentCorners.y2 - 1
+            );
+            return (violatesXZ || violatesY) ? ResizeFailureReason.INNER_SUBDIVISION_TOO_CLOSE : ResizeFailureReason.NONE;
+        }
+
+        return proposed.x1 >= parentCorners.x1
+            && proposed.x2 <= parentCorners.x2
+            && proposed.y1 >= parentCorners.y1
+            && proposed.y2 <= parentCorners.y2
+            && proposed.z1 >= parentCorners.z1
+            && proposed.z2 <= parentCorners.z2
+            ? ResizeFailureReason.NONE
+            : ResizeFailureReason.OUTSIDE_PARENT;
+    }
+
+    private ResizeFailureReason validateContainedChildren(Object claim, ClaimCorners proposed) {
+        boolean subdivision = isSubdivision(claim);
+        int inset = subdivision ? 1 : 0;
+        for (Object child : getSubclaims(claim)) {
+            ClaimCorners childCorners = getClaimCorners(child).orElse(null);
+            if (childCorners == null) continue;
+            if (subdivision) {
+                boolean violatesX = childCorners.x1 < proposed.x1 + inset || childCorners.x2 > proposed.x2 - inset;
+                boolean violatesZ = childCorners.z1 < proposed.z1 + inset || childCorners.z2 > proposed.z2 - inset;
+                boolean violatesY = is3DClaim(claim) && is3DClaim(child)
+                    && (childCorners.y1 < proposed.y1 + inset || childCorners.y2 > proposed.y2 - inset);
+                if (violatesX || violatesZ || violatesY) {
+                    return ResizeFailureReason.INNER_SUBDIVISION_TOO_CLOSE;
+                }
+                continue;
+            }
+
+            boolean containedX = proposed.x1 <= childCorners.x1 && proposed.x2 >= childCorners.x2;
+            boolean containedZ = proposed.z1 <= childCorners.z1 && proposed.z2 >= childCorners.z2;
+            if (!(containedX && containedZ)) {
+                return ResizeFailureReason.WOULD_CLIP_CHILD;
+            }
+        }
+        return ResizeFailureReason.NONE;
+    }
+
+    private ResizeFailureReason validateSiblingSpacing(Object claim, ClaimCorners proposed) {
+        Object parent = getParentClaim(claim).orElse(null);
+        if (parent == null || parent == claim) return ResizeFailureReason.NONE;
+
+        boolean parentIs3D = is3DClaim(parent);
+        boolean claimIs3D = is3DClaim(claim);
+        boolean nestedParent = isSubdivision(parent);
+        boolean allowNested3DStacking = isNestedSubclaimsEnabled() && claimIs3D;
+        String currentClaimId = getClaimId(claim).orElse(null);
+
+        for (Object sibling : getSubclaims(parent)) {
+            if (sibling == claim) continue;
+            if (currentClaimId != null && currentClaimId.equals(getClaimId(sibling).orElse(null))) continue;
+
+            ClaimCorners siblingCorners = getClaimCorners(sibling).orElse(null);
+            if (siblingCorners == null) continue;
+
+            boolean xOverlap = proposed.x1 <= siblingCorners.x2 && proposed.x2 >= siblingCorners.x1;
+            boolean zOverlap = proposed.z1 <= siblingCorners.z2 && proposed.z2 >= siblingCorners.z1;
+            if (!xOverlap || !zOverlap) {
+                continue;
+            }
+
+            boolean siblingIs3D = is3DClaim(sibling);
+            boolean verticalSeparated = proposed.y2 < siblingCorners.y1 || proposed.y1 > siblingCorners.y2;
+            if (parentIs3D) {
+                if (allowNested3DStacking && siblingIs3D && verticalSeparated && !nestedParent) {
+                    continue;
+                }
+            } else if (verticalSeparated) {
+                continue;
+            }
+
+            if (!claimIs3D && !siblingIs3D) {
+                int overlapWidth = Math.min(proposed.x2, siblingCorners.x2) - Math.max(proposed.x1, siblingCorners.x1) + 1;
+                int overlapDepth = Math.min(proposed.z2, siblingCorners.z2) - Math.max(proposed.z1, siblingCorners.z1) + 1;
+                if (overlapWidth <= 0 || overlapDepth <= 0) {
+                    continue;
+                }
+            }
+
+            return ResizeFailureReason.SIBLING_OVERLAP;
+        }
+
+        return ResizeFailureReason.NONE;
+    }
+
+    private boolean usesMinimumSizeRules(Object claim) {
+        return !isSubdivision(claim);
+    }
+
+    private long packXZ(int x, int z) {
+        return ((long) x << 32) ^ (z & 0xffffffffL);
+    }
+
+    private int unpackX(long packed) {
+        return (int) (packed >> 32);
+    }
+
+    private int unpackZ(long packed) {
+        return (int) packed;
+    }
+
+    private boolean isNestedSubclaimsEnabled() {
+        Boolean value = getGpConfigBoolean("config_claims_allowNestedSubClaims");
+        return Boolean.TRUE.equals(value);
+    }
+
+    private int getConfiguredMinWidth() {
+        Integer value = getGpConfigInt("config_claims_minWidth");
+        return value != null && value > 0 ? value : 5;
+    }
+
+    private int getConfiguredShapedMinWidth() {
+        Integer value = getGpConfigInt("config_claims_shapedMinWidth");
+        return value != null && value > 0 ? value : 1;
+    }
+
+    private int getConfiguredMinArea(int minWidth) {
+        Integer value = getGpConfigInt("config_claims_minArea");
+        int fallback = minWidth * minWidth;
+        return value != null && value > 0 ? value : fallback;
+    }
+
+    private int getConfiguredShapedMinArea() {
+        Integer value = getGpConfigInt("config_claims_shapedMinArea");
+        return value != null && value > 0 ? value : 25;
+    }
+
+    /**
+     * Reads the double value of a GP config field (e.g. {@code config_economy_claimBlocksPurchaseCost}).
+     * Returns null if the field is missing or not a number.
+     */
+    public Double getGpConfigDouble(String fieldName) {
+        if (gpInstance == null) return null;
+        try {
+            Field field = gpInstance.getClass().getField(fieldName);
+            Object value = field.get(gpInstance);
+            if (value instanceof Number) return ((Number) value).doubleValue();
+        } catch (ReflectiveOperationException ignored) {}
+        try {
+            Field field = gpInstance.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            Object value = field.get(gpInstance);
+            if (value instanceof Number) return ((Number) value).doubleValue();
+        } catch (ReflectiveOperationException ignored) {}
+        return null;
+    }
+
+    /** Is GP's "buy/sell claim blocks" economy feature enabled (config_economy_claimBlocksEnabled)? */
+    public boolean isClaimBlocksEconomyEnabled() {
+        Boolean v = getGpConfigBoolean("config_economy_claimBlocksEnabled");
+        return v != null && v;
+    }
+
+    /** Cost per claim block for /buyclaimblocks (config_economy_claimBlocksPurchaseCost). */
+    public double getClaimBlocksPurchaseCost() {
+        Double v = getGpConfigDouble("config_economy_claimBlocksPurchaseCost");
+        return v != null ? v : 0.0D;
+    }
+
+    /** Credit {@code amount} bonus claim blocks to the player (and persist). */
+    public boolean creditBonusClaimBlocks(Player player, int amount) {
+        if (amount <= 0) return false;
+        return changeClaimBlocks(player, amount);
+    }
+
+    /** Returns the player's current remaining claim blocks, or 0 if unavailable. */
+    public int getRemainingClaimBlocks(Player player) {
+        return getPlayerClaimStats(player).map(s -> s.remaining).orElse(0);
+    }
+
+    private Integer getGpConfigInt(String fieldName) {
+        if (gpInstance == null) return null;
+        try {
+            Field field = gpInstance.getClass().getField(fieldName);
+            Object value = field.get(gpInstance);
+            if (value instanceof Number) return ((Number) value).intValue();
+        } catch (ReflectiveOperationException ignored) {}
+        try {
+            Field field = gpInstance.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            Object value = field.get(gpInstance);
+            if (value instanceof Number) return ((Number) value).intValue();
+        } catch (ReflectiveOperationException ignored) {}
+        return null;
+    }
+
+    private Boolean getGpConfigBoolean(String fieldName) {
+        if (gpInstance == null) return null;
+        try {
+            Field field = gpInstance.getClass().getField(fieldName);
+            Object value = field.get(gpInstance);
+            if (value instanceof Boolean) return (Boolean) value;
+        } catch (ReflectiveOperationException ignored) {}
+        try {
+            Method getter = gpInstance.getClass().getMethod(fieldName);
+            Object value = getter.invoke(gpInstance);
+            if (value instanceof Boolean) return (Boolean) value;
+        } catch (ReflectiveOperationException ignored) {}
+        return null;
+    }
+
+    private Method findResizeClaimMethod(Class<?> claimCls) {
+        if (dataStore == null || claimCls == null) return null;
+        for (Method method : dataStore.getClass().getMethods()) {
+            if (!"resizeClaim".equals(method.getName())) continue;
+            Class<?>[] params = method.getParameterTypes();
+            if (params.length != 8) continue;
+            if (!params[0].isAssignableFrom(claimCls)) continue;
+            boolean ints = true;
+            for (int i = 1; i <= 6; i++) {
+                if (params[i] != int.class && params[i] != Integer.TYPE) {
+                    ints = false;
+                    break;
+                }
+            }
+            if (!ints) continue;
+            if (!Player.class.isAssignableFrom(params[7])) continue;
+            return method;
+        }
+        return null;
+    }
+
+    private boolean extractResizeSucceeded(Object result) {
+        if (result == null) return false;
+        if (result instanceof Boolean) return (Boolean) result;
+        for (String fieldName : new String[]{"succeeded", "success"}) {
+            try {
+                Field field = result.getClass().getField(fieldName);
+                Object value = field.get(result);
+                if (value instanceof Boolean) return (Boolean) value;
+            } catch (ReflectiveOperationException ignored) {}
+        }
+        for (String methodName : new String[]{"succeeded", "getSucceeded", "isSucceeded", "isSuccess", "getSuccess"}) {
+            try {
+                Method method = result.getClass().getMethod(methodName);
+                Object value = method.invoke(result);
+                if (value instanceof Boolean) return (Boolean) value;
+            } catch (ReflectiveOperationException ignored) {}
+        }
+        return false;
+    }
+
+    private Object extractResultClaim(Object result) {
+        if (result == null) return null;
+        for (String fieldName : new String[]{"claim", "resultClaim"}) {
+            try {
+                Field field = result.getClass().getField(fieldName);
+                return field.get(result);
+            } catch (ReflectiveOperationException ignored) {}
+        }
+        for (String methodName : new String[]{"getClaim", "claim"}) {
+            try {
+                Method method = result.getClass().getMethod(methodName);
+                return method.invoke(result);
+            } catch (ReflectiveOperationException ignored) {}
+        }
+        return null;
     }
     
     /**

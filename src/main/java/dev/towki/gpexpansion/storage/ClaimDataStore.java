@@ -20,6 +20,8 @@ import java.util.stream.Collectors;
  * into a single smart YAML structure organized by claim ID.
  */
 public class ClaimDataStore {
+    private static final int MAX_RECENT_ICONS = 5;
+
     private final GPExpansionPlugin plugin;
     private final File file;
     private FileConfiguration config;
@@ -31,11 +33,16 @@ public class ClaimDataStore {
         // Basic claim info
         public boolean publicListed = false;
         public Material icon = null;
+        public final List<Material> iconHistory = new ArrayList<>();
         public String description = null;
         public String customName = null;
         
         // Ban data
         public BanData bans = new BanData();
+
+        // Cached trusted players for GUI friendliness
+        public final Set<UUID> trustedPlayers = new HashSet<>();
+        public final Map<UUID, String> trustedPlayerNames = new HashMap<>();
         
         // Rental data
         public RentalData rental = null;
@@ -174,10 +181,7 @@ public class ClaimDataStore {
         
         // Basic data
         data.publicListed = config.getBoolean(path + "public", false);
-        String iconName = config.getString(path + "icon");
-        if (iconName != null) {
-            data.icon = Material.matchMaterial(iconName);
-        }
+        loadIconHistory(path, data);
         data.description = config.getString(path + "description");
         data.customName = config.getString(path + "name");
         if (data.description != null && data.description.length() > 32) {
@@ -200,6 +204,25 @@ public class ClaimDataStore {
                     String name = config.getString(banPath + "names." + key);
                     if (name != null) {
                         data.bans.playerNames.put(uuid, name);
+                    }
+                } catch (IllegalArgumentException ignored) {}
+            }
+        }
+
+        String trustPath = path + "trustedPlayers.";
+        List<String> trustedUuids = config.getStringList(trustPath + "players");
+        for (String uuidStr : trustedUuids) {
+            try {
+                data.trustedPlayers.add(UUID.fromString(uuidStr));
+            } catch (IllegalArgumentException ignored) {}
+        }
+        if (config.isConfigurationSection(trustPath + "names")) {
+            for (String key : config.getConfigurationSection(trustPath + "names").getKeys(false)) {
+                try {
+                    UUID uuid = UUID.fromString(key);
+                    String name = config.getString(trustPath + "names." + key);
+                    if (name != null) {
+                        data.trustedPlayerNames.put(uuid, name);
                     }
                 } catch (IllegalArgumentException ignored) {}
             }
@@ -311,7 +334,9 @@ public class ClaimDataStore {
             
             // Basic data
             config.set(path + "public", data.publicListed);
-            if (data.icon != null) {
+            syncCurrentIcon(data);
+            if (!data.iconHistory.isEmpty()) {
+                config.set(path + "icons", data.iconHistory.stream().map(Material::name).collect(Collectors.toList()));
                 config.set(path + "icon", data.icon.name());
             }
             if (data.description != null) {
@@ -336,6 +361,21 @@ public class ClaimDataStore {
                         Map.Entry::getValue
                     ));
                 config.createSection(banPath + "names", namesMap);
+            }
+
+            String trustedPath = path + "trustedPlayers.";
+            List<String> trustedUuids = data.trustedPlayers.stream()
+                .map(UUID::toString)
+                .collect(Collectors.toList());
+            config.set(trustedPath + "players", trustedUuids);
+
+            if (!data.trustedPlayerNames.isEmpty()) {
+                Map<String, String> namesMap = data.trustedPlayerNames.entrySet().stream()
+                    .collect(Collectors.toMap(
+                        e -> e.getKey().toString(),
+                        Map.Entry::getValue
+                    ));
+                config.createSection(trustedPath + "names", namesMap);
             }
             
             // Rental data
@@ -416,14 +456,6 @@ public class ClaimDataStore {
             }
         }
         
-        // Also check for deprecated GUI files
-        File guisFolder = new File(plugin.getDataFolder(), "guis");
-        if (guisFolder.exists()) {
-            File claimOptionsFile = new File(guisFolder, "claim-options.yml");
-            if (claimOptionsFile.exists()) {
-                plugin.getLogger().info("Deprecated file found: guis/claim-options.yml - This file is safe to delete.");
-            }
-        }
     }
     
     private void checkAndMigrateOldFiles() {
@@ -473,7 +505,7 @@ public class ClaimDataStore {
                     Material material = Material.matchMaterial(iconName);
                     if (material != null) {
                         ClaimData data = claimData.computeIfAbsent(claimId, k -> new ClaimData());
-                        data.icon = material;
+                        pushRecentIcon(data, material);
                         migratedCount++;
                     }
                 }
@@ -762,11 +794,106 @@ public class ClaimDataStore {
     
     public Optional<Material> getIcon(String claimId) {
         ClaimData data = claimData.get(claimId);
-        return data != null ? Optional.ofNullable(data.icon) : Optional.empty();
+        if (data == null) {
+            return Optional.empty();
+        }
+        syncCurrentIcon(data);
+        return Optional.ofNullable(data.icon);
+    }
+
+    public List<Material> getIconHistory(String claimId) {
+        ClaimData data = claimData.get(claimId);
+        if (data == null || data.iconHistory.isEmpty()) {
+            return List.of();
+        }
+        syncCurrentIcon(data);
+        return List.copyOf(data.iconHistory);
     }
     
     public void setIcon(String claimId, Material icon) {
-        get(claimId).icon = icon;
+        ClaimData data = get(claimId);
+        if (icon == null || icon == Material.AIR) {
+            data.iconHistory.clear();
+            data.icon = null;
+            return;
+        }
+        pushRecentIcon(data, icon);
+    }
+
+    public Optional<Material> cycleIcon(String claimId) {
+        ClaimData data = claimData.get(claimId);
+        if (data == null || data.iconHistory.isEmpty()) {
+            return Optional.empty();
+        }
+        if (data.iconHistory.size() > 1) {
+            Material current = data.iconHistory.remove(0);
+            data.iconHistory.add(current);
+        }
+        syncCurrentIcon(data);
+        return Optional.ofNullable(data.icon);
+    }
+
+    public Optional<Material> removeCurrentIcon(String claimId) {
+        ClaimData data = claimData.get(claimId);
+        if (data == null || data.iconHistory.isEmpty()) {
+            return Optional.empty();
+        }
+        data.iconHistory.remove(0);
+        syncCurrentIcon(data);
+        return Optional.ofNullable(data.icon);
+    }
+
+    public void mergeIconHistories(String targetClaimId, String preferredClaimId, Collection<String> sourceClaimIds) {
+        if (targetClaimId == null) {
+            return;
+        }
+
+        LinkedHashSet<String> orderedIds = new LinkedHashSet<>();
+        if (preferredClaimId != null) {
+            orderedIds.add(preferredClaimId);
+        }
+        orderedIds.add(targetClaimId);
+        if (sourceClaimIds != null) {
+            orderedIds.addAll(sourceClaimIds);
+        }
+
+        List<Material> merged = new ArrayList<>();
+        for (String claimId : orderedIds) {
+            if (claimId == null) {
+                continue;
+            }
+
+            ClaimData data = claimData.get(claimId);
+            if (data == null) {
+                continue;
+            }
+
+            syncCurrentIcon(data);
+            for (Material material : data.iconHistory) {
+                if (material == null || material == Material.AIR || merged.contains(material)) {
+                    continue;
+                }
+                merged.add(material);
+                if (merged.size() >= MAX_RECENT_ICONS) {
+                    break;
+                }
+            }
+
+            if (merged.size() >= MAX_RECENT_ICONS) {
+                break;
+            }
+        }
+
+        ClaimData target = get(targetClaimId);
+        target.iconHistory.clear();
+        target.iconHistory.addAll(merged);
+        syncCurrentIcon(target);
+
+        for (String claimId : orderedIds) {
+            if (claimId != null && !claimId.equals(targetClaimId)) {
+                remove(claimId);
+            }
+        }
     }
     
     public Optional<String> getDescription(String claimId) {
@@ -788,6 +915,49 @@ public class ClaimDataStore {
     
     public void setCustomName(String claimId, String name) {
         get(claimId).customName = name;
+    }
+
+    private void loadIconHistory(String path, ClaimData data) {
+        List<String> iconNames = config.getStringList(path + "icons");
+        if (!iconNames.isEmpty()) {
+            for (String iconName : iconNames) {
+                Material material = Material.matchMaterial(iconName);
+                if (material != null && material != Material.AIR && !data.iconHistory.contains(material)) {
+                    data.iconHistory.add(material);
+                    if (data.iconHistory.size() >= MAX_RECENT_ICONS) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (data.iconHistory.isEmpty()) {
+            String iconName = config.getString(path + "icon");
+            if (iconName != null) {
+                Material material = Material.matchMaterial(iconName);
+                if (material != null && material != Material.AIR) {
+                    data.iconHistory.add(material);
+                }
+            }
+        }
+
+        syncCurrentIcon(data);
+    }
+
+    private void pushRecentIcon(ClaimData data, Material icon) {
+        if (icon == null || icon == Material.AIR) {
+            return;
+        }
+        data.iconHistory.remove(icon);
+        data.iconHistory.add(0, icon);
+        while (data.iconHistory.size() > MAX_RECENT_ICONS) {
+            data.iconHistory.remove(data.iconHistory.size() - 1);
+        }
+        syncCurrentIcon(data);
+    }
+
+    private void syncCurrentIcon(ClaimData data) {
+        data.icon = data.iconHistory.isEmpty() ? null : data.iconHistory.get(0);
     }
     
     // Ban methods
@@ -822,6 +992,39 @@ public class ClaimDataStore {
     
     public Set<UUID> getBannedPlayers(String claimId) {
         return Collections.unmodifiableSet(get(claimId).bans.bannedPlayers);
+    }
+
+    public Set<UUID> getTrustedPlayers(String claimId) {
+        return Collections.unmodifiableSet(get(claimId).trustedPlayers);
+    }
+
+    public Map<UUID, String> getTrustedPlayerNames(String claimId) {
+        return Collections.unmodifiableMap(get(claimId).trustedPlayerNames);
+    }
+
+    public void addTrustedPlayer(String claimId, UUID player) {
+        ClaimData data = get(claimId);
+        data.trustedPlayers.add(player);
+        try {
+            String name = Bukkit.getOfflinePlayer(player).getName();
+            if (name != null) {
+                data.trustedPlayerNames.put(player, name);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    public void addTrustedPlayer(String claimId, UUID player, String name) {
+        ClaimData data = get(claimId);
+        data.trustedPlayers.add(player);
+        if (name != null && !name.isBlank()) {
+            data.trustedPlayerNames.put(player, name);
+        }
+    }
+
+    public void removeTrustedPlayer(String claimId, UUID player) {
+        ClaimData data = get(claimId);
+        data.trustedPlayers.remove(player);
+        data.trustedPlayerNames.remove(player);
     }
     
     // Rental methods

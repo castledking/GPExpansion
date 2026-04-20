@@ -249,15 +249,43 @@ public class OwnedClaimsGUI extends BaseGUI {
      * Get the main (top-level) claim ID at the player's location, or null if not in a claim.
      */
     private String getCurrentMainClaimId() {
-        Optional<Object> at = gp.getClaimAt(player.getLocation(), player);
+        Location location = player.getLocation();
+
+        for (Object claim : gp.getClaimsFor(player)) {
+            if (gp.isSubdivision(claim)) continue;
+            if (!containsLocation(claim, location)) continue;
+            return gp.getClaimId(claim).orElse(null);
+        }
+
+        Optional<Object> at = gp.getClaimAt(location, player);
         if (!at.isPresent()) return null;
+
         Object c = at.get();
         while (true) {
             Optional<Object> parent = gp.getParentClaim(c);
             if (!parent.isPresent() || parent.get() == c) break;
             c = parent.get();
         }
-        return gp.getClaimId(c).orElse(null);
+        return gp.isSubdivision(c) ? null : gp.getClaimId(c).orElse(null);
+    }
+
+    private boolean containsLocation(Object claim, Location location) {
+        GPBridge.ClaimCorners corners = gp.getClaimCorners(claim).orElse(null);
+        if (corners == null || location.getWorld() == null) return false;
+
+        int x = location.getBlockX();
+        int y = location.getBlockY();
+        int z = location.getBlockZ();
+
+        if (x < corners.x1 || x > corners.x2 || z < corners.z1 || z > corners.z2) {
+            return false;
+        }
+
+        if (gp.is3DClaim(claim)) {
+            return y >= corners.y1 && y <= corners.y2;
+        }
+
+        return true;
     }
     
     private ItemStack createFilterItem() {
@@ -319,13 +347,10 @@ public class OwnedClaimsGUI extends BaseGUI {
         lore.add("");
         
         // Dynamic lore based on permissions
-        if (player.hasPermission("griefprevention.claim.teleport")) {
-            lore.add("&a▸ Left-click to teleport");
-        }
+        lore.add("&a▸ Left-click to view options");
         if (player.hasPermission("griefprevention.claim.name")) {
             lore.add("&b▸ Right-click to rename");
         }
-        lore.add("&e▸ Shift+Left-click for options");
         if (info.claimId != null && info.claimId.equals(currentMainClaimId)) {
             lore.add("");
             lore.add("&b✦ You are here");
@@ -399,13 +424,8 @@ public class OwnedClaimsGUI extends BaseGUI {
     }
     
     private void handleClaimClick(InventoryClickEvent event, ClaimInfo info) {
-        if (isLeftClick(event) && !event.isShiftClick()) {
-            // Teleport to claim
-            if (player.hasPermission("griefprevention.claim.teleport")) {
-                closeAndRunOnMainThread("claimtp " + info.claimId);
-            } else {
-                plugin.getMessages().send(player, "general.no-permission");
-            }
+        if (isLeftClick(event)) {
+            manager.openClaimOptions(player, info.claim, info.claimId);
         } else if (isRightClick(event) && !event.isShiftClick()) {
             // Rename claim via sign editor
             if (player.hasPermission("griefprevention.claim.name")) {
@@ -423,9 +443,6 @@ public class OwnedClaimsGUI extends BaseGUI {
             } else {
                 plugin.getMessages().send(player, "general.no-permission");
             }
-        } else if (isShiftLeftClick(event)) {
-            // Open options menu
-            manager.openClaimOptions(player, info.claim, info.claimId);
         }
     }
     

@@ -38,3 +38,6 @@ org.eclipse.m2e.core.prefs
 .project
 .classpath
 .factorypath
+
+# Release work
+release-work/

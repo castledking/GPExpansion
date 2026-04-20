@@ -1,0 +1,97 @@
+title: "&6&lClaim Options - #{id}"
+size: 45
+
+filler:
+  material: GRAY_STAINED_GLASS_PANE
+
+items:
+  summary:
+    material: BOOK
+    name: "&6&lClaim Summary"
+    lore:
+      - "&7Name: &f{name}"
+      - "&7ID: &f{id}"
+      - "&7Owner: &f{owner}"
+      - "&7Type: &f{type}"
+      - "&7Size: &f{dimensions}"
+      - "&7Area: &f{area}"
+      - "&7Coords: &f{location}"
+      - "&7Children: &6{children}"
+    slot: 4
+
+  teleport:
+    material: ENDER_PEARL
+    name: "&b&lTeleport"
+    lore:
+      - "&7Teleport to this claim."
+      - ""
+      - "{teleport_status}"
+      - "{teleport_action}"
+    slot: 20
+
+  resize:
+    material: GOLDEN_SHOVEL
+    name: "&6&lResize Claim"
+    lore:
+      - "&7Resize this claim."
+      - ""
+      - "{resize_status}"
+      - "{resize_action}"
+    slot: 22
+
+  trust:
+    material: PLAYER_HEAD
+    skull-owner: "{player}"
+    name: "&a&lManage Trust"
+    lore:
+      - "&7Manage trusted players on this claim."
+      - ""
+      - "{trust_status}"
+      - "{trust_action}"
+    slot: 24
+
+  abandon:
+    material: CAULDRON
+    name: "&4&lAbandon Claim"
+    lore:
+      - "{abandon_status}"
+      - ""
+      - "{abandon_action}"
+    slot: 36
+
+  view-children:
+    material: CHEST
+    name: "&6&lView Children"
+    lore:
+      - "&7Browse subdivisions inside this claim."
+      - ""
+      - "&7Children: &6{children}"
+      - "&eClick to view children"
+    slot: 38
+
+  claim-flags:
+    material: REPEATER
+    name: "&d&lClaim Flags"
+    lore:
+      - "&7Toggle GPFlags for this claim."
+      - ""
+      - "{flags_status}"
+      - "{flags_action}"
+    slot: 40
+
+  global-settings:
+    material: ENDER_CHEST
+    name: "&6&lGlobal Settings"
+    lore:
+      - "&7Manage claim name, icon, description,"
+      - "&7public listing, and spawn point."
+      - ""
+      - "&eClick to open global settings"
+    slot: 42
+
+  back:
+    material: ARROW
+    name: "&c&lBack"
+    lore:
+      - "&7Return to the previous menu"
+    slot: 44

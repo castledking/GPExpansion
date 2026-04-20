@@ -1,0 +1,5 @@
+title: "&c&lBanned Players - #{id}"
+size: 54
+
+filler:
+  material: GRAY_STAINED_GLASS_PANE
