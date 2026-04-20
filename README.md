@@ -535,6 +535,7 @@ filler:
 | `griefprevention.claim.unban` | Unban players from claims with `/claim unban` |
 | `griefprevention.claim.unban.anywhere` | Unban outside own claims |
 | `griefprevention.claim.unban.other` | Unban players from other claims |
+| `griefprevention.trust.anywhere` | Use trust-family commands outside own claim |
 | `griefprevention.transferclaim` | Transfer claim ownership with `/claim transfer` |
 | `griefprevention.claiminfo` | View claim info with `/claim info` |
 | `griefprevention.claiminfo.other` | View claim info for others' claims |
