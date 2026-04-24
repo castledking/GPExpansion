@@ -1,5 +1,5 @@
 <p align="center">
-<img alt="GPExpansion" width=100% height=auto src="https://repository-images.githubusercontent.com/1126629614/1abbf9aa-6973-4059-a255-2baefd6fe766">
+<img alt="GPExpansion" width=100% height=auto src="https://repository-images.githubusercontent.com/1126629614/19884d9d-e1cc-40ce-88e5-774ba811e5d7">
 </p>
 
 <h1 align="center">Extend GriefPrevention with rental signs, mailboxes, and more</h1>
