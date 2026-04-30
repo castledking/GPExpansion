@@ -4955,6 +4955,99 @@ public class GPBridge {
         return getPlayerClaimStats(player).map(s -> s.remaining).orElse(0);
     }
 
+    // Cached reflective handles for GP's Messages enum + DataStore.getMessage(...).
+    private volatile Class<?> cachedMessagesEnumClass;
+    private volatile Method cachedGetMessageMethod;
+    private volatile boolean messageAccessResolved;
+
+    /**
+     * Look up a translated message from GriefPrevention's {@code messages.yml} by
+     * the {@code Messages} enum constant name (e.g. {@code "EconomyDisabled"}).
+     *
+     * <p>This lets GPExpansion reuse the same translations the user has already
+     * configured for GriefPrevention3D, so server admins don't have to maintain
+     * the same string in two places.</p>
+     *
+     * @param key  the {@code Messages} enum constant name
+     * @param args optional placeholder arguments ({@code {0}}, {@code {1}}, ...)
+     * @return the translated message, or {@code null} if GP isn't loaded or the key is unknown
+     */
+    public String getGPMessage(String key, String... args) {
+        if (key == null || key.isEmpty()) return null;
+        if (!isAvailable()) return null;
+        try {
+            Class<?> messagesEnum = resolveMessagesEnumClass();
+            Method getMessage = resolveGetMessageMethod(messagesEnum);
+            if (messagesEnum == null || getMessage == null) return null;
+
+            Object messageId = enumConstant(messagesEnum, key);
+            if (messageId == null) return null;
+
+            String[] safeArgs = args != null ? args : new String[0];
+            Object result = getMessage.invoke(dataStore, messageId, (Object) safeArgs);
+            return result instanceof String s ? s : null;
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return null;
+        }
+    }
+
+    /**
+     * Same as {@link #getGPMessage(String, String...)} but returns {@code fallback}
+     * when GP isn't loaded or the key is missing. Useful for command/GUI strings
+     * that should still render something readable when GP is absent.
+     */
+    public String getGPMessageOr(String key, String fallback, String... args) {
+        String resolved = getGPMessage(key, args);
+        return resolved != null ? resolved : fallback;
+    }
+
+    private Class<?> resolveMessagesEnumClass() {
+        if (messageAccessResolved) return cachedMessagesEnumClass;
+        synchronized (this) {
+            if (messageAccessResolved) return cachedMessagesEnumClass;
+            ClassLoader loader = gpInstance != null ? gpInstance.getClass().getClassLoader()
+                    : (gpClass != null ? gpClass.getClassLoader() : null);
+            if (loader != null) {
+                for (String name : new String[]{
+                        "me.ryanhamshire.GriefPrevention.Messages",
+                        "me.ryanhamshire.griefprevention.Messages"}) {
+                    try {
+                        cachedMessagesEnumClass = loader.loadClass(name);
+                        break;
+                    } catch (ClassNotFoundException ignored) {}
+                }
+            }
+            return cachedMessagesEnumClass;
+        }
+    }
+
+    private Method resolveGetMessageMethod(Class<?> messagesEnum) {
+        if (messagesEnum == null || dataStore == null) return null;
+        if (cachedGetMessageMethod != null) return cachedGetMessageMethod;
+        synchronized (this) {
+            if (cachedGetMessageMethod != null) return cachedGetMessageMethod;
+            try {
+                Method m = dataStore.getClass().getMethod("getMessage", messagesEnum, String[].class);
+                cachedGetMessageMethod = m;
+            } catch (NoSuchMethodException ignored) {
+                // Walk superclasses in case getMessage lives on the abstract base.
+                Class<?> cls = dataStore.getClass();
+                while (cls != null && cachedGetMessageMethod == null) {
+                    try {
+                        Method m = cls.getDeclaredMethod("getMessage", messagesEnum, String[].class);
+                        m.setAccessible(true);
+                        cachedGetMessageMethod = m;
+                    } catch (NoSuchMethodException notHere) {
+                        cls = cls.getSuperclass();
+                    }
+                }
+            }
+            messageAccessResolved = true;
+            return cachedGetMessageMethod;
+        }
+    }
+
     private Integer getGpConfigInt(String fieldName) {
         if (gpInstance == null) return null;
         try {

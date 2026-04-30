@@ -1043,6 +1043,26 @@ public final class GPExpansionPlugin extends JavaPlugin {
         };
     }
 
+    public double getBalance(OfflinePlayer player) {
+        try {
+            if (economy != null) return economy.getBalance(player);
+            if (economyV2 != null && economyV2Class != null) {
+                try {
+                    java.lang.reflect.Method m = economyV2Class.getMethod("getBalance", OfflinePlayer.class);
+                    Object out = m.invoke(economyV2, player);
+                    if (out instanceof Number n) return n.doubleValue();
+                } catch (NoSuchMethodException e1) {
+                    try {
+                        java.lang.reflect.Method m = economyV2Class.getMethod("balance", OfflinePlayer.class);
+                        Object out = m.invoke(economyV2, player);
+                        if (out instanceof Number n) return n.doubleValue();
+                    } catch (NoSuchMethodException ignored) {}
+                }
+            }
+        } catch (Throwable ignored) { }
+        return 0.0D;
+    }
+
     public boolean hasMoney(OfflinePlayer player, double amount) {
         try {
             if (economy != null) return economy.has(player, amount);
