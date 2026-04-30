@@ -32,27 +32,32 @@ public class BuyClaimBlocksCommand implements TabExecutor {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
                              @NotNull String label, @NotNull String[] args) {
+        GPBridge gp = new GPBridge();
+
         if (!(sender instanceof Player player)) {
-            sender.sendMessage("This command can only be used by players.");
+            sender.sendMessage(gp.getGPMessageOr("CommandRequiresPlayer",
+                    "This command can only be used by players."));
             return true;
         }
 
-        GPBridge gp = new GPBridge();
         if (!gp.isAvailable()) {
             player.sendMessage(ChatColor.RED + "GriefPrevention is not available.");
             return true;
         }
         if (!gp.isClaimBlocksEconomyEnabled()) {
-            player.sendMessage(ChatColor.RED + "Economy features are disabled on this server.");
+            player.sendMessage(ChatColor.RED + gp.getGPMessageOr("EconomyDisabled",
+                    "Economy features are disabled on this server."));
             return true;
         }
         if (!plugin.isEconomyAvailable()) {
-            player.sendMessage(ChatColor.RED + "No Vault economy provider is hooked.");
+            player.sendMessage(ChatColor.RED + gp.getGPMessageOr("EconomyNoVault",
+                    "No Vault economy provider is hooked."));
             return true;
         }
 
         if (args.length < 1) {
-            player.sendMessage(ChatColor.RED + "Usage: /" + label + " <amount>");
+            player.sendMessage(ChatColor.RED + gp.getGPMessageOr("EconomyBuyBlocksUsage",
+                    "Usage: /" + label + " <amount>"));
             return true;
         }
 
@@ -61,7 +66,8 @@ public class BuyClaimBlocksCommand implements TabExecutor {
             amount = Integer.parseInt(args[0]);
             if (amount <= 0) throw new NumberFormatException();
         } catch (NumberFormatException e) {
-            player.sendMessage(ChatColor.RED + "Please specify a valid positive number of blocks.");
+            player.sendMessage(ChatColor.RED + gp.getGPMessageOr("EconomyInvalidAmount",
+                    "Please specify a valid positive number of blocks."));
             return true;
         }
 
@@ -73,8 +79,11 @@ public class BuyClaimBlocksCommand implements TabExecutor {
         double totalCost = amount * costPerBlock;
 
         if (!plugin.hasMoney(player, totalCost)) {
-            player.sendMessage(ChatColor.RED + "You don't have enough money. Cost: "
-                    + ChatColor.YELLOW + plugin.formatMoney(totalCost));
+            String fmtCost = plugin.formatMoney(totalCost);
+            String fmtBalance = plugin.formatMoney(plugin.getBalance(player));
+            player.sendMessage(ChatColor.RED + gp.getGPMessageOr("EconomyNotEnoughMoney",
+                    "You don't have enough money. Cost: " + fmtCost + ", Your balance: " + fmtBalance,
+                    fmtCost, fmtBalance));
             return true;
         }
 

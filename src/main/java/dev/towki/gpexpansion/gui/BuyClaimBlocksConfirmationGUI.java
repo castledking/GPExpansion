@@ -68,7 +68,7 @@ public class BuyClaimBlocksConfirmationGUI extends BaseGUI {
         } else if (slot == CANCEL_SLOT) {
             resolved = true;
             playClickSound();
-            player.sendMessage(colorize("&ePurchase cancelled."));
+            player.sendMessage(colorize("&e" + gp.getGPMessageOr("EconomyPurchaseCancelled", "Purchase cancelled.")));
             player.closeInventory();
         }
     }
@@ -83,12 +83,16 @@ public class BuyClaimBlocksConfirmationGUI extends BaseGUI {
     private void processPurchase() {
         // Re-check economy and balance at the moment of confirmation.
         if (!plugin.isEconomyAvailable()) {
-            player.sendMessage(colorize("&cEconomy is not available; purchase aborted."));
+            player.sendMessage(colorize("&c" + gp.getGPMessageOr("EconomyNoVault",
+                    "Economy is not available; purchase aborted.")));
             return;
         }
         if (!plugin.hasMoney(player, totalCost)) {
-            player.sendMessage(colorize("&cYou don't have enough money. Cost: &e"
-                    + plugin.formatMoney(totalCost)));
+            String fmtCost = plugin.formatMoney(totalCost);
+            String fmtBalance = plugin.formatMoney(plugin.getBalance(player));
+            player.sendMessage(colorize("&c" + gp.getGPMessageOr("EconomyNotEnoughMoney",
+                    "You don't have enough money. Cost: " + fmtCost + ", Your balance: " + fmtBalance,
+                    fmtCost, fmtBalance)));
             return;
         }
 
@@ -105,9 +109,12 @@ public class BuyClaimBlocksConfirmationGUI extends BaseGUI {
         }
 
         int newRemaining = gp.getRemainingClaimBlocks(player);
-        player.sendMessage(colorize("&aPurchased &e" + amount + "&a claim blocks for &e"
-                + plugin.formatMoney(totalCost) + "&a. You now have &e"
-                + newRemaining + "&a claim blocks."));
+        String fmtCost = plugin.formatMoney(totalCost);
+        String fallback = "Purchased " + amount + " claim blocks for " + fmtCost
+                + ". You now have " + newRemaining + " claim blocks.";
+        player.sendMessage(colorize("&a" + gp.getGPMessageOr("EconomyBuyBlocksConfirmation",
+                fallback,
+                String.valueOf(amount), fmtCost, String.valueOf(newRemaining))));
     }
 
     private ItemStack createSimpleFiller() {
