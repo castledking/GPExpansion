@@ -10,10 +10,10 @@
   <description>GriefPrevention Expansion</description>
 
   <properties>
-    <maven.compiler.source>17</maven.compiler.source>
-    <maven.compiler.target>17</maven.compiler.target>
+    <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <paper.version>1.21-R0.1-SNAPSHOT</paper.version>
+    <!-- Paper's new calendar versioning. Matches GriefPrevention3D for 1.26.1 support. -->
+    <paper.version>26.1.2.build.18-alpha</paper.version>
     <adventure.minimessage.version>4.17.0</adventure.minimessage.version>
     <vault.api.version>1.7</vault.api.version>
   </properties>

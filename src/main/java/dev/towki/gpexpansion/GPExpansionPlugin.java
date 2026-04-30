@@ -959,10 +959,12 @@ public final class GPExpansionPlugin extends JavaPlugin {
         String displayLine0 = org.bukkit.ChatColor.translateAlternateColorCodes('&',
             messages.getRaw(hanging ? "sign-interaction.sign-display-rent-hanging" : "sign-interaction.sign-display-rent-full"));
         org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
-        front.setLine(0, displayLine0);
-        front.setLine(1, org.bukkit.ChatColor.BLACK + "ID: " + org.bukkit.ChatColor.GOLD + (claimId != null ? claimId : ""));
-        front.setLine(2, org.bukkit.ChatColor.BLACK + ecoFormatted + "/" + perClick);
-        front.setLine(3, org.bukkit.ChatColor.BLACK + "Max: " + maxCap);
+        net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer legacy =
+            net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection();
+        front.line(0, legacy.deserialize(displayLine0));
+        front.line(1, legacy.deserialize(org.bukkit.ChatColor.BLACK + "ID: " + org.bukkit.ChatColor.GOLD + (claimId != null ? claimId : "")));
+        front.line(2, legacy.deserialize(org.bukkit.ChatColor.BLACK + ecoFormatted + "/" + perClick));
+        front.line(3, legacy.deserialize(org.bukkit.ChatColor.BLACK + "Max: " + maxCap));
         sign.update(true);
     }
 
