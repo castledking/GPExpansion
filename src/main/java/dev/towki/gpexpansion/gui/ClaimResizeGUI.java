@@ -320,7 +320,7 @@ public class ClaimResizeGUI extends BaseGUI {
             case WEST -> Material.YELLOW_WOOL;
             case EAST -> Material.LIME_WOOL;
             case UP -> Material.SCAFFOLDING;
-            case DOWN -> Material.CHAIN;
+            case DOWN -> Material.IRON_CHAIN;
         };
     }
 
