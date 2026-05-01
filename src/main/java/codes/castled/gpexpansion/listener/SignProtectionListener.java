@@ -1,0 +1,464 @@
+package codes.castled.gpexpansion.listener;
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
+
+import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
+import org.bukkit.OfflinePlayer;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.Sign;
+import org.bukkit.entity.Enderman;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.entity.EntityChangeBlockEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.persistence.PersistentDataType;
+
+import codes.castled.gpexpansion.GPExpansionPlugin;
+import codes.castled.gpexpansion.gp.GPBridge;
+import codes.castled.gpexpansion.storage.ClaimDataStore;
+import codes.castled.gpexpansion.util.Messages;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+public class SignProtectionListener implements Listener {
+    private final GPExpansionPlugin plugin;
+    private final GPBridge gp = new GPBridge();
+    private final NamespacedKey keyKind;
+    private final NamespacedKey keyClaim;
+    private final NamespacedKey keyRenter;
+
+    private final Map<String, Long> confirmMap = new HashMap<>(); // key by world:x:y:z + playerUUID
+
+    public SignProtectionListener(GPExpansionPlugin plugin) {
+        this.plugin = plugin;
+        this.keyKind = new NamespacedKey(plugin, "sign.kind");
+        this.keyClaim = new NamespacedKey(plugin, "sign.claimId");
+        this.keyRenter = new NamespacedKey(plugin, "rent.renter");
+    }
+
+    private boolean isOurSign(Block b) {
+        if (b == null) return false;
+        Material t = b.getType();
+        if (!t.name().endsWith("_SIGN") && !t.name().endsWith("_WALL_SIGN")) return false;
+        Sign sign = (Sign) b.getState();
+
+        // Check if sign has our persistent data
+        if (!sign.getPersistentDataContainer().has(keyKind, PersistentDataType.STRING)) {
+            return false;
+        }
+
+        // Check if this is a [Sell] sign (permanent transfer)
+        // [Sell] signs are labeled as "[Buy Claim]" or "[Sell]" (hanging) while [Rent] signs are "[Rent Claim]" or "[Rent]" (hanging)
+        Component signTextComponent = sign.getSide(org.bukkit.block.sign.Side.FRONT).line(0);
+        if (signTextComponent != null) {
+            String plainText = net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().serialize(signTextComponent);
+            if (plainText.contains("[Buy Claim]") || plainText.contains("[Sell]")) {
+                // [Sell] signs represent permanent transfers and should not be protected
+                return false;
+            }
+        }
+
+        // Protect [Rent] signs and other managed signs
+        return true;
+    }
+
+    private Block getSupport(Block signBlock) {
+        Material t = signBlock.getType();
+        if (t.name().endsWith("_WALL_SIGN")) {
+            // Determine attached face from block data
+            try {
+                org.bukkit.block.data.type.WallSign data = (org.bukkit.block.data.type.WallSign) signBlock.getBlockData();
+                BlockFace face = data.getFacing().getOppositeFace();
+                return signBlock.getRelative(face);
+            } catch (ClassCastException ignored) {
+                return signBlock.getRelative(BlockFace.NORTH);
+            }
+        } else if (t.name().endsWith("_SIGN")) {
+            return signBlock.getRelative(BlockFace.DOWN);
+        }
+        return null;
+    }
+
+    private boolean canAdminister(Player p) {
+        return p.isOp() || p.hasPermission("griefprevention.admin") || p.hasPermission("griefprevention.sign.admin");
+    }
+
+    private String formatDuration(long milliseconds) {
+        if (milliseconds <= 0) return "0 seconds";
+        long seconds = milliseconds / 1000;
+        long minutes = seconds / 60;
+        long hours = minutes / 60;
+        long days = hours / 24;
+
+        StringBuilder result = new StringBuilder();
+        if (days > 0) {
+            result.append(days).append("d");
+            hours %= 24;
+        }
+        if (hours > 0) {
+            if (result.length() > 0) result.append(" ");
+            result.append(hours).append("h");
+        }
+        if (result.length() == 0 && minutes > 0) {
+            result.append(minutes).append("m");
+        }
+        if (result.length() == 0) {
+            result.append("<1m");
+        }
+        return result.toString();
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBlockBreak(BlockBreakEvent event) {
+        Block b = event.getBlock();
+        Player p = event.getPlayer();
+
+        // Protect supporting blocks of managed signs
+        if (!isOurSign(b)) {
+            // Check if this block is a support block for a managed sign
+            if (isSupportOfManagedSign(b)) {
+                if (!handleBreakOfManagedSignSupport(b, p, event)) {
+                    event.setCancelled(true);
+                }
+            }
+            return; // not our sign or support block
+        }
+
+        if (!handleBreakOfManagedSign(b, p, event)) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onSignInteract(PlayerInteractEvent event) {
+        // Only process right-clicks on blocks with main hand
+        if (event.getHand() != org.bukkit.inventory.EquipmentSlot.HAND ||
+            event.getAction() != org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK ||
+            event.getClickedBlock() == null) {
+            return;
+        }
+
+        // Check if the clicked block is a sign
+        if (!(event.getClickedBlock().getState() instanceof Sign)) {
+            return;
+        }
+
+        Block block = event.getClickedBlock();
+        Player player = event.getPlayer();
+
+        if (isOurSign(block)) {
+            // Handle sneak + right click confirmation for managed signs
+            if (player.isSneaking()) {
+                Sign sign = (Sign) block.getState();
+                String claimId = sign.getPersistentDataContainer().get(keyClaim, PersistentDataType.STRING);
+                String renterStr = sign.getPersistentDataContainer().get(keyRenter, PersistentDataType.STRING);
+                
+                // Check ownership or admin bypass
+                boolean adminBypass = canAdminister(player);
+                boolean owner = false;
+                if (claimId != null && !claimId.isEmpty()) {
+                    java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
+                    if (claimOpt.isPresent()) {
+                        try {
+                            Object claim = claimOpt.get();
+                            Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
+                            owner = ownerId != null && ownerId.equals(player.getUniqueId());
+                        } catch (ReflectiveOperationException ignored) {}
+                    }
+                }
+                
+                if (!(owner || adminBypass)) {
+                    plugin.getMessages().send(player, "eviction.cannot-manage-sign");
+                    event.setCancelled(true);
+                    return;
+                }
+                
+                // Check eviction status before allowing deletion (unless player has bypass permission)
+                boolean evictionBypass = player.hasPermission("griefprevention.eviction.bypass");
+                if (!evictionBypass && renterStr != null && !renterStr.isEmpty() && claimId != null && !claimId.isEmpty()) {
+                    ClaimDataStore dataStore = plugin.getClaimDataStore();
+                    ClaimDataStore.RentalData rental = dataStore.getRental(claimId).orElse(null);
+                    boolean hasActiveRental = (rental != null && rental.expiry > System.currentTimeMillis()) || (rental == null);
+                    
+                    if (hasActiveRental) {
+                        ClaimDataStore.EvictionData eviction = dataStore.getEviction(claimId).orElse(null);
+                        if (eviction == null) {
+                            plugin.getMessages().send(player, "eviction.active-renter");
+                            plugin.getMessages().send(player, "eviction.start-eviction-notice", 
+                                "{command}", ChatColor.GOLD + "/claim evict " + claimId + ChatColor.YELLOW,
+                                "{duration}", plugin.getEvictionNoticePeriodDisplay());
+                            event.setCancelled(true);
+                            return;
+                        }
+                        
+                        if (System.currentTimeMillis() < eviction.effectiveAt && !adminBypass) {
+                            long remaining = eviction.effectiveAt - System.currentTimeMillis();
+                            String timeRemaining = formatDuration(remaining);
+                            plugin.getMessages().send(player, "eviction.notice-pending");
+                            plugin.getMessages().send(player, "eviction.time-remaining", "{time}", timeRemaining);
+                            event.setCancelled(true);
+                            return;
+                        }
+                    }
+                }
+                
+                String key = block.getWorld().getName()+":"+block.getX()+":"+block.getY()+":"+block.getZ()+":"+player.getUniqueId();
+                long now = System.currentTimeMillis();
+                Long prev = confirmMap.get(key);
+
+                // Check if there's a pending confirmation within the time window
+                if (prev != null && (now - prev) <= 10000L) {
+                    confirmMap.remove(key);
+                    performDelete(block, player);
+                    event.setCancelled(true);
+                    return;
+                }
+            }
+
+            // Cancel the event to prevent sign editing interface, but allow rental confirmation to work
+            event.setCancelled(true);
+        }
+    }
+
+    private boolean handleBreakOfManagedSignSupport(Block supportBlock, Player p, BlockBreakEvent event) {
+        // Find the sign that this block supports
+        Block signBlock = null;
+        for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.DOWN, BlockFace.UP}) {
+            Block adj = supportBlock.getRelative(face);
+            if (isOurSign(adj)) {
+                // Check if this support block actually supports this sign
+                Block support = getSupport(adj);
+                if (support != null && support.equals(supportBlock)) {
+                    signBlock = adj;
+                    break;
+                }
+            }
+        }
+
+        if (signBlock == null) return true; // No sign found, allow break
+
+        // Use the same logic as breaking a sign
+        return handleBreakOfManagedSign(signBlock, p, event);
+    }
+
+    private boolean handleBreakOfManagedSign(Block signBlock, Player p, BlockBreakEvent event) {
+        Sign sign = (Sign) signBlock.getState();
+        String signKind = sign.getPersistentDataContainer().get(keyKind, PersistentDataType.STRING);
+        String claimId = sign.getPersistentDataContainer().get(keyClaim, PersistentDataType.STRING);
+        if (claimId == null) claimId = "";
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
+        Optional<Object> claimOpt = gp.findClaimById(claimId);
+        boolean adminBypass = canAdminister(p);
+        boolean owner = false;
+        boolean isSelfMailbox = "MAILBOX".equals(signKind) && !claimId.isEmpty() && dataStore.isMailbox(claimId);
+        if (isSelfMailbox) {
+            // Self-mailbox: only the true mailbox creator/owner can sneak+break; claim owner (e.g. landlord) cannot
+            UUID mailboxOwner = dataStore.getMailboxOwner(claimId).orElse(null);
+            owner = p.getUniqueId().equals(mailboxOwner);
+        } else {
+            if (claimOpt.isPresent()) {
+                try {
+                    Object claim = claimOpt.get();
+                    Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
+                    owner = ownerId != null && ownerId.equals(p.getUniqueId());
+                } catch (ReflectiveOperationException ignored) {}
+            }
+        }
+        if (!(owner || adminBypass)) {
+            plugin.getMessages().send(p, "eviction.cannot-break-sign");
+            return false;
+        }
+        
+        // Self-mailbox: no eviction flow; go straight to sneak+break confirmation
+        String renterStr = sign.getPersistentDataContainer().get(keyRenter, PersistentDataType.STRING);
+        
+        // Check if this rental sign has an active renter - require eviction process (unless player has bypass permission)
+        boolean evictionBypass = p.hasPermission("griefprevention.eviction.bypass");
+        
+        if (!isSelfMailbox && !evictionBypass && renterStr != null && !renterStr.isEmpty() && !claimId.isEmpty()) {
+            // Sign has a renter in PDC - always require eviction to protect the renter
+            // This applies regardless of RentalStore state (could be expired, missing, or data mismatch)
+            {
+                // If no eviction process started, or eviction is not yet effective, block the break
+                ClaimDataStore.EvictionData eviction = dataStore.getEviction(claimId).orElse(null);
+                if (eviction == null) {
+                    // No eviction started - tell owner to use /claim evict
+                    plugin.getMessages().send(p, "eviction.active-renter");
+                    plugin.getMessages().send(p, "eviction.start-eviction-notice", 
+                        "{command}", ChatColor.GOLD + "/claim evict " + claimId + ChatColor.YELLOW,
+                        "{duration}", plugin.getEvictionNoticePeriodDisplay());
+                    plugin.getMessages().send(p, "eviction.cannot-remove-renter");
+                    return false;
+                }
+                
+                if (System.currentTimeMillis() < eviction.effectiveAt && !adminBypass) {
+                    // Eviction started but 14 days haven't passed yet
+                    long remaining = eviction.effectiveAt - System.currentTimeMillis();
+                    String timeRemaining = formatDuration(remaining);
+                    plugin.getMessages().send(p, "eviction.notice-pending");
+                    plugin.getMessages().send(p, "eviction.time-remaining", "{time}", timeRemaining);
+                    plugin.getMessages().send(p, "eviction.check-status-hint", 
+                        "{command}", ChatColor.GOLD + "/claim evict status " + claimId + ChatColor.GRAY);
+                    return false;
+                }
+                // Eviction is effective - allow proceeding with confirmation
+            }
+        }
+        
+        if (!p.isSneaking()) {
+            p.sendMessage(ChatColor.YELLOW + "Sneak and break to manage this sign.");
+            return false;
+        }
+        String key = signBlock.getWorld().getName()+":"+signBlock.getX()+":"+signBlock.getY()+":"+signBlock.getZ()+":"+p.getUniqueId();
+        long now = System.currentTimeMillis();
+        Long prev = confirmMap.get(key);
+        if (prev == null || (now - prev) > 10000L) {
+            confirmMap.put(key, now);
+            // Compose confirmation message
+            // renterStr already declared above, reuse it
+            if (renterStr == null) {
+                renterStr = sign.getPersistentDataContainer().get(keyRenter, PersistentDataType.STRING);
+            }
+
+            // Check if this is a currently rented sign
+            if (renterStr != null && !renterStr.isEmpty()) {
+                try {
+                    UUID renterId = UUID.fromString(renterStr);
+                    OfflinePlayer renter = Bukkit.getOfflinePlayer(renterId);
+                    String renterName = renter.getName() != null ? renter.getName() : renterId.toString();
+
+                    Component message = Component.text(ChatColor.YELLOW + "Warning: " + ChatColor.WHITE + renterName + ChatColor.YELLOW + " is currently renting this from you. Try ")
+                            .append(Component.text("/claim evict " + renterName, NamedTextColor.GOLD)
+                                    .clickEvent(ClickEvent.clickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/claim evict " + renterName))
+                                    .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, Component.text("Click to run /claim evict " + renterName))))
+                            .append(Component.text(" while standing in the claim to start the eviction process.", NamedTextColor.YELLOW));
+                    p.sendMessage(message);
+                } catch (IllegalArgumentException ignored) {
+                    // Fallback to regular message if UUID parsing fails
+                    Component base = Component.text(ChatColor.YELLOW + plugin.getMessages().getRaw("eviction.confirm-deletion-click"))
+                            .clickEvent(ClickEvent.clickEvent(ClickEvent.Action.RUN_COMMAND, "/gpexpansion:rentalsignconfirm "+signBlock.getWorld().getName()+" "+signBlock.getX()+" "+signBlock.getY()+" "+signBlock.getZ()))
+                            .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, Component.text(plugin.getMessages().getRaw("eviction.confirm-deletion"))));
+                    p.sendMessage(base);
+                    plugin.getMessages().send(p, "eviction.confirm-deletion-alt");
+                }
+            } else {
+                // Not currently rented - use regular confirmation
+                Component base = Component.text(ChatColor.YELLOW + plugin.getMessages().getRaw("eviction.confirm-deletion-click"))
+                        .clickEvent(ClickEvent.clickEvent(ClickEvent.Action.RUN_COMMAND, "/gpexpansion:rentalsignconfirm "+signBlock.getWorld().getName()+" "+signBlock.getX()+" "+signBlock.getY()+" "+signBlock.getZ()))
+                        .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, Component.text(plugin.getMessages().getRaw("eviction.confirm-deletion"))));
+                p.sendMessage(base);
+                p.sendMessage(ChatColor.GRAY + "You can also confirm by " + ChatColor.GOLD + "sneak + right clicking " + ChatColor.GRAY + "the sign.");
+            }
+
+            if (renterStr != null && !renterStr.isEmpty()) {
+                try {
+                    UUID rid = UUID.fromString(renterStr);
+                    OfflinePlayer off = Bukkit.getOfflinePlayer(rid);
+                    p.sendMessage(ChatColor.GOLD + "Warning: trust will be removed for " + ChatColor.YELLOW + (off != null ? off.getName() : rid));
+                } catch (IllegalArgumentException ignored) {}
+            }
+            return false; // cancel this break
+        }
+        // Second break within window
+        confirmMap.remove(key);
+        boolean allowBreak = performDelete(signBlock, p);
+        return allowBreak;
+    }
+
+    private boolean performDelete(Block signBlock, Player player) {
+        try {
+            Sign sign = (Sign) signBlock.getState();
+            String signKind = sign.getPersistentDataContainer().get(keyKind, PersistentDataType.STRING);
+            String claimId = sign.getPersistentDataContainer().get(keyClaim, PersistentDataType.STRING);
+
+            ClaimDataStore dataStore = plugin.getClaimDataStore();
+
+            // Self-mailbox sign: delete subdivision (real protocol only) and clear mailbox data
+            if ("MAILBOX".equals(signKind) && claimId != null && dataStore.isMailbox(claimId)) {
+                if (!claimId.startsWith("v:")) {
+                    Optional<Object> claimOpt = gp.findClaimById(claimId);
+                    if (claimOpt.isPresent()) {
+                        gp.deleteClaim(claimOpt.get());
+                    }
+                }
+                dataStore.clearMailbox(claimId);
+                dataStore.save();
+                if (player != null) {
+                    boolean virtualMailbox = claimId != null && claimId.startsWith("v:");
+                    plugin.getMessages().send(player, virtualMailbox ? "mailbox.self-deleted-virtual" : "mailbox.self-deleted");
+                }
+                return true; // allow break - sign is removed
+            }
+
+            // Rental sign: if available for rent (no renter), allow break and destroy; if has renter, reset to [Rent] and keep sign
+            if ("RENT".equals(signKind)) {
+                String renterStr = sign.getPersistentDataContainer().get(keyRenter, PersistentDataType.STRING);
+                if (renterStr == null || renterStr.isEmpty()) {
+                    // Available for rent - allow owner to destroy the sign
+                    if (claimId != null && !claimId.isEmpty()) {
+                        dataStore.clearRental(claimId);
+                        dataStore.clearEviction(claimId);
+                        dataStore.save();
+                    }
+                    if (player != null) {
+                        plugin.getMessages().send(player, "eviction.rental-sign-removed");
+                    }
+                    return true; // allow break - sign is destroyed
+                }
+                // Has renter (or was just evicted) - reset to [Rent] available and keep sign block
+                plugin.resetRentalSign(signBlock);
+                if (player != null) {
+                    plugin.getMessages().send(player, "eviction.rental-sign-removed");
+                }
+                return false; // cancel break - sign stays
+            }
+        } catch (Throwable ignored) {}
+        return true;
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onExplode(EntityExplodeEvent event) {
+        event.blockList().removeIf(b -> isOurSign(b) || isSupportOfManagedSign(b));
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBlockExplode(BlockExplodeEvent event) {
+        event.blockList().removeIf(b -> isOurSign(b) || isSupportOfManagedSign(b));
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onEnderman(EntityChangeBlockEvent event) {
+        if (!(event.getEntity() instanceof Enderman)) return;
+        Block b = event.getBlock();
+        if (isOurSign(b) || isSupportOfManagedSign(b)) {
+            event.setCancelled(true);
+        }
+    }
+
+    private boolean isSupportOfManagedSign(Block b) {
+        for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.DOWN}) {
+            Block adj = b.getRelative(face);
+            if (isOurSign(adj)) {
+                Block support = getSupport(adj);
+                return support != null && support.equals(b);
+            }
+        }
+        return false;
+    }
+}

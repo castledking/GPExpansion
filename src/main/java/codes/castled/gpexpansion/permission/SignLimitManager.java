@@ -1,0 +1,565 @@
+package codes.castled.gpexpansion.permission;
+
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.entity.Player;
+import org.bukkit.permissions.PermissionAttachmentInfo;
+
+import codes.castled.gpexpansion.GPExpansionPlugin;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Manages permission-based sign limits for players
+ */
+public class SignLimitManager {
+    
+    private final GPExpansionPlugin plugin;
+    private final PermissionManager permissionManager;
+    private final Map<UUID, Integer> sellLimits = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> rentLimits = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> mailboxLimits = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> selfMailboxLimits = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> globalClaimLimits = new ConcurrentHashMap<>();
+    private final Map<UUID, Boolean> permissionOverride = new ConcurrentHashMap<>();
+    private int defaultSellLimit;
+    private int defaultRentLimit;
+    private int defaultMailboxLimit;
+    private int defaultSelfMailboxLimit;
+    private int defaultGlobalClaimLimit;
+    
+    public SignLimitManager(GPExpansionPlugin plugin) {
+        this.plugin = plugin;
+        this.permissionManager = initializePermissionManager(plugin);
+        loadConfig();
+    }
+    
+    private PermissionManager initializePermissionManager(GPExpansionPlugin plugin) {
+        try {
+            if (plugin.getServer().getPluginManager().getPlugin("Vault") != null) {
+                return new PermissionManager(plugin);
+            } else {
+                plugin.getLogger().info("Vault not found - permission management via /gpx max will use in-memory limits only");
+                return null;
+            }
+        } catch (NoClassDefFoundError e) {
+            plugin.getLogger().info("Vault classes not available - permission management via /gpx max will use in-memory limits only");
+            return null;
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to initialize PermissionManager: " + e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Load configuration values
+     */
+    private void loadConfig() {
+        FileConfiguration config = plugin.getConfig();
+        defaultSellLimit = config.getInt("defaults.max-sell-signs", 5);
+        defaultRentLimit = config.getInt("defaults.max-rent-signs", 5);
+        defaultMailboxLimit = config.getInt("defaults.max-mailbox-signs", 5);
+        defaultSelfMailboxLimit = config.getInt("defaults.max-self-mailboxes-per-claim", 1);
+        defaultGlobalClaimLimit = config.getInt("defaults.max-global-claims", 1);
+    }
+    
+    /**
+     * Reload configuration values
+     */
+    public void reloadConfig() {
+        loadConfig();
+        // Clear cached limits to force re-evaluation
+        sellLimits.clear();
+        rentLimits.clear();
+        mailboxLimits.clear();
+        selfMailboxLimits.clear();
+        globalClaimLimits.clear();
+    }
+    
+    /**
+     * Get the maximum number of sell signs a player can create
+     */
+    public int getSellLimit(Player player) {
+        UUID uuid = player.getUniqueId();
+        
+        // Check if we have a cached value and no permission override
+        if (sellLimits.containsKey(uuid) && !permissionOverride.getOrDefault(uuid, false)) {
+            return sellLimits.get(uuid);
+        }
+        
+        // Check permissions for specific limits
+        int limit = defaultSellLimit;
+        List<String> foundPerms = new ArrayList<>();
+        
+        // Check for numbered permissions (griefprevention.sign.create.buy.<amount>)
+        for (PermissionAttachmentInfo info : player.getEffectivePermissions()) {
+            String perm = info.getPermission();
+            if (perm.startsWith("griefprevention.sign.create.buy.") && info.getValue()) {
+                try {
+                    int amount = Integer.parseInt(perm.substring(perm.lastIndexOf('.') + 1));
+                    if (amount > limit) {
+                        limit = amount;
+                    }
+                    foundPerms.add(perm);
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        
+        // Check for permission desync - multiple permissions found
+        if (foundPerms.size() > 1) {
+            plugin.getLogger().warning("Permission desync detected for player " + player.getName() + 
+                ": Found multiple sell sign permissions: " + String.join(", ", foundPerms));
+            // Mark as needing cleanup
+            permissionOverride.put(uuid, true);
+        }
+        
+        // Cache the result
+        sellLimits.put(uuid, limit);
+        return limit;
+    }
+    
+    /**
+     * Get the maximum number of rent signs a player can create
+     */
+    public int getRentLimit(Player player) {
+        UUID uuid = player.getUniqueId();
+        
+        // Check if we have a cached value and no permission override
+        if (rentLimits.containsKey(uuid) && !permissionOverride.getOrDefault(uuid, false)) {
+            return rentLimits.get(uuid);
+        }
+        
+        // Check permissions for specific limits
+        int limit = defaultRentLimit;
+        List<String> foundPerms = new ArrayList<>();
+        
+        // Check for numbered permissions (griefprevention.sign.create.rent.<amount>)
+        for (PermissionAttachmentInfo info : player.getEffectivePermissions()) {
+            String perm = info.getPermission();
+            if (perm.startsWith("griefprevention.sign.create.rent.") && info.getValue()) {
+                try {
+                    int amount = Integer.parseInt(perm.substring(perm.lastIndexOf('.') + 1));
+                    if (amount > limit) {
+                        limit = amount;
+                    }
+                    foundPerms.add(perm);
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        
+        // Check for permission desync - multiple permissions found
+        if (foundPerms.size() > 1) {
+            plugin.getLogger().warning("Permission desync detected for player " + player.getName() + 
+                ": Found multiple rent sign permissions: " + String.join(", ", foundPerms));
+            // Mark as needing cleanup
+            permissionOverride.put(uuid, true);
+        }
+        
+        // Cache the result
+        rentLimits.put(uuid, limit);
+        return limit;
+    }
+    
+    /**
+     * Get the maximum number of mailbox signs a player can create
+     */
+    public int getMailboxLimit(Player player) {
+        UUID uuid = player.getUniqueId();
+        
+        // Check if we have a cached value and no permission override
+        if (mailboxLimits.containsKey(uuid) && !permissionOverride.getOrDefault(uuid, false)) {
+            return mailboxLimits.get(uuid);
+        }
+        
+        // Check permissions for specific limits
+        int limit = defaultMailboxLimit;
+        List<String> foundPerms = new ArrayList<>();
+        
+        // Check for numbered permissions (griefprevention.sign.create.mailbox.<amount>)
+        for (PermissionAttachmentInfo info : player.getEffectivePermissions()) {
+            String perm = info.getPermission();
+            if (perm.startsWith("griefprevention.sign.create.mailbox.") && info.getValue()) {
+                try {
+                    int amount = Integer.parseInt(perm.substring(perm.lastIndexOf('.') + 1));
+                    if (amount > limit) {
+                        limit = amount;
+                    }
+                    foundPerms.add(perm);
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        
+        // Check for permission desync - multiple permissions found
+        if (foundPerms.size() > 1) {
+            plugin.getLogger().warning("Permission desync detected for player " + player.getName() + 
+                ": Found multiple mailbox sign permissions: " + String.join(", ", foundPerms));
+            // Mark as needing cleanup
+            permissionOverride.put(uuid, true);
+        }
+        
+        // Cache the result
+        mailboxLimits.put(uuid, limit);
+        return limit;
+    }
+    
+    /**
+     * Set a player's sell limit directly (used for admin commands)
+     * Also cleans up permission desync by removing all numbered permissions and setting the highest one
+     */
+    public void setSellLimit(Player player, int limit) {
+        UUID uuid = player.getUniqueId();
+        
+        // Check for permission desync and clean up if needed
+        if (permissionOverride.getOrDefault(uuid, false)) {
+            cleanupSellPermissions(player, limit);
+            permissionOverride.put(uuid, false);
+        }
+        
+        sellLimits.put(uuid, Math.max(0, limit));
+    }
+    
+    /**
+     * Set a player's rent limit directly (used for admin commands)
+     * Also cleans up permission desync by removing all numbered permissions and setting the highest one
+     */
+    public void setRentLimit(Player player, int limit) {
+        UUID uuid = player.getUniqueId();
+        
+        // Check for permission desync and clean up if needed
+        if (permissionOverride.getOrDefault(uuid, false)) {
+            cleanupRentPermissions(player, limit);
+            permissionOverride.put(uuid, false);
+        }
+        
+        rentLimits.put(uuid, Math.max(0, limit));
+    }
+    
+    /**
+     * Add to a player's sell limit
+     */
+    public void addSellLimit(Player player, int amount) {
+        int current = getSellLimit(player);
+        setSellLimit(player, current + amount);
+    }
+    
+    /**
+     * Take from a player's sell limit
+     */
+    public void takeSellLimit(Player player, int amount) {
+        int current = getSellLimit(player);
+        setSellLimit(player, Math.max(0, current - amount));
+    }
+    
+    /**
+     * Add to a player's rent limit
+     */
+    public void addRentLimit(Player player, int amount) {
+        int current = getRentLimit(player);
+        setRentLimit(player, current + amount);
+    }
+    
+    /**
+     * Take from a player's rent limit
+     */
+    public void takeRentLimit(Player player, int amount) {
+        int current = getRentLimit(player);
+        setRentLimit(player, Math.max(0, current - amount));
+    }
+    
+    /**
+     * Set a player's mailbox limit directly (used for admin commands)
+     * Also cleans up permission desync by removing all numbered permissions and setting the highest one
+     */
+    public void setMailboxLimit(Player player, int limit) {
+        UUID uuid = player.getUniqueId();
+        
+        // Check for permission desync and clean up if needed
+        if (permissionOverride.getOrDefault(uuid, false)) {
+            cleanupMailboxPermissions(player, limit);
+            permissionOverride.put(uuid, false);
+        }
+        
+        // Cache the new limit
+        mailboxLimits.put(uuid, limit);
+    }
+    
+    /**
+     * Add to a player's mailbox limit
+     */
+    public void addMailboxLimit(Player player, int amount) {
+        int current = getMailboxLimit(player);
+        setMailboxLimit(player, current + amount);
+    }
+    
+    /**
+     * Take from a player's mailbox limit
+     */
+    public void takeMailboxLimit(Player player, int amount) {
+        int current = getMailboxLimit(player);
+        setMailboxLimit(player, Math.max(0, current - amount));
+    }
+
+    /**
+     * Get the maximum number of self mailboxes per claim a player can create
+     */
+    public int getSelfMailboxLimit(Player player) {
+        return selfMailboxLimits.getOrDefault(player.getUniqueId(), defaultSelfMailboxLimit);
+    }
+
+    /**
+     * Set a player's self mailbox limit (used for admin commands)
+     */
+    public void setSelfMailboxLimit(Player player, int limit) {
+        selfMailboxLimits.put(player.getUniqueId(), Math.max(0, limit));
+    }
+
+    /**
+     * Add to a player's self mailbox limit
+     */
+    public void addSelfMailboxLimit(Player player, int amount) {
+        int current = getSelfMailboxLimit(player);
+        setSelfMailboxLimit(player, current + amount);
+    }
+
+    /**
+     * Take from a player's self mailbox limit
+     */
+    public void takeSelfMailboxLimit(Player player, int amount) {
+        int current = getSelfMailboxLimit(player);
+        setSelfMailboxLimit(player, Math.max(0, current - amount));
+    }
+    
+    /**
+     * Get the maximum number of global claims a player can have
+     */
+    public int getGlobalClaimLimit(Player player) {
+        UUID uuid = player.getUniqueId();
+        
+        // Check if we have a cached value and no permission override
+        if (globalClaimLimits.containsKey(uuid) && !permissionOverride.getOrDefault(uuid, false)) {
+            return globalClaimLimits.get(uuid);
+        }
+        
+        // Check permissions for specific limits
+        int limit = defaultGlobalClaimLimit;
+        List<String> foundPerms = new ArrayList<>();
+        
+        // Check for numbered permissions (griefprevention.claim.toggleglobal.<amount>)
+        for (PermissionAttachmentInfo info : player.getEffectivePermissions()) {
+            String perm = info.getPermission();
+            if (perm.startsWith("griefprevention.claim.toggleglobal.") && info.getValue()) {
+                try {
+                    int amount = Integer.parseInt(perm.substring(perm.lastIndexOf('.') + 1));
+                    if (amount > limit) {
+                        limit = amount;
+                    }
+                    foundPerms.add(perm);
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        
+        // Check for permission desync - multiple permissions found
+        if (foundPerms.size() > 1) {
+            plugin.getLogger().warning("Permission desync detected for player " + player.getName() + 
+                ": Found multiple global claim permissions: " + String.join(", ", foundPerms));
+            // Mark as needing cleanup
+            permissionOverride.put(uuid, true);
+        }
+        
+        // Cache the result
+        globalClaimLimits.put(uuid, limit);
+        return limit;
+    }
+    
+    /**
+     * Set a player's global claim limit directly (used for admin commands)
+     */
+    public void setGlobalClaimLimit(Player player, int limit) {
+        UUID uuid = player.getUniqueId();
+        
+        // Check for permission desync and clean up if needed
+        if (permissionOverride.getOrDefault(uuid, false)) {
+            cleanupGlobalClaimPermissions(player, limit);
+            permissionOverride.put(uuid, false);
+        }
+        
+        globalClaimLimits.put(uuid, Math.max(0, limit));
+    }
+    
+    /**
+     * Add to a player's global claim limit
+     */
+    public void addGlobalClaimLimit(Player player, int amount) {
+        int current = getGlobalClaimLimit(player);
+        setGlobalClaimLimit(player, current + amount);
+    }
+    
+    /**
+     * Take from a player's global claim limit
+     */
+    public void takeGlobalClaimLimit(Player player, int amount) {
+        int current = getGlobalClaimLimit(player);
+        setGlobalClaimLimit(player, Math.max(0, current - amount));
+    }
+    
+    /**
+     * Get the current number of global claims a player has
+     */
+    public int getCurrentGlobalClaims(Player player) {
+        return plugin.getClaimDataStore().countGlobalClaimsForPlayer(player.getUniqueId());
+    }
+    
+    /**
+     * Check if a player can make more claims global
+     */
+    public boolean canMakeClaimGlobal(Player player) {
+        return getCurrentGlobalClaims(player) < getGlobalClaimLimit(player);
+    }
+    
+    /**
+     * Clean up global claim permissions
+     */
+    private void cleanupGlobalClaimPermissions(Player player, int newLimit) {
+        if (permissionManager != null && permissionManager.cleanupGlobalClaimPermissions(player, newLimit)) {
+            plugin.getLogger().info("Successfully cleaned up global claim permissions for " + player.getName());
+        } else {
+            plugin.getLogger().warning("Could not clean up global claim permissions for " + player.getName() + 
+                " - no supported permission plugin found");
+        }
+    }
+    
+    /**
+     * Clear cached limits for a player (call when permissions change)
+     */
+    public void clearCache(Player player) {
+        UUID uuid = player.getUniqueId();
+        sellLimits.remove(uuid);
+        rentLimits.remove(uuid);
+        mailboxLimits.remove(uuid);
+        globalClaimLimits.remove(uuid);
+        permissionOverride.remove(uuid);
+    }
+    
+    /**
+     * Clear all cached limits
+     */
+    public void clearAllCache() {
+        sellLimits.clear();
+        rentLimits.clear();
+        mailboxLimits.clear();
+        selfMailboxLimits.clear();
+        globalClaimLimits.clear();
+        permissionOverride.clear();
+    }
+    
+    /**
+     * Check if player has permission desync
+     */
+    public boolean hasPermissionDesync(Player player) {
+        return permissionOverride.getOrDefault(player.getUniqueId(), false);
+    }
+    
+    /**
+     * Clean up sell sign permissions by removing all numbered permissions and adding the highest one
+     */
+    private void cleanupSellPermissions(Player player, int newLimit) {
+        if (permissionManager != null && permissionManager.cleanupSellPermissions(player, newLimit)) {
+            plugin.getLogger().info("Successfully cleaned up sell sign permissions for " + player.getName());
+        } else {
+            plugin.getLogger().warning("Could not clean up sell sign permissions for " + player.getName() + 
+                " - no supported permission plugin found");
+        }
+    }
+    
+    /**
+     * Clean up rent sign permissions by removing all numbered permissions and adding the highest one
+     */
+    private void cleanupRentPermissions(Player player, int newLimit) {
+        if (permissionManager != null && permissionManager.cleanupRentPermissions(player, newLimit)) {
+            plugin.getLogger().info("Successfully cleaned up rent sign permissions for " + player.getName());
+        } else {
+            plugin.getLogger().warning("Could not clean up rent sign permissions for " + player.getName() + 
+                " - no supported permission plugin found");
+        }
+    }
+    
+    /**
+     * Clean up mailbox sign permissions by removing all numbered permissions and adding the highest one
+     */
+    private void cleanupMailboxPermissions(Player player, int newLimit) {
+        if (permissionManager != null && permissionManager.cleanupMailboxPermissions(player, newLimit)) {
+            plugin.getLogger().info("Successfully cleaned up mailbox sign permissions for " + player.getName());
+        } else {
+            plugin.getLogger().warning("Could not clean up mailbox sign permissions for " + player.getName() + 
+                " - no supported permission plugin found");
+        }
+    }
+    
+    /**
+     * Get the current number of signs a player has created
+     * This would need to be tracked separately or counted from existing signs
+     */
+    public int getCurrentSellSigns(Player player) {
+        // TODO: Implement tracking of current signs
+        // This could be done by counting signs in the world owned by the player
+        // or by maintaining a database of created signs
+        return 0;
+    }
+    
+    /**
+     * Get the current number of rent signs a player has created
+     */
+    public int getCurrentRentSigns(Player player) {
+        // TODO: Implement tracking of current signs
+        return 0;
+    }
+    
+    /**
+     * Get the current number of mailbox signs a player has created
+     */
+    public int getCurrentMailboxSigns(Player player) {
+        // TODO: Implement tracking of current signs
+        return 0;
+    }
+    
+    /**
+     * Check if a player can create more sell signs.
+     * Players with op or wildcard (*) bypass the limit so server owners aren't blocked.
+     */
+    public boolean canCreateSellSign(Player player) {
+        if (player.isOp() || player.hasPermission("*")) return true;
+        return getCurrentSellSigns(player) < getSellLimit(player);
+    }
+    
+    /**
+     * Check if a player can create more rent signs.
+     * Players with op or wildcard (*) bypass the limit so server owners aren't blocked.
+     */
+    public boolean canCreateRentSign(Player player) {
+        if (player.isOp() || player.hasPermission("*")) return true;
+        return getCurrentRentSigns(player) < getRentLimit(player);
+    }
+    
+    /**
+     * Check if a player can create more mailbox signs.
+     * Players with op or wildcard (*) bypass the limit so server owners aren't blocked.
+     */
+    public boolean canCreateMailboxSign(Player player) {
+        if (player.isOp() || player.hasPermission("*")) return true;
+        return getCurrentMailboxSigns(player) < getMailboxLimit(player);
+    }
+    
+    /**
+     * Check if permission cleanup is supported
+     */
+    public boolean isPermissionCleanupSupported() {
+        return permissionManager != null && permissionManager.isCleanupSupported();
+    }
+    
+    /**
+     * Get the name of the supported permission plugin
+     */
+    public String getSupportedPermissionPlugin() {
+        return permissionManager != null ? permissionManager.getSupportedPlugin() : "None";
+    }
+}
