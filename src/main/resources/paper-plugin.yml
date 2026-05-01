@@ -1,6 +1,6 @@
 name: GPExpansion
 version: ${project.version}
-main: dev.towki.gpexpansion.GPExpansionPlugin
+main: codes.castled.gpexpansion.GPExpansionPlugin
 description: GriefPrevention Expansion
 api-version: '1.20'
 author: CASTLEDKING
@@ -43,9 +43,9 @@ dependencies:
 
 # Register our listeners
 listeners:
-  - dev.towki.gpexpansion.listener.SignListener
-  - dev.towki.gpexpansion.listener.BanEnforcementListener
-  - dev.towki.gpexpansion.listener.CommandInterceptListener
+  - codes.castled.gpexpansion.listener.SignListener
+  - codes.castled.gpexpansion.listener.BanEnforcementListener
+  - codes.castled.gpexpansion.listener.CommandInterceptListener
 
 # Register our commands
 commands:
@@ -107,9 +107,7 @@ permissions:
     description: Base permission for GPExpansion player commands (children permissions are dynamically managed)
     default: true
 
-  griefprevention.claims:
-    description: Allows access to /claim
-    default: op
+  # griefprevention.claims is registered by GriefPrevention itself; do not redeclare here.
 
   griefprevention.claim.name:
     description: Allows using /claim name
@@ -397,9 +395,7 @@ permissions:
     description: Allows viewing admin claims list
     default: op
 
-  griefprevention.transferclaim:
-    description: Allows using /claim transfer
-    default: op
+  # griefprevention.transferclaim is registered by GriefPrevention itself; do not redeclare here.
 
   # Claim info permissions
   griefprevention.claiminfo:

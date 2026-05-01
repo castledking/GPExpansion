@@ -1,0 +1,46 @@
+# Confirmation GUI for /buyclaimblocks <amount>.
+# All strings here are localized for the GUI itself (the chest window).
+# Chat-side messages (insufficient funds, purchase confirmation, etc.) live in
+# GriefPrevention's messages.yml — see plugins/GriefPreventionData/messages.yml.
+#
+# Available placeholders in title and item name/lore:
+#   {amount}     - number of claim blocks being purchased
+#   {cost}       - cost per single block (already formatted by your economy)
+#   {totalCost}  - total cost (already formatted by your economy)
+
+# Inventory window title
+title: "&6Buy {amount} blocks for {totalCost}"
+
+# Filler material used in slots 1 and 3 (between buttons)
+filler:
+  material: GRAY_STAINED_GLASS_PANE
+
+# Slot layout (hopper inventory: 5 slots, indices 0-4)
+slots:
+  cancel: 0
+  info: 2
+  confirm: 4
+
+items:
+  info:
+    material: GOLD_INGOT
+    name: "&6&l{amount} Claim Blocks"
+    lore:
+      - ""
+      - "&7Cost per block: &e{cost}"
+      - "&7Total cost: &a{totalCost}"
+
+  confirm:
+    material: LIME_WOOL
+    name: "&a&lCONFIRM"
+    lore:
+      - ""
+      - "&7Click to purchase"
+      - "&e{amount} &7claim blocks"
+
+  cancel:
+    material: RED_WOOL
+    name: "&c&lCANCEL"
+    lore:
+      - ""
+      - "&7Click to cancel"
