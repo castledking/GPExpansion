@@ -41,3 +41,4 @@ org.eclipse.m2e.core.prefs
 
 # Release work
 release-work/
+.modrinth/
