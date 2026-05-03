@@ -108,7 +108,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     /** Subcommands we handle - used when sharing /claim with GP3D (only intercept these) */
     public static final java.util.Set<String> HANDLED_SUBCOMMANDS = java.util.Collections.unmodifiableSet(
             new java.util.HashSet<>(Arrays.asList(
-            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map",
+            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -135,7 +135,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBS = Arrays.asList(
             // Our features
-            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map",
+            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -364,6 +364,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 return handleResizeCommand(sender, subArgs);
             case "map":
                 return handleMapCommand(sender, subArgs);
+            case "fly":
+                return new ClaimFlyCommand(plugin).onCommand(sender, command, label, subArgs);
             case "ban":
                 return handleBan(sender, subArgs);
             case "unban":

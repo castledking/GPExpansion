@@ -177,7 +177,7 @@ public class PermissionManager {
                 String trimmed = rawEntry.trim();
                 if (trimmed.isEmpty()) continue;
 
-                String[] tokens = trimmed.split("(?:\\s*-\\s*|\\s+)");
+                String[] tokens = trimmed.split("(?:\\s+-\\s+|\\s+)");
                 if (tokens.length > 1) {
                     plugin.getLogger().warning("Malformed player-commands entry in config.yml: \""
                             + rawEntry + "\" -> splitting into " + tokens.length
