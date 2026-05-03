@@ -4111,6 +4111,7 @@ public class GPBridge {
      */
     public boolean hasBuildOrInventoryTrust(Object claim, UUID playerId) {
         if (claim == null || playerId == null) return false;
+        if (isOwner(claim, playerId)) return true;
         if (isTrusted(claim, playerId, "build")) return true;
         if (isTrusted(claim, playerId, "inventory")) return true;
         if (isTrusted(claim, playerId, "access")) return true;

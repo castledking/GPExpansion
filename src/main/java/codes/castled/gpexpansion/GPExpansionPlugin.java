@@ -2,12 +2,14 @@ package codes.castled.gpexpansion;
 
 import codes.castled.gpexpansion.command.CancelSetupCommand;
 import codes.castled.gpexpansion.command.ClaimCommand;
+import codes.castled.gpexpansion.command.ClaimFlyCommand;
 import codes.castled.gpexpansion.command.ClaimInfoCommand;
 import codes.castled.gpexpansion.command.GPXCommand;
 import codes.castled.gpexpansion.command.MailboxCommand;
 import codes.castled.gpexpansion.command.RentClaimCommand;
 import codes.castled.gpexpansion.command.SellClaimCommand;
 import codes.castled.gpexpansion.config.VersionManager;
+import codes.castled.gpexpansion.claimfly.ClaimFlyManager;
 import codes.castled.gpexpansion.setup.SetupWizardManager;
 import codes.castled.gpexpansion.setup.SetupChatListener;
 import codes.castled.gpexpansion.setup.SignAutoPasteListener;
@@ -59,6 +61,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
     private boolean gp3dClaimMode;
     private codes.castled.gpexpansion.listener.SignDisplayListener signDisplayListener;
     private codes.castled.gpexpansion.scheduler.TaskHandle evictionDisplayTickTask;
+    private ClaimFlyManager claimFlyManager;
 
     // Tax settings
     private double taxPercent = 5.0;
@@ -105,6 +108,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
         
         // Initialize sign limit manager
         signLimitManager = new codes.castled.gpexpansion.permission.SignLimitManager(this);
+        claimFlyManager = new ClaimFlyManager(this);
         
         // Initialize permission manager (handles dynamic gpx.player permissions)
         try {
@@ -125,6 +129,11 @@ public final class GPExpansionPlugin extends JavaPlugin {
         confirmationService = new codes.castled.gpexpansion.confirm.ConfirmationService(this);
 
         registerPluginCommands();
+
+        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
+            new codes.castled.gpexpansion.claimfly.ClaimFlyPlaceholderExpansion(this).register();
+            getLogger().info("- Registered PlaceholderAPI claim flight placeholders");
+        }
 
         // Register listeners
         getLogger().info("Registering event listeners...");
@@ -157,6 +166,9 @@ public final class GPExpansionPlugin extends JavaPlugin {
         startEvictionDisplayTick();
         // Economy late-hook listener
         Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.EconomyHookListener(this), this);
+        // Claim flight listener
+        Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.ClaimFlyListener(this), this);
+        getLogger().info("- Registered ClaimFlyListener for claim flight feature");
         
         getLogger().info(() -> "GPExpansion enabled");
     }
@@ -329,6 +341,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
                     "gpx",
                     "claiminfo",
                     "globalclaim",
+                    "claimfly",
                     "claimtp",
                     "setclaimspawn",
                     "resizeclaim",
@@ -376,6 +389,18 @@ public final class GPExpansionPlugin extends JavaPlugin {
                 gpxCommand
         );
         registerRuntimeCommand(map, gpxWrapper);
+
+        ClaimFlyCommand claimFlyCommand = new ClaimFlyCommand(this);
+        Command claimFlyWrapper = new PaperCommandWrapper(
+                this,
+                "claimfly",
+                "Toggle or manage claim flight time",
+                "/claimfly [add|check|reset|take|set] [players] [time]",
+                java.util.Collections.emptyList(),
+                claimFlyCommand,
+                claimFlyCommand
+        );
+        registerRuntimeCommand(map, claimFlyWrapper);
 
         setupWizardManager = new SetupWizardManager(this);
 
@@ -608,6 +633,9 @@ public final class GPExpansionPlugin extends JavaPlugin {
         }
         if (claimDataStore != null) {
             claimDataStore.save();
+        }
+        if (claimFlyManager != null) {
+            claimFlyManager.save();
         }
         getLogger().info(() -> "GPExpansion disabled");
     }
@@ -1208,6 +1236,10 @@ public final class GPExpansionPlugin extends JavaPlugin {
     
     public SignLimitManager getSignLimitManager() {
         return signLimitManager;
+    }
+
+    public ClaimFlyManager getClaimFlyManager() {
+        return claimFlyManager;
     }
 
     public codes.castled.gpexpansion.reminder.RentalReminderService getReminderService() {

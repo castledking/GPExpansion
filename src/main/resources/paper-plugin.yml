@@ -3,7 +3,7 @@ version: ${project.version}
 main: codes.castled.gpexpansion.GPExpansionPlugin
 description: GriefPrevention Expansion
 api-version: '1.20'
-author: CASTLEDKING
+author: castledking
 website: https://castled.codes
 folia-supported: true
 
@@ -59,8 +59,12 @@ commands:
     permission: griefprevention.sign.confirm
   gpx:
     description: GPExpansion admin commands
-    usage: /<command>
+    usage: /gpx <subcommand>
     permission: griefprevention.admin
+  claimfly:
+    description: Toggle or manage claim flight time
+    usage: /claimfly [add|check|reset|take|set] [players] [time]
+    aliases: [cfly]
   mailbox:
     description: Mailbox setup wizard command
     usage: /<command>
@@ -394,6 +398,10 @@ permissions:
   griefprevention.adminclaimslist:
     description: Allows viewing admin claims list
     default: op
+
+  griefprevention.claimfly.use:
+    description: Grants flight when inside claims the player has access to
+    default: true
 
   # griefprevention.transferclaim is registered by GriefPrevention itself; do not redeclare here.
 

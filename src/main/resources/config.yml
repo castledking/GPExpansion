@@ -61,6 +61,7 @@ player-commands:
   - claim.setspawn
   - claim.gui.setclaimflag.own
   - claim.gui.globallist
+  - claimfly.use
   - claim.toggleglobal
   - claim.toggleglobal.anywhere
   - claim.toggleglobal.1

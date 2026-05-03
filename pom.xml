@@ -5,7 +5,7 @@
 
   <groupId>codes.castled.gpexpansion</groupId>
   <artifactId>gpexpansion</artifactId>
-  <version>1.0.6</version>
+  <version>1.0.7</version>
   <name>GPExpansion</name>
   <description>GriefPrevention Expansion</description>
 
@@ -78,6 +78,12 @@
       <groupId>net.kyori</groupId>
       <artifactId>adventure-text-serializer-legacy</artifactId>
       <version>${adventure.minimessage.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>me.clip</groupId>
+      <artifactId>placeholderapi</artifactId>
+      <version>2.11.6</version>
+      <scope>provided</scope>
     </dependency>
   </dependencies>
 

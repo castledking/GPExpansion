@@ -205,6 +205,7 @@ public class VersionManager {
 
         // Ensure eviction section is present and valid (for 0.1.9a+ with empty/corrupted eviction)
         ensureEvictionSectionPresent();
+        ensurePlayerCommandPresent("claimfly.use");
         ensureGlobalClaimPlayerCommandDefault();
         ensureClaimMapEditorModeSlotPresent();
 
@@ -522,6 +523,7 @@ public class VersionManager {
             playerCommandsSection.append("  - claim.setspawn\n");
             playerCommandsSection.append("  - claim.gui.setclaimflag.own\n");
             playerCommandsSection.append("  - claim.gui.globallist\n");
+            playerCommandsSection.append("  - claimfly.use\n");
             playerCommandsSection.append("  - claim.toggleglobal\n");
             playerCommandsSection.append("  - claim.toggleglobal.anywhere\n");
             playerCommandsSection.append("  - claim.toggleglobal.1\n");
@@ -831,25 +833,47 @@ public class VersionManager {
     }
 
     private void ensureGlobalClaimPlayerCommandDefault() {
+        // Disabled - regex replacement was corrupting YAML structure
+        // Users can manually configure claim.toggleglobal.X permissions in config.yml
+    }
+
+    private void ensurePlayerCommandPresent(String commandPermission) {
         File configFile = new File(dataFolder, "config.yml");
         if (!configFile.exists()) return;
 
         try {
             String content = Files.readString(configFile.toPath());
             if (!content.contains("player-commands:")) return;
+            if (content.matches("(?s).*\\n\\s*-\\s*" + java.util.regex.Pattern.quote(commandPermission) + "\\s*(\\n|$).*")) return;
 
-            int configuredDefault = Math.max(0, plugin.getConfig().getInt("defaults.max-global-claims", 1));
-            String desiredLine = "  - claim.toggleglobal." + configuredDefault;
-            if (content.contains(desiredLine)) return;
+            String[] lines = content.split("\\R", -1);
+            java.util.List<String> newLines = new java.util.ArrayList<>();
+            boolean inSection = false;
+            boolean inserted = false;
 
-            String updated = content.replaceFirst("(?m)^\\s*-\\s*claim\\.toggleglobal\\.(\\d+)\\s*$", desiredLine);
-            if (updated.equals(content)) return;
+            for (String line : lines) {
+                if (line.matches("^\\s*player-commands:\\s*$")) {
+                    inSection = true;
+                    newLines.add(line);
+                    continue;
+                }
+                if (inSection && !inserted && !line.trim().isEmpty() && !line.startsWith(" ") && !line.startsWith("#")) {
+                    newLines.add("  - " + commandPermission);
+                    inserted = true;
+                    inSection = false;
+                }
+                newLines.add(line);
+            }
 
-            Files.writeString(configFile.toPath(), updated);
+            if (inSection && !inserted) {
+                newLines.add("  - " + commandPermission);
+            }
+
+            Files.writeString(configFile.toPath(), String.join(System.lineSeparator(), newLines));
             plugin.reloadConfig();
-            plugin.getLogger().info("VersionManager: Updated player-commands global claim permission to match defaults.max-global-claims = " + configuredDefault);
+            plugin.getLogger().info("VersionManager: Added missing player-commands entry: " + commandPermission);
         } catch (IOException e) {
-            plugin.getLogger().warning("VersionManager: Failed to normalize player-commands global claim permission: " + e.getMessage());
+            plugin.getLogger().warning("VersionManager: Failed to add player-commands entry " + commandPermission + ": " + e.getMessage());
         }
     }
 
