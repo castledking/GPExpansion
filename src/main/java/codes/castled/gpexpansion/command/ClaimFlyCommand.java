@@ -48,7 +48,7 @@ public class ClaimFlyCommand implements CommandExecutor, TabCompleter {
         }
 
         UUID uuid = player.getUniqueId();
-        if (!manager.hasTime(uuid)) {
+        if (!manager.hasFlightAccess(uuid)) {
             player.sendMessage("§cYou do not have any claim flight time available.");
             manager.setEnabled(uuid, false);
             return true;
@@ -57,9 +57,16 @@ public class ClaimFlyCommand implements CommandExecutor, TabCompleter {
         boolean enabled = manager.toggle(uuid);
         applyImmediateFlightState(player, enabled);
         player.sendMessage(enabled
-                ? "§aClaim flight enabled. Remaining: §e" + ClaimFlyManager.formatDuration(manager.getRemainingMillis(uuid))
-                : "§eClaim flight disabled. Remaining: §6" + ClaimFlyManager.formatDuration(manager.getRemainingMillis(uuid)));
+                ? "§aClaim flight enabled. " + formatModeSuffix(uuid)
+                : "§eClaim flight disabled. " + formatModeSuffix(uuid));
         return true;
+    }
+
+    private String formatModeSuffix(UUID uuid) {
+        if (manager.isPassiveClaimFlightEnabled()) {
+            return "§7Passive mode is active.";
+        }
+        return "Remaining: §e" + ClaimFlyManager.formatDuration(manager.getRemainingMillis(uuid));
     }
 
     private void applyImmediateFlightState(Player player, boolean enabled) {
