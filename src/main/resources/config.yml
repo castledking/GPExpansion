@@ -10,6 +10,11 @@ messages:
   # Show detailed permission info when player lacks permission (e.g., "Missing: griefprevention.sign.rent.exp")
   show-permission-details: true
 
+# Claim flight settings
+# false = players need claim flight time from /claimfly admin commands
+# true = players with griefprevention.claimfly.use can fly in owned/trusted claims without time
+passive-claim-flight: false
+
 # Mailbox protocol (first-time default is set from GP: GP3D -> real, regular GP -> virtual; change below as desired):
 # real = create subdivision + container trust public (non-owner opens real chest with dynamic updates)
 # virtual = no subdivision, virtual view, non-updating (useful for non-GP3D users who want stackable mailboxes)

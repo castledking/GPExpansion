@@ -89,13 +89,21 @@ public class ClaimFlyManager {
         return getRemainingMillis(uuid) > 0L;
     }
 
+    public boolean isPassiveClaimFlightEnabled() {
+        return plugin.getConfig().getBoolean("passive-claim-flight", false);
+    }
+
+    public boolean hasFlightAccess(UUID uuid) {
+        return isPassiveClaimFlightEnabled() || hasTime(uuid);
+    }
+
     public boolean isEnabled(UUID uuid) {
         return enabledPlayers.contains(uuid);
     }
 
     public boolean canUseClaimFlight(Player player) {
         UUID uuid = player.getUniqueId();
-        return player.hasPermission("griefprevention.claimfly.use") && isEnabled(uuid) && hasTime(uuid);
+        return player.hasPermission("griefprevention.claimfly.use") && isEnabled(uuid) && hasFlightAccess(uuid);
     }
 
     public boolean toggle(UUID uuid) {
@@ -148,6 +156,7 @@ public class ClaimFlyManager {
     }
 
     public long consume(UUID uuid, long millis) {
+        if (isPassiveClaimFlightEnabled()) return getRemainingMillis(uuid);
         if (millis <= 0L) return getRemainingMillis(uuid);
         long remaining = Math.max(0L, getRemainingMillis(uuid) - millis);
         if (remaining > 0L) {
