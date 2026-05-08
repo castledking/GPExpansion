@@ -65,14 +65,14 @@ public class SetupWizardManager {
                     return new String[] {
                         hanging ? "[rent]" : "[rent claim]",
                         claimId,
-                        ecoKind.name().toLowerCase(),
+                        getEconomyToken(ecoKind),
                         price + ";" + renewalTime + ";" + maxTime
                     };
                 case SELL:
                     return new String[] {
                         "[sell claim]",
                         claimId,
-                        ecoKind.name().toLowerCase(),
+                        getEconomyToken(ecoKind),
                         price
                     };
                 case MAILBOX:
@@ -81,7 +81,7 @@ public class SetupWizardManager {
                     }
                     return new String[] {
                         "[Mailbox]",
-                        (ecoKind != null ? ecoKind.name().toLowerCase() : "money") + ";" + (price != null ? price : "100"),
+                        (ecoKind != null ? getEconomyToken(ecoKind) : "money") + ";" + (price != null ? price : "100"),
                         "",
                         ""
                     };
@@ -419,7 +419,14 @@ public class SetupWizardManager {
         }
         
         if (kind == null) {
-            plugin.getMessages().send(player, "wizard.invalid-economy-type");
+            plugin.getMessages().send(player, "wizard.invalid-economy-type",
+                "{options}", getAvailableEconomyOptions(player, session));
+            return true;
+        }
+
+        if (!canUseEconomy(player, session, kind)) {
+            plugin.getMessages().send(player, "wizard.invalid-economy-type",
+                "{options}", getAvailableEconomyOptions(player, session));
             return true;
         }
         
@@ -512,7 +519,7 @@ public class SetupWizardManager {
                 header = "[rent claim]";
                 signFormat.append("&a").append(header).append("\n");
                 signFormat.append("&f").append(session.getClaimId()).append("\n");
-                signFormat.append("&f").append(session.getEcoKind().name().toLowerCase()).append("\n");
+                signFormat.append("&f").append(getEconomyToken(session.getEcoKind())).append("\n");
                 signFormat.append("&f").append(session.getPrice()).append(";")
                          .append(session.getRenewalTime()).append(";")
                          .append(session.getMaxTime());
@@ -521,7 +528,7 @@ public class SetupWizardManager {
                 header = "[sell claim]";
                 signFormat.append("&a").append(header).append("\n");
                 signFormat.append("&f").append(session.getClaimId()).append("\n");
-                signFormat.append("&f").append(session.getEcoKind().name().toLowerCase()).append("\n");
+                signFormat.append("&f").append(getEconomyToken(session.getEcoKind())).append("\n");
                 signFormat.append("&f").append(session.getPrice());
                 break;
             case MAILBOX:
@@ -531,7 +538,7 @@ public class SetupWizardManager {
                     signFormat.append("&7(empty or player names for shared access)\n\n");
                 } else {
                     signFormat.append("&9").append(header).append("\n");
-                    signFormat.append("&f").append(session.getEcoKind().name().toLowerCase()).append(";").append(session.getPrice()).append("\n\n");
+                    signFormat.append("&f").append(getEconomyToken(session.getEcoKind())).append(";").append(session.getPrice()).append("\n\n");
                 }
                 break;
             default:
@@ -636,7 +643,8 @@ public class SetupWizardManager {
             case AWAITING_ECO_TYPE:
                 plugin.getMessages().send(player, "wizard.step-prompt", "{step}", String.valueOf(step), "{prompt}", "");
                 plugin.getMessages().send(player, "wizard." + typePrefix + "-enter-economy");
-                plugin.getMessages().send(player, "wizard." + typePrefix + "-enter-economy-hint");
+                plugin.getMessages().send(player, "wizard." + typePrefix + "-enter-economy-hint",
+                    "{options}", getAvailableEconomyOptions(player, session));
                 if (session.getType() == SetupType.RENT) {
                     sendMessage(player, "&7(This is per rental period)");
                 }
@@ -697,6 +705,64 @@ public class SetupWizardManager {
     
     private boolean isValidDuration(String input) {
         return DURATION_PATTERN.matcher(input).matches();
+    }
+
+    private String getAvailableEconomyOptions(Player player, SetupSession session) {
+        StringBuilder options = new StringBuilder();
+        for (EcoKind kind : EcoKind.values()) {
+            if (!canUseEconomy(player, session, kind)) {
+                continue;
+            }
+
+            if (options.length() > 0) {
+                options.append(", ");
+            }
+            options.append(getEconomyToken(kind));
+        }
+
+        return options.length() > 0 ? options.toString() : "none";
+    }
+
+    private boolean canUseEconomy(Player player, SetupSession session, EcoKind kind) {
+        String permission = getEconomyPermission(session.getType(), kind);
+        return permission != null && hasPermissionOrFullAccess(player, permission);
+    }
+
+    private String getEconomyPermission(SetupType type, EcoKind kind) {
+        String signType;
+        switch (type) {
+            case RENT:
+                signType = "rent";
+                break;
+            case SELL:
+                signType = "sell";
+                break;
+            case MAILBOX:
+                signType = "mailbox";
+                break;
+            default:
+                return null;
+        }
+        return "griefprevention.sign." + signType + "." + getEconomyToken(kind);
+    }
+
+    private boolean hasPermissionOrFullAccess(Player player, String permission) {
+        return player.hasPermission(permission) || player.isOp() || player.hasPermission("*");
+    }
+
+    private static String getEconomyToken(EcoKind kind) {
+        switch (kind) {
+            case MONEY:
+                return "money";
+            case EXPERIENCE:
+                return "exp";
+            case CLAIMBLOCKS:
+                return "claimblocks";
+            case ITEM:
+                return "item";
+            default:
+                return kind.name().toLowerCase();
+        }
     }
     
     private void sendMessage(Player player, String message) {

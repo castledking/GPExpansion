@@ -131,7 +131,7 @@ public class Messages {
         DEFAULTS.put("wizard.not-claim-owner", "&cYou don't own that claim!");
         DEFAULTS.put("wizard.invalid-claim-id", "&cInvalid claim ID. Please enter a number.\n&7(Type 'cancel' to exit the wizard)");
         DEFAULTS.put("wizard.invalid-duration", "&cInvalid duration format. Use: &e<number><s/m/h/d/w>\n&7Examples: &e30s&7, &e1h&7, &e7d&7, &e1w");
-        DEFAULTS.put("wizard.invalid-economy-type", "&cInvalid economy type.\n&7Valid options: &emoney&7, &eexp&7, &eclaimblocks&7, &eitem");
+        DEFAULTS.put("wizard.invalid-economy-type", "&cInvalid economy type.\n&7Options: &e{options}");
         DEFAULTS.put("wizard.invalid-price", "&cInvalid price. Please enter a number.");
         DEFAULTS.put("wizard.vault-required", "&cMoney payments require Vault and an economy plugin.\n&7Please choose a different payment type.");
         DEFAULTS.put("wizard.yes-or-no", "&7Type &ayes&7 or &cno&7.");
@@ -145,12 +145,16 @@ public class Messages {
         DEFAULTS.put("wizard.rent-start-no-claim", "&a&l=== Rent Claim Sign Setup ===");
         DEFAULTS.put("wizard.rent-enter-claim-id", "&eEnter the claim ID:");
         DEFAULTS.put("wizard.rent-enter-claim-id-hint", "&7(Quick tip: do &6/claimlist&7 to view your claim IDs)");
+        DEFAULTS.put("wizard.rent-enter-economy", "&eWhat payment type?");
+        DEFAULTS.put("wizard.rent-enter-economy-hint", "&7Options: &e{options}");
         
         // Wizard - Sell
         DEFAULTS.put("wizard.sell-start", "&aSelling claim &6{id}&a...");
         DEFAULTS.put("wizard.sell-start-no-claim", "&a&l=== Sell Claim Sign Setup ===");
         DEFAULTS.put("wizard.sell-enter-claim-id", "&eEnter the claim ID:");
         DEFAULTS.put("wizard.sell-enter-claim-id-hint", "&7(Quick tip: do &6/claimlist&7 to view your claim IDs)");
+        DEFAULTS.put("wizard.sell-enter-economy", "&eWhat payment type?");
+        DEFAULTS.put("wizard.sell-enter-economy-hint", "&7Options: &e{options}");
         
         // Wizard - Mailbox
         DEFAULTS.put("wizard.mailbox-start", "&aSetting up mailbox for claim &6{id}&a...");
@@ -159,6 +163,8 @@ public class Messages {
         DEFAULTS.put("wizard.mailbox-self-or-buyable-hint", "&7Self = instant mailbox for you (place [Mailbox] on container). Buyable = others pay to get the mailbox.");
         DEFAULTS.put("wizard.mailbox-enter-claim-id", "&eEnter the claim ID:");
         DEFAULTS.put("wizard.mailbox-enter-claim-id-hint", "&7(Quick tip: do &6/claimlist&7 to view your claim IDs)");
+        DEFAULTS.put("wizard.mailbox-enter-economy", "&eWhat payment type?");
+        DEFAULTS.put("wizard.mailbox-enter-economy-hint", "&7Options: &e{options}");
         
         // Wizard - Auto-paste
         DEFAULTS.put("wizard.auto-paste-ready", "&a✓ Sign format loaded! Edit if needed, then click Done.");

@@ -127,6 +127,21 @@ public class SignListener implements Listener {
         
         throw new IllegalArgumentException("Invalid economy kind: " + input);
     }
+
+    private String getEconomyToken(EcoKind kind) {
+        switch (kind) {
+            case MONEY:
+                return "money";
+            case EXPERIENCE:
+                return "exp";
+            case CLAIMBLOCKS:
+                return "claimblocks";
+            case ITEM:
+                return "item";
+            default:
+                return kind.name().toLowerCase();
+        }
+    }
     
     // Parse renewal specification from string
     private RenewalSpec parseRenewal(String input, EcoKind kind) {
@@ -714,11 +729,9 @@ public class SignListener implements Listener {
 
         // Check economy type permission based on sign type
         String signType = rent ? "rent" : (sell ? "sell" : "mailbox");
-        String ecoPermission = "griefprevention.sign." + signType + "." + kind.name().toLowerCase();
-        if (!player.hasPermission(ecoPermission)) {
-            String ecoName = kind.name().toLowerCase();
-            if (kind == EcoKind.EXPERIENCE) ecoName = "exp";
-            plugin.getMessages().sendEconomyPermissionDenied(player, ecoName, signType, ecoPermission);
+        String ecoPermission = "griefprevention.sign." + signType + "." + getEconomyToken(kind);
+        if (!hasPermissionOrFullAccess(player, ecoPermission)) {
+            plugin.getMessages().sendEconomyPermissionDenied(player, getEconomyToken(kind), signType, ecoPermission);
             return;
         }
 

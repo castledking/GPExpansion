@@ -40,5 +40,5 @@ org.eclipse.m2e.core.prefs
 .factorypath
 
 # Release work
-release-work/
+RELEASE-*.md
 .modrinth/
