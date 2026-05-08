@@ -16,15 +16,12 @@ import java.util.*;
  */
 public class GPBridge {
     private static final double DOMINANT_CELL_COVERAGE_THRESHOLD = 0.50D;
-
-    private enum GetClaimAtMode {
-        TWO_ARG,
-        THREE_ARG_PLAYER,
-        THREE_ARG_PLAYER_DATA,
-        THREE_ARG_CACHED_CLAIM,
-        FOUR_ARG
-    }
-
+    private static final int GET_CLAIM_AT_MODE_UNRESOLVED = 0;
+    private static final int GET_CLAIM_AT_MODE_TWO_ARG = 1;
+    private static final int GET_CLAIM_AT_MODE_THREE_ARG_PLAYER = 2;
+    private static final int GET_CLAIM_AT_MODE_THREE_ARG_PLAYER_DATA = 3;
+    private static final int GET_CLAIM_AT_MODE_THREE_ARG_CACHED_CLAIM = 4;
+    private static final int GET_CLAIM_AT_MODE_FOUR_ARG = 5;
 
     // Debug logging toggle (verbose). Defaults to false.
     private static volatile boolean DEBUG = false;
@@ -40,7 +37,7 @@ public class GPBridge {
     private Object gpInstance;
     private Object dataStore;
     private volatile Method cachedGetClaimAtMethod;
-    private volatile GetClaimAtMode cachedGetClaimAtMode;
+    private volatile int cachedGetClaimAtMode = GET_CLAIM_AT_MODE_UNRESOLVED;
     private volatile boolean cachedGetClaimAtResolved;
     private volatile Method cachedGetPlayerDataMethod;
 
@@ -612,12 +609,12 @@ public class GPBridge {
         }
         try {
             Method target = resolveCachedGetClaimAtMethod();
-            if (target == null || cachedGetClaimAtMode == null) return Optional.empty();
+            if (target == null || cachedGetClaimAtMode == GET_CLAIM_AT_MODE_UNRESOLVED) return Optional.empty();
 
             Object thirdArg = switch (cachedGetClaimAtMode) {
-                case THREE_ARG_PLAYER -> player;
-                case THREE_ARG_PLAYER_DATA -> player != null ? resolvePlayerData(player.getUniqueId()) : null;
-                case THREE_ARG_CACHED_CLAIM -> null;
+                case GET_CLAIM_AT_MODE_THREE_ARG_PLAYER -> player;
+                case GET_CLAIM_AT_MODE_THREE_ARG_PLAYER_DATA -> player != null ? resolvePlayerData(player.getUniqueId()) : null;
+                case GET_CLAIM_AT_MODE_THREE_ARG_CACHED_CLAIM -> null;
                 default -> null;
             };
 
@@ -628,18 +625,18 @@ public class GPBridge {
                 } catch (Throwable ignored) {}
             }
             Object claim;
-            if (cachedGetClaimAtMode == GetClaimAtMode.FOUR_ARG) {
+            if (cachedGetClaimAtMode == GET_CLAIM_AT_MODE_FOUR_ARG) {
                 // Signature: (Location, boolean ignoreHeight, boolean ignoreSubclaims, Claim cached)
                 claim = target.invoke(dataStore, location, true, false, null);
-            } else if (cachedGetClaimAtMode != GetClaimAtMode.TWO_ARG) {
+            } else if (cachedGetClaimAtMode != GET_CLAIM_AT_MODE_TWO_ARG) {
                 claim = target.invoke(dataStore, location, true, thirdArg);
             } else {
                 claim = target.invoke(dataStore, location, true);
             }
             if (claim == null) {
-                if (cachedGetClaimAtMode == GetClaimAtMode.FOUR_ARG) {
+                if (cachedGetClaimAtMode == GET_CLAIM_AT_MODE_FOUR_ARG) {
                     claim = target.invoke(dataStore, location, false, false, null);
-                } else if (cachedGetClaimAtMode != GetClaimAtMode.TWO_ARG) {
+                } else if (cachedGetClaimAtMode != GET_CLAIM_AT_MODE_TWO_ARG) {
                     claim = target.invoke(dataStore, location, false, thirdArg);
                 } else {
                     claim = target.invoke(dataStore, location, false);
@@ -684,7 +681,7 @@ public class GPBridge {
             }
 
             Method resolved = null;
-            GetClaimAtMode resolvedMode = null;
+            int resolvedMode = GET_CLAIM_AT_MODE_UNRESOLVED;
 
             for (Method method : dataStore.getClass().getMethods()) {
                 if (!method.getName().equals("getClaimAt")) continue;
@@ -694,7 +691,7 @@ public class GPBridge {
                         && params[1] == boolean.class
                         && params[2] == boolean.class) {
                     resolved = method;
-                    resolvedMode = GetClaimAtMode.FOUR_ARG;
+                    resolvedMode = GET_CLAIM_AT_MODE_FOUR_ARG;
                     break;
                 }
                 if (params.length == 3
@@ -703,11 +700,11 @@ public class GPBridge {
                     resolved = method;
                     Class<?> third = params[2];
                     if (Player.class.isAssignableFrom(third)) {
-                        resolvedMode = GetClaimAtMode.THREE_ARG_PLAYER;
+                        resolvedMode = GET_CLAIM_AT_MODE_THREE_ARG_PLAYER;
                     } else if (third.getSimpleName().equals("PlayerData") || third.getName().endsWith(".PlayerData")) {
-                        resolvedMode = GetClaimAtMode.THREE_ARG_PLAYER_DATA;
+                        resolvedMode = GET_CLAIM_AT_MODE_THREE_ARG_PLAYER_DATA;
                     } else {
-                        resolvedMode = GetClaimAtMode.THREE_ARG_CACHED_CLAIM;
+                        resolvedMode = GET_CLAIM_AT_MODE_THREE_ARG_CACHED_CLAIM;
                     }
                     continue;
                 }
@@ -716,14 +713,14 @@ public class GPBridge {
                         && Location.class.isAssignableFrom(params[0])
                         && params[1] == boolean.class) {
                     resolved = method;
-                    resolvedMode = GetClaimAtMode.TWO_ARG;
+                    resolvedMode = GET_CLAIM_AT_MODE_TWO_ARG;
                 }
             }
 
             if (resolved == null && claimClass != null) {
                 try {
                     resolved = dataStore.getClass().getMethod("getClaimAt", Location.class, boolean.class, claimClass);
-                    resolvedMode = GetClaimAtMode.THREE_ARG_CACHED_CLAIM;
+                    resolvedMode = GET_CLAIM_AT_MODE_THREE_ARG_CACHED_CLAIM;
                 } catch (NoSuchMethodException ignored) {}
             }
 

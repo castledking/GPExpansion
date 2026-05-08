@@ -844,29 +844,31 @@ public class VersionManager {
         try {
             String content = Files.readString(configFile.toPath());
             if (!content.contains("player-commands:")) return;
-            if (content.matches("(?s).*\\n\\s*-\\s*" + java.util.regex.Pattern.quote(commandPermission) + "\\s*(\\n|$).*")) return;
+            if (content.matches("(?s).*\\n\\s*-\s*" + java.util.regex.Pattern.quote(commandPermission) + "\\s*(\\n|$).*")) return;
 
             String[] lines = content.split("\\R", -1);
             java.util.List<String> newLines = new java.util.ArrayList<>();
-            boolean inSection = false;
+            boolean foundHeader = false;
             boolean inserted = false;
 
-            for (String line : lines) {
-                if (line.matches("^\\s*player-commands:\\s*$")) {
-                    inSection = true;
+            for (int i = 0; i < lines.length; i++) {
+                String line = lines[i];
+                // Detect player-commands: header (any indentation level)
+                if (!foundHeader && line.matches("^(\\s*)player-commands:\\s*$")) {
+                    foundHeader = true;
                     newLines.add(line);
-                    continue;
-                }
-                if (inSection && !inserted && !line.trim().isEmpty() && !line.startsWith(" ") && !line.startsWith("#")) {
-                    newLines.add("  - " + commandPermission);
+                    // Insert right after the header line
+                    String indent = line.replaceAll("^(\\s*).*", "$1") + "  ";
+                    newLines.add(indent + "- " + commandPermission);
                     inserted = true;
-                    inSection = false;
+                    continue;
                 }
                 newLines.add(line);
             }
 
-            if (inSection && !inserted) {
-                newLines.add("  - " + commandPermission);
+            if (!inserted) {
+                plugin.getLogger().warning("VersionManager: Could not find player-commands section to add " + commandPermission);
+                return;
             }
 
             Files.writeString(configFile.toPath(), String.join(System.lineSeparator(), newLines));

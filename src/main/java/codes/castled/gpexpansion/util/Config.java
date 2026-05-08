@@ -53,6 +53,9 @@ public class Config {
         // GUI settings
         DEFAULTS.put("gui.enabled", true);
 
+        // Claim flight settings
+        DEFAULTS.put("passive-claim-flight", false);
+
         // Claim teleport settings
         DEFAULTS.put("teleport.delay-seconds", 3);
         DEFAULTS.put("teleport.cooldown-seconds", 10);
