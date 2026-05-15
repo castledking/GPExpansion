@@ -52,7 +52,11 @@ public class ClaimCommandAddonImpl {
                             String sub = args[1] instanceof String ? (String) args[1] : null;
                             if ("claim".equalsIgnoreCase(root) && "snapshot".equalsIgnoreCase(sub))
                                 return Boolean.TRUE;
+                            return Boolean.FALSE;
                         }
+                        // Default: return false for boolean return types to avoid unboxing NPE on unknown methods
+                        Class<?> retType = method.getReturnType();
+                        if (retType == boolean.class || retType == Boolean.class) return Boolean.FALSE;
                         return null;
                     });
 

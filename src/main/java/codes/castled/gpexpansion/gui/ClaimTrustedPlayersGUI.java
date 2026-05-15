@@ -62,6 +62,7 @@ public class ClaimTrustedPlayersGUI extends BaseGUI {
         return inventory;
     }
 
+    @SuppressWarnings("all")
     private void loadTrustedPlayers() {
         trustedPlayers.clear();
 
@@ -79,7 +80,9 @@ public class ClaimTrustedPlayersGUI extends BaseGUI {
             }
 
             EnumSet<GPBridge.TrustLevel> levels = trusted.getOrDefault(playerId, EnumSet.noneOf(GPBridge.TrustLevel.class));
-            trustedPlayers.add(new TrustedPlayerInfo(playerId, playerName, levels, offlinePlayer.getLastPlayed()));
+            @SuppressWarnings("deprecation")
+            long lastPlayed = offlinePlayer.getLastPlayed();
+            trustedPlayers.add(new TrustedPlayerInfo(playerId, playerName, levels, lastPlayed));
 
             if (!claimDataStore.getTrustedPlayers(claimId).contains(playerId) && !levels.isEmpty()) {
                 claimDataStore.addTrustedPlayer(claimId, playerId, playerName);

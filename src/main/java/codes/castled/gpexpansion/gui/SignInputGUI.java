@@ -1,5 +1,6 @@
 package codes.castled.gpexpansion.gui;
 
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -50,6 +51,10 @@ public class SignInputGUI implements Listener {
         // Use player's current location so we're in the same region
         // IMPORTANT: Use block coordinates for proper comparison with SignChangeEvent
         Location playerLoc = player.getLocation();
+        if (playerLoc == null || playerLoc.getWorld() == null) {
+            player.closeInventory();
+            return;
+        }
         signLocation = new Location(
             playerLoc.getWorld(),
             playerLoc.getBlockX(),
@@ -68,22 +73,14 @@ public class SignInputGUI implements Listener {
             if (block.getState() instanceof Sign) {
                 Sign sign = (Sign) block.getState();
                 
-                // Set prompt lines on the sign
-                try {
-                    // Try modern API first (1.20+)
-                    for (int i = 0; i < 4 && i < promptLines.length; i++) {
-                        sign.getSide(Side.FRONT).setLine(i, promptLines[i] != null ? promptLines[i] : "");
-                    }
-                } catch (NoSuchMethodError | NoClassDefFoundError e) {
-                    // Fallback to legacy API
-                    for (int i = 0; i < 4 && i < promptLines.length; i++) {
-                        sign.setLine(i, promptLines[i] != null ? promptLines[i] : "");
-                    }
+                // Set prompt lines on the sign using modern Component API
+                for (int i = 0; i < 4 && i < promptLines.length; i++) {
+                    sign.getSide(Side.FRONT).lines().set(i, Component.text(promptLines[i] != null ? promptLines[i] : ""));
                 }
                 sign.update();
                 
                 // Open sign editor for player - must run on sign's region thread (not player's)
-                runAtSignLocationDelayed(() -> player.openSign(sign), 2L);
+                runAtSignLocationDelayed(() -> player.openSign(sign, Side.FRONT), 2L);
                 
                 // Schedule cleanup in case player doesn't complete
                 runOnPlayer(() -> {
@@ -112,8 +109,9 @@ public class SignInputGUI implements Listener {
         event.setCancelled(true);
         
         // Get the user input from the designated input line only
-        String rawInput = event.getLine(inputLine);
-        final String result = (rawInput != null ? rawInput : "").trim();
+        Component lineComponent = event.line(inputLine);
+        String rawInput = lineComponent != null ? net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().serialize(lineComponent) : "";
+        final String result = rawInput.trim();
         
         // Cleanup and process - run cleanup on sign location thread, callback on player thread
         runOnPlayer(() -> {

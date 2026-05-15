@@ -353,7 +353,7 @@ public class GlobalClaimSettingsGUI extends BaseGUI {
             inventory.setItem(globalToggleSlot, createGlobalToggleItem());
         } else if (slot == spawnPointSlot) {
             if (player.hasPermission("griefprevention.claim.setspawn")) {
-                closeAndRunOnMainThread(() -> player.performCommand("claim setspawn " + claimId));
+                closeAndRunOnMainThread(() -> runClaimCommand("setspawn", claimId));
             } else {
                 plugin.getMessages().send(player, "general.no-permission");
             }

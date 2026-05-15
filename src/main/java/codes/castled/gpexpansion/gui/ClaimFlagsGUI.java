@@ -1,7 +1,5 @@
 package codes.castled.gpexpansion.gui;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -23,8 +21,6 @@ public class ClaimFlagsGUI extends BaseGUI {
     private static final String GPFLAGS_SET_FLAG = "gpflags.command.setclaimflag";
     /** Base permission to open claim flags GUI */
     private static final String BASE_PERMISSION = "griefprevention.claim.gui.flags";
-    /** Open flags GUI for own claims by ID when not standing in them */
-    private static final String ANYWHERE_PERMISSION = "griefprevention.claim.gui.flags.anywhere";
     /** Open flags GUI for other players' claims */
     private static final String OTHER_PERMISSION = "griefprevention.claim.gui.flags.other";
 

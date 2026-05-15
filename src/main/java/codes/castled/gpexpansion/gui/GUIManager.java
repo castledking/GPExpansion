@@ -1,6 +1,7 @@
 package codes.castled.gpexpansion.gui;
 
-import org.bukkit.ChatColor;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Material;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -150,6 +151,10 @@ public class GUIManager implements Listener {
         closeGUI(player);
         
         Inventory inv = gui.createInventory();
+        if (inv == null) {
+            plugin.getLogger().warning("Failed to create inventory for GUI: " + gui.getClass().getSimpleName());
+            return;
+        }
         openGUIs.put(player.getUniqueId(), gui);
         player.openInventory(inv);
     }
@@ -326,7 +331,7 @@ public class GUIManager implements Listener {
         if (held == Material.GOLDEN_SHOVEL) {
             return true;
         }
-        player.sendMessage(ChatColor.RED + "Try doing " + retryCommand + " again while holding golden shovel to access the " + guiName + ".");
+        player.sendMessage(Component.text("Try doing " + retryCommand + " again while holding golden shovel to access the " + guiName + ".", NamedTextColor.RED));
         return false;
     }
 }

@@ -177,7 +177,7 @@ public class GPBridge {
                         Object claims = getClaims.invoke(dataStore);
                         if (claims instanceof Collection && !((Collection<?>) claims).isEmpty()) {
                             Object firstClaim = ((Collection<?>) claims).iterator().next();
-                            if (claimClassHas3DMethods(firstClaim.getClass())) {
+                            if (firstClaim != null && claimClassHas3DMethods(firstClaim.getClass())) {
                                 isGP3D = true;
                                 if (DEBUG) Bukkit.getLogger().info("[GPBridge] GP3D detected: claim instance has 3D methods");
                                 return true;
@@ -222,6 +222,7 @@ public class GPBridge {
         }
     }
 
+    @SuppressWarnings("all")
     public Optional<ClaimStats> getPlayerClaimStats(Player player) {
         if (!isAvailable()) return Optional.empty();
         try {
@@ -257,6 +258,7 @@ public class GPBridge {
         }
     }
 
+    @SuppressWarnings("all")
     private Integer invokeInt(Object target, String method) {
         try {
             Object res = target.getClass().getMethod(method).invoke(target);
@@ -265,6 +267,7 @@ public class GPBridge {
         return null;
     }
 
+    @SuppressWarnings("all")
     public int getClaimAreaSafe(Object claim) {
         if (claim == null) return 0;
         try {
@@ -750,7 +753,20 @@ public class GPBridge {
             return null;
         }
 
-        String primary = isAdminClaim(claim) ? "ADMIN_CLAIM" : "CLAIM";
+        boolean admin = isAdminClaim(claim);
+        boolean threeD = is3DClaim(claim);
+
+        String primary;
+        if (admin && threeD) {
+            primary = "ADMIN_CLAIM_3D";
+        } else if (admin) {
+            primary = "ADMIN_CLAIM";
+        } else if (threeD) {
+            primary = "SUBDIVISION_3D";
+        } else {
+            primary = "CLAIM";
+        }
+
         Object resolved = enumConstant(typeClass, primary);
         if (resolved != null) {
             return resolved;
@@ -759,9 +775,9 @@ public class GPBridge {
         return enumConstant(typeClass, "CLAIM");
     }
 
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private Object enumConstant(Class<?> enumClass, String name) {
         try {
-            @SuppressWarnings("unchecked")
             Class<? extends Enum> cast = (Class<? extends Enum>) enumClass.asSubclass(Enum.class);
             return Enum.valueOf(cast, name);
         } catch (IllegalArgumentException ignored) {
@@ -1065,7 +1081,7 @@ public class GPBridge {
         
         return java.util.Collections.emptyList();
     }
-
+    @SuppressWarnings("all")
     public Optional<Location> getClaimCenter(Object claim) {
         if (claim == null) return Optional.empty();
         try {
@@ -1089,6 +1105,7 @@ public class GPBridge {
      * Get the claim center XZ coordinates without accessing chunk data.
      * Returns a location with Y=0; caller must get the correct Y on the region thread.
      */
+    @SuppressWarnings("all")
     public Optional<Location> getClaimCenterXZ(Object claim) {
         if (claim == null) return Optional.empty();
         try {
@@ -1160,8 +1177,6 @@ public class GPBridge {
                 }
             }
 
-            if (targetUUID == null) return false;
-
             // Try to find trust management methods in the claim
             Class<?> claimClass = claim.getClass();
 
@@ -1222,10 +1237,13 @@ public class GPBridge {
                 if (claimPermClass != null) {
                     // Get ClaimPermission.Build enum constant
                     Object buildPerm = null;
-                    for (Object enumConst : claimPermClass.getEnumConstants()) {
-                        if (enumConst.toString().equalsIgnoreCase("Build")) {
-                            buildPerm = enumConst;
-                            break;
+                    Object[] enumConstants = claimPermClass.getEnumConstants();
+                    if (enumConstants != null) {
+                        for (Object enumConst : enumConstants) {
+                            if (enumConst != null && enumConst.toString().equalsIgnoreCase("Build")) {
+                                buildPerm = enumConst;
+                                break;
+                            }
                         }
                     }
                     
@@ -1273,8 +1291,6 @@ public class GPBridge {
                     return false;
                 }
             }
-
-            if (targetUUID == null) return false;
 
             Class<?> claimClass = claim.getClass();
 
@@ -1335,8 +1351,6 @@ public class GPBridge {
                     return false;
                 }
             }
-
-            if (targetUUID == null) return false;
 
             // Try to find trust management methods in the claim
             Class<?> claimClass = claim.getClass();
@@ -1408,10 +1422,13 @@ public class GPBridge {
                 if (claimPermClass != null) {
                     // Get ClaimPermission.Inventory enum constant
                     Object inventoryPerm = null;
-                    for (Object enumConst : claimPermClass.getEnumConstants()) {
-                        if (enumConst.toString().equalsIgnoreCase("Inventory")) {
-                            inventoryPerm = enumConst;
-                            break;
+                    Object[] enumConstants = claimPermClass.getEnumConstants();
+                    if (enumConstants != null) {
+                        for (Object enumConst : enumConstants) {
+                            if (enumConst != null && enumConst.toString().equalsIgnoreCase("Inventory")) {
+                                inventoryPerm = enumConst;
+                                break;
+                            }
                         }
                     }
                     
@@ -1458,10 +1475,13 @@ public class GPBridge {
                 try {
                     Class<?> claimPermClass = gpClassLoader.loadClass(cname);
                     Object inventoryPerm = null;
-                    for (Object enumConst : claimPermClass.getEnumConstants()) {
-                        if (enumConst.toString().equalsIgnoreCase("Inventory")) {
-                            inventoryPerm = enumConst;
-                            break;
+                    Object[] enumConstants = claimPermClass.getEnumConstants();
+                    if (enumConstants != null) {
+                        for (Object enumConst : enumConstants) {
+                            if (enumConst != null && enumConst.toString().equalsIgnoreCase("Inventory")) {
+                                inventoryPerm = enumConst;
+                                break;
+                            }
                         }
                     }
                     if (inventoryPerm != null) {
@@ -1480,16 +1500,6 @@ public class GPBridge {
         } catch (ReflectiveOperationException e) {
             if (DEBUG) Bukkit.getLogger().info("[GPBridge] containerTrustPublic: " + e.getMessage());
         }
-        return false;
-    }
-
-    public boolean ban(Player executor, String target, Object claim) {
-        // TODO: Implement ban via enter-deny or claim permissions if available
-        return false;
-    }
-
-    public boolean unban(Player executor, String target, Object claim) {
-        // TODO: Implement unban
         return false;
     }
 
@@ -2426,6 +2436,7 @@ public class GPBridge {
         plugin.getClaimDataStore().save();
     }
 
+    @SuppressWarnings("unused")
     private Object unionClaimPolygon(
             ClassLoader loader,
             Object originalPolygon,
@@ -2687,6 +2698,9 @@ public class GPBridge {
         // Resolve x()/z() Methods from the concrete corner class just once, caching
         // them on the bridge so subsequent polygon builds skip the remapper lookup.
         Object first = list.get(0);
+        if (first == null) {
+            return new PolygonView(new int[0], new int[0], 0, -1, 0, -1);
+        }
         Method xMethod = cachedPointXMethod;
         Method zMethod = cachedPointZMethod;
         if (xMethod == null || zMethod == null || cachedPointClass != first.getClass()) {
@@ -3919,6 +3933,7 @@ public class GPBridge {
     /**
      * Get the corners of a claim as (x1,y1,z1) to (x2,y2,z2)
      */
+    @SuppressWarnings("all")
     public Optional<ClaimCorners> getClaimCorners(Object claim) {
         if (claim == null) return Optional.empty();
         try {
@@ -4123,6 +4138,7 @@ public class GPBridge {
         ACCESS
     }
 
+    @SuppressWarnings("all")
     public EnumSet<TrustLevel> getTrustLevels(Object claim, UUID playerId) {
         EnumSet<TrustLevel> levels = EnumSet.noneOf(TrustLevel.class);
         if (claim == null || playerId == null) return levels;
@@ -4689,7 +4705,11 @@ public class GPBridge {
     private int computeMaxExpand(Object claim, ClaimCorners current, ResizeDirection direction, int remainingBlocks, int width, int depth) {
         if (direction == ResizeDirection.UP || direction == ResizeDirection.DOWN) {
             Object parent = getParentClaim(claim).orElse(null);
-            if (parent == null || parent == claim) return 0;
+            if (parent == null || parent == claim) {
+                // Top-level claim: no parent constraint for Y expansion
+                // Use a generous limit; GP's own resize validation enforces world bounds
+                return is3DClaim(claim) ? 1000 : 0;
+            }
 
             ClaimCorners parentCorners = getClaimCorners(parent).orElse(null);
             if (parentCorners == null) return 0;

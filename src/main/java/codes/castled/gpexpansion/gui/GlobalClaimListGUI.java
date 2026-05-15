@@ -143,7 +143,6 @@ public class GlobalClaimListGUI extends BaseGUI {
             
             // Get owner name
             info.ownerName = getOwnerName(claim);
-            info.ownerUUID = getOwnerUUID(claim);
             
             // Get location
             info.location = getClaimLocation(claim);
@@ -174,18 +173,6 @@ public class GlobalClaimListGUI extends BaseGUI {
             // Ignore
         }
         return "Unknown";
-    }
-    
-    private UUID getOwnerUUID(Object claim) {
-        try {
-            Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
-            if (ownerId instanceof UUID) {
-                return (UUID) ownerId;
-            }
-        } catch (Exception e) {
-            // Ignore
-        }
-        return null;
     }
     
     private String getClaimLocation(Object claim) {
@@ -281,7 +268,7 @@ public class GlobalClaimListGUI extends BaseGUI {
     
     private String getCurrentListedClaimId() {
         Location location = player.getLocation();
-        if (location.getWorld() == null) return null;
+        if (location == null || location.getWorld() == null) return null;
 
         String worldName = location.getWorld().getName();
         String currentClaimId = null;
@@ -435,7 +422,6 @@ public class GlobalClaimListGUI extends BaseGUI {
         final String claimId;
         String name;
         String ownerName;
-        UUID ownerUUID;
         String description;
         Material icon;
         String location;

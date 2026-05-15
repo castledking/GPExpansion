@@ -208,6 +208,9 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
         NamespacedKey keyKind = new NamespacedKey(plugin, "sign.kind");
         NamespacedKey keyClaim = new NamespacedKey(plugin, "sign.claimId");
         
+        // Store PersistentDataType.STRING locally to avoid null type safety warnings
+        PersistentDataType<String, String> stringType = PersistentDataType.STRING;
+        
         // Search through claim looking for signs
         searchLoop:
         for (int x = startX; x <= endX; x++) {
@@ -216,8 +219,10 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
                     Block block = world.getBlockAt(x, y, z);
                     if (block.getState() instanceof Sign sign) {
                         PersistentDataContainer pdc = sign.getPersistentDataContainer();
-                        String signKind = pdc.get(keyKind, PersistentDataType.STRING);
-                        String signClaimId = pdc.get(keyClaim, PersistentDataType.STRING);
+                        @SuppressWarnings("null")
+                        String signKind = pdc.get(keyKind, stringType);
+                        @SuppressWarnings("null")
+                        String signClaimId = pdc.get(keyClaim, stringType);
                         
                         // Check if this sign references our claim
                         if (signClaimId != null && signClaimId.equals(claimId)) {

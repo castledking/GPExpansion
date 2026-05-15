@@ -1,13 +1,12 @@
 package codes.castled.gpexpansion.listener;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
-import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.OfflinePlayer;
@@ -29,7 +28,6 @@ import org.bukkit.persistence.PersistentDataType;
 import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
-import codes.castled.gpexpansion.util.Messages;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -52,6 +50,7 @@ public class SignProtectionListener implements Listener {
         this.keyRenter = new NamespacedKey(plugin, "rent.renter");
     }
 
+    @SuppressWarnings("null")
     private boolean isOurSign(Block b) {
         if (b == null) return false;
         Material t = b.getType();
@@ -146,6 +145,7 @@ public class SignProtectionListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @SuppressWarnings("null")
     public void onSignInteract(PlayerInteractEvent event) {
         // Only process right-clicks on blocks with main hand
         if (event.getHand() != org.bukkit.inventory.EquipmentSlot.HAND ||
@@ -200,9 +200,9 @@ public class SignProtectionListener implements Listener {
                         ClaimDataStore.EvictionData eviction = dataStore.getEviction(claimId).orElse(null);
                         if (eviction == null) {
                             plugin.getMessages().send(player, "eviction.active-renter");
-                            plugin.getMessages().send(player, "eviction.start-eviction-notice", 
-                                "{command}", ChatColor.GOLD + "/claim evict " + claimId + ChatColor.YELLOW,
-                                "{duration}", plugin.getEvictionNoticePeriodDisplay());
+                            plugin.getMessages().send(player, "eviction.start-eviction-notice",
+                                "{command}", "§6/claim evict " + claimId + "§e",
+                                "{duration}", plugin.getRentalSignManager().getEvictionNoticePeriodDisplay());
                             event.setCancelled(true);
                             return;
                         }
@@ -257,6 +257,7 @@ public class SignProtectionListener implements Listener {
         return handleBreakOfManagedSign(signBlock, p, event);
     }
 
+    @SuppressWarnings("null")
     private boolean handleBreakOfManagedSign(Block signBlock, Player p, BlockBreakEvent event) {
         Sign sign = (Sign) signBlock.getState();
         String signKind = sign.getPersistentDataContainer().get(keyKind, PersistentDataType.STRING);
@@ -300,9 +301,9 @@ public class SignProtectionListener implements Listener {
                 if (eviction == null) {
                     // No eviction started - tell owner to use /claim evict
                     plugin.getMessages().send(p, "eviction.active-renter");
-                    plugin.getMessages().send(p, "eviction.start-eviction-notice", 
-                        "{command}", ChatColor.GOLD + "/claim evict " + claimId + ChatColor.YELLOW,
-                        "{duration}", plugin.getEvictionNoticePeriodDisplay());
+                    plugin.getMessages().send(p, "eviction.start-eviction-notice",
+                        "{command}", "§6/claim evict " + claimId + "§e",
+                        "{duration}", plugin.getRentalSignManager().getEvictionNoticePeriodDisplay());
                     plugin.getMessages().send(p, "eviction.cannot-remove-renter");
                     return false;
                 }
@@ -313,8 +314,8 @@ public class SignProtectionListener implements Listener {
                     String timeRemaining = formatDuration(remaining);
                     plugin.getMessages().send(p, "eviction.notice-pending");
                     plugin.getMessages().send(p, "eviction.time-remaining", "{time}", timeRemaining);
-                    plugin.getMessages().send(p, "eviction.check-status-hint", 
-                        "{command}", ChatColor.GOLD + "/claim evict status " + claimId + ChatColor.GRAY);
+                    plugin.getMessages().send(p, "eviction.check-status-hint",
+                        "{command}", "§6/claim evict status " + claimId + "§7");
                     return false;
                 }
                 // Eviction is effective - allow proceeding with confirmation
@@ -322,7 +323,7 @@ public class SignProtectionListener implements Listener {
         }
         
         if (!p.isSneaking()) {
-            p.sendMessage(ChatColor.YELLOW + "Sneak and break to manage this sign.");
+            plugin.getMessages().send(p, "sign-protection.sneak-to-manage");
             return false;
         }
         String key = signBlock.getWorld().getName()+":"+signBlock.getX()+":"+signBlock.getY()+":"+signBlock.getZ()+":"+p.getUniqueId();
@@ -343,34 +344,38 @@ public class SignProtectionListener implements Listener {
                     OfflinePlayer renter = Bukkit.getOfflinePlayer(renterId);
                     String renterName = renter.getName() != null ? renter.getName() : renterId.toString();
 
-                    Component message = Component.text(ChatColor.YELLOW + "Warning: " + ChatColor.WHITE + renterName + ChatColor.YELLOW + " is currently renting this from you. Try ")
-                            .append(Component.text("/claim evict " + renterName, NamedTextColor.GOLD)
-                                    .clickEvent(ClickEvent.clickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/claim evict " + renterName))
-                                    .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, Component.text("Click to run /claim evict " + renterName))))
-                            .append(Component.text(" while standing in the claim to start the eviction process.", NamedTextColor.YELLOW));
+                    String warningMessage = plugin.getMessages().getRaw("sign-protection.renter-warning", 
+                        "{renter}", renterName);
+                    TextComponent hoverText = plugin.getMessages().get("sign-protection.renter-warning-hover", 
+                        "{renter}", renterName);
+                    
+                    Component message = LegacyComponentSerializer.legacySection().deserialize(warningMessage)
+                            .clickEvent(ClickEvent.suggestCommand("/claim evict " + renterName))
+                            .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, hoverText));
                     p.sendMessage(message);
                 } catch (IllegalArgumentException ignored) {
                     // Fallback to regular message if UUID parsing fails
-                    Component base = Component.text(ChatColor.YELLOW + plugin.getMessages().getRaw("eviction.confirm-deletion-click"))
-                            .clickEvent(ClickEvent.clickEvent(ClickEvent.Action.RUN_COMMAND, "/gpexpansion:rentalsignconfirm "+signBlock.getWorld().getName()+" "+signBlock.getX()+" "+signBlock.getY()+" "+signBlock.getZ()))
+                    Component base = LegacyComponentSerializer.legacySection().deserialize("§e" + plugin.getMessages().getRaw("eviction.confirm-deletion-click"))
+                            .clickEvent(ClickEvent.runCommand("/gpexpansion:rentalsignconfirm "+signBlock.getWorld().getName()+" "+signBlock.getX()+" "+signBlock.getY()+" "+signBlock.getZ()))
                             .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, Component.text(plugin.getMessages().getRaw("eviction.confirm-deletion"))));
                     p.sendMessage(base);
                     plugin.getMessages().send(p, "eviction.confirm-deletion-alt");
                 }
             } else {
                 // Not currently rented - use regular confirmation
-                Component base = Component.text(ChatColor.YELLOW + plugin.getMessages().getRaw("eviction.confirm-deletion-click"))
-                        .clickEvent(ClickEvent.clickEvent(ClickEvent.Action.RUN_COMMAND, "/gpexpansion:rentalsignconfirm "+signBlock.getWorld().getName()+" "+signBlock.getX()+" "+signBlock.getY()+" "+signBlock.getZ()))
+                Component base = LegacyComponentSerializer.legacySection().deserialize("§e" + plugin.getMessages().getRaw("eviction.confirm-deletion-click"))
+                        .clickEvent(ClickEvent.runCommand("/gpexpansion:rentalsignconfirm "+signBlock.getWorld().getName()+" "+signBlock.getX()+" "+signBlock.getY()+" "+signBlock.getZ()))
                         .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, Component.text(plugin.getMessages().getRaw("eviction.confirm-deletion"))));
                 p.sendMessage(base);
-                p.sendMessage(ChatColor.GRAY + "You can also confirm by " + ChatColor.GOLD + "sneak + right clicking " + ChatColor.GRAY + "the sign.");
+                plugin.getMessages().send(p, "sign-protection.confirm-alternative");
             }
 
             if (renterStr != null && !renterStr.isEmpty()) {
                 try {
                     UUID rid = UUID.fromString(renterStr);
                     OfflinePlayer off = Bukkit.getOfflinePlayer(rid);
-                    p.sendMessage(ChatColor.GOLD + "Warning: trust will be removed for " + ChatColor.YELLOW + (off != null ? off.getName() : rid));
+                    String playerName = off != null ? off.getName() : rid.toString();
+                    plugin.getMessages().send(p, "sign-protection.trust-removal-warning", "{player}", playerName);
                 } catch (IllegalArgumentException ignored) {}
             }
             return false; // cancel this break
@@ -381,6 +386,7 @@ public class SignProtectionListener implements Listener {
         return allowBreak;
     }
 
+    @SuppressWarnings("null")
     private boolean performDelete(Block signBlock, Player player) {
         try {
             Sign sign = (Sign) signBlock.getState();
@@ -422,7 +428,7 @@ public class SignProtectionListener implements Listener {
                     return true; // allow break - sign is destroyed
                 }
                 // Has renter (or was just evicted) - reset to [Rent] available and keep sign block
-                plugin.resetRentalSign(signBlock);
+                plugin.getRentalSignManager().resetRentalSign(signBlock);
                 if (player != null) {
                     plugin.getMessages().send(player, "eviction.rental-sign-removed");
                 }

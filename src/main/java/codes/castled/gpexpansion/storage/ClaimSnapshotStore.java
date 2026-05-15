@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 import org.bukkit.Chunk;
-import org.bukkit.entity.Player;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * Stores and restores block snapshots for claims.
@@ -56,10 +56,10 @@ public class ClaimSnapshotStore {
 
     /** A single block change (location + data) for sending to clients after restore. */
     public static class BlockChange {
-        public final Location location;
-        public final BlockData data;
+        public final @NotNull Location location;
+        public final @NotNull BlockData data;
 
-        public BlockChange(Location location, BlockData data) {
+        public BlockChange(@NotNull Location location, @NotNull BlockData data) {
             this.location = location;
             this.data = data;
         }
@@ -269,7 +269,6 @@ public class ClaimSnapshotStore {
      */
     private boolean restoreSnapshotSnap(String claimId, String snapshotId, World world, File claimDir, File snapFile) {
         final String fid = claimId;
-        final String fsid = snapshotId;
         SchedulerAdapter.runAsyncNow(plugin, () -> {
             try {
                 YamlConfiguration yaml = YamlConfiguration.loadConfiguration(snapFile);
@@ -288,9 +287,13 @@ public class ClaimSnapshotStore {
                     if (Objects.equals(String.valueOf(m.get("id")), snapshotId)) { entry = m; break; }
                 }
                 if (entry == null || entry.get("originX") == null) return;
-                int ox = ((Number) entry.get("originX")).intValue();
-                int oy = ((Number) entry.get("originY")).intValue();
-                int oz = ((Number) entry.get("originZ")).intValue();
+                Object oxObj = entry.get("originX");
+                Object oyObj = entry.get("originY");
+                Object ozObj = entry.get("originZ");
+                if (oxObj == null || oyObj == null || ozObj == null) return;
+                int ox = ((Number) oxObj).intValue();
+                int oy = ((Number) oyObj).intValue();
+                int oz = ((Number) ozObj).intValue();
 
                 Map<String, List<BlockToPlace>> byChunk = new HashMap<>();
                 for (Object raw : rawBlocks) {
@@ -386,9 +389,13 @@ public class ClaimSnapshotStore {
                 if (Objects.equals(String.valueOf(m.get("id")), snapshotId)) { entry = m; break; }
             }
             if (entry == null || entry.get("originX") == null) return false;
-            int ox = ((Number) entry.get("originX")).intValue();
-            int oy = ((Number) entry.get("originY")).intValue();
-            int oz = ((Number) entry.get("originZ")).intValue();
+            Object oxObj = entry.get("originX");
+            Object oyObj = entry.get("originY");
+            Object ozObj = entry.get("originZ");
+            if (oxObj == null || oyObj == null || ozObj == null) return false;
+            int ox = ((Number) oxObj).intValue();
+            int oy = ((Number) oyObj).intValue();
+            int oz = ((Number) ozObj).intValue();
             StructureManager sm = Bukkit.getServer().getStructureManager();
             if (sm == null) {
                 plugin.getLogger().warning("StructureManager is null on restore.");
@@ -532,6 +539,7 @@ public class ClaimSnapshotStore {
     /**
      * Get the origin location of a snapshot (claim min corner). Use this on Folia to schedule restore at the claim's region.
      */
+    @SuppressWarnings("null")
     public Optional<Location> getSnapshotOrigin(String claimId, String snapshotId, World world) {
         File claimDir = new File(dataDir, sanitize(claimId));
         File indexF = new File(claimDir, "index.yml");
@@ -541,10 +549,13 @@ public class ClaimSnapshotStore {
         if (list == null) return Optional.empty();
         for (Map<?, ?> m : list) {
             if (!Objects.equals(String.valueOf(m.get("id")), snapshotId)) continue;
-            if (m.get("originX") == null) return Optional.empty();
-            int ox = ((Number) m.get("originX")).intValue();
-            int oy = ((Number) m.get("originY")).intValue();
-            int oz = ((Number) m.get("originZ")).intValue();
+            Object oxObj = m.get("originX");
+            Object oyObj = m.get("originY");
+            Object ozObj = m.get("originZ");
+            if (oxObj == null || oyObj == null || ozObj == null) return Optional.empty();
+            int ox = ((Number) oxObj).intValue();
+            int oy = ((Number) oyObj).intValue();
+            int oz = ((Number) ozObj).intValue();
             return Optional.of(new Location(world, ox, oy, oz));
         }
         return Optional.empty();
@@ -595,30 +606,6 @@ public class ClaimSnapshotStore {
         }
     }
 
-    /**
-     * Send every block change to every player in the world so clients see the restore (Folia often doesn't broadcast).
-     */
-    public void sendBlockChangesToPlayers(World world, List<BlockChange> changes) {
-        if (changes == null || changes.isEmpty()) return;
-        List<Player> players = world.getPlayers();
-        if (players.isEmpty()) return;
-        int totalSent = 0;
-        for (Player p : players) {
-            if (!p.isOnline() || p.getWorld() != world) continue;
-            for (BlockChange c : changes) {
-                if (c.location.getWorld() != world) continue;
-                if (plugin.getConfigManager().isDebugEnabled() && c.location.getBlockX() == DEBUG_X && c.location.getBlockY() == DEBUG_Y && c.location.getBlockZ() == DEBUG_Z && "world".equals(world.getName())) {
-                    plugin.getLogger().info("[Snapshot debug] sendBlockChange to " + p.getName() + ": " + DEBUG_X + "," + DEBUG_Y + "," + DEBUG_Z + " -> " + c.data.getAsString());
-                }
-                p.sendBlockChange(c.location, c.data);
-                totalSent++;
-            }
-            try {
-                p.teleport(p.getLocation());
-            } catch (Throwable ignored) {}
-        }
-        plugin.getLogger().info("Snapshot restore: sent " + totalSent + " block updates to " + players.size() + " player(s), refreshed chunks.");
-    }
 
     private static String sanitize(String claimId) {
         if (claimId == null) return "unknown";

@@ -41,8 +41,9 @@ public class ClaimResizeGUI extends BaseGUI {
         this.claim = claim;
         this.claimId = claimId;
         this.gp = new GPBridge();
-        this.openingLocation = player.getLocation().clone();
-        this.openingFacing = facingFromYaw(openingLocation.getYaw());
+        Location loc = player.getLocation();
+        this.openingLocation = loc != null ? loc.clone() : null;
+        this.openingFacing = openingLocation != null ? facingFromYaw(openingLocation.getYaw()) : GPBridge.ResizeDirection.SOUTH;
 
         if (config != null) {
             summarySlot = config.getInt("items.summary.slot", summarySlot);
@@ -100,8 +101,8 @@ public class ClaimResizeGUI extends BaseGUI {
         lore.add("&7Remaining claim blocks: &6" + remaining);
         lore.add("");
         lore.add(vertical
-            ? "&aVertical resize enabled for this 3D subdivision"
-            : "&8Vertical resize only appears for 3D subdivisions");
+            ? "&aVertical resize enabled (3D claim)"
+            : "&8Vertical resize only appears for 3D claims");
         return createItem(Material.BOOK, "&6&lResize Summary", lore);
     }
 
@@ -146,7 +147,7 @@ public class ClaimResizeGUI extends BaseGUI {
 
         if (direction == GPBridge.ResizeDirection.UP || direction == GPBridge.ResizeDirection.DOWN) {
             lore.add("");
-            lore.add("&7Only available for 3D subdivisions.");
+            lore.add("&7Only available for 3D claims.");
         }
 
         return createItem(materialFor(direction), titleFor(direction), lore);
@@ -185,6 +186,10 @@ public class ClaimResizeGUI extends BaseGUI {
     }
 
     private void attemptResize(GPBridge.ResizeDirection direction, int offset) {
+        if (openingLocation == null) {
+            player.sendMessage(colorize("&cCannot resize: player location is unavailable."));
+            return;
+        }
         if (!canManageClaim()) {
             plugin.getMessages().send(player, "general.no-permission");
             return;
@@ -195,7 +200,7 @@ public class ClaimResizeGUI extends BaseGUI {
             return;
         }
         if ((direction == GPBridge.ResizeDirection.UP || direction == GPBridge.ResizeDirection.DOWN) && !canUseVerticalResize()) {
-            player.sendMessage(colorize("&cVertical resize is only available for 3D subdivisions."));
+            player.sendMessage(colorize("&cVertical resize is only available for 3D claims."));
             return;
         }
 
@@ -311,7 +316,7 @@ public class ClaimResizeGUI extends BaseGUI {
     }
 
     private boolean canUseVerticalResize() {
-        return gp.isSubdivision(claim) && gp.is3DClaim(claim);
+        return gp.is3DClaim(claim) && (gp.isSubdivision(claim) || gp.isAdminClaim(claim));
     }
 
     private Material materialFor(GPBridge.ResizeDirection direction) {
@@ -361,6 +366,7 @@ public class ClaimResizeGUI extends BaseGUI {
     }
 
     private Location getCompassTarget() {
+        if (openingLocation == null) return null;
         Location target = openingLocation.clone();
         switch (openingFacing) {
             case NORTH -> target.add(0, 0, -32);

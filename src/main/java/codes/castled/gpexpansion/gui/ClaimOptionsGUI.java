@@ -406,8 +406,9 @@ public class ClaimOptionsGUI extends BaseGUI {
         if (ownerId == null) return "Unknown";
 
         OfflinePlayer owner = Bukkit.getOfflinePlayer(ownerId);
-        if (owner.getName() != null && !owner.getName().isEmpty()) {
-            return owner.getName();
+        String ownerName = owner.getName();
+        if (ownerName != null && !ownerName.isEmpty()) {
+            return ownerName;
         }
         return ownerId.toString().substring(0, 8);
     }

@@ -900,41 +900,8 @@ public final class ClaimMapEditorBridge {
         };
     }
 
-    private OperationPlan buildUnclaimPlan(GPBridge.ClaimCorners corners, CellSelection cell) {
-        List<OperationPlan> candidates = new ArrayList<>(4);
-
-        // Must touch a claim boundary on exactly one side.
-        if (cell.minZ() <= corners.z1 && cell.maxZ() >= corners.z1
-                && rangesOverlap(cell.minX(), cell.maxX(), corners.x1, corners.x2)) {
-            int amount = cell.maxZ() - corners.z1 + 1;
-            if (amount > 0) candidates.add(new OperationPlan(GPBridge.ResizeDirection.NORTH, -amount));
-        }
-        if (cell.minZ() <= corners.z2 && cell.maxZ() >= corners.z2
-                && rangesOverlap(cell.minX(), cell.maxX(), corners.x1, corners.x2)) {
-            int amount = corners.z2 - cell.minZ() + 1;
-            if (amount > 0) candidates.add(new OperationPlan(GPBridge.ResizeDirection.SOUTH, -amount));
-        }
-        if (cell.minX() <= corners.x1 && cell.maxX() >= corners.x1
-                && rangesOverlap(cell.minZ(), cell.maxZ(), corners.z1, corners.z2)) {
-            int amount = cell.maxX() - corners.x1 + 1;
-            if (amount > 0) candidates.add(new OperationPlan(GPBridge.ResizeDirection.WEST, -amount));
-        }
-        if (cell.minX() <= corners.x2 && cell.maxX() >= corners.x2
-                && rangesOverlap(cell.minZ(), cell.maxZ(), corners.z1, corners.z2)) {
-            int amount = corners.x2 - cell.minX() + 1;
-            if (amount > 0) candidates.add(new OperationPlan(GPBridge.ResizeDirection.EAST, -amount));
-        }
-
-        if (candidates.size() != 1) return null;
-        return candidates.get(0);
-    }
-
     private boolean rangesOverlap(int minA, int maxA, int minB, int maxB) {
         return maxA >= minB && minA <= maxB;
-    }
-
-    private boolean touchesCoordinateBand(int min, int max, int coordinate) {
-        return touchesCoordinateBand(min, max, coordinate, CELL_ADJACENCY_TOLERANCE);
     }
 
     private boolean touchesCoordinateBand(int min, int max, int coordinate, int tolerance) {

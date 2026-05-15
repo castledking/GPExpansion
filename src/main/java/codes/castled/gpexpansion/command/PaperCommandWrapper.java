@@ -11,7 +11,6 @@ import org.jetbrains.annotations.NotNull;
 import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
 
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 public class PaperCommandWrapper extends Command {
     private final CommandExecutor executor;

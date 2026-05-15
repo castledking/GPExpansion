@@ -28,7 +28,7 @@ update-checker:
   
   # In-game messages (to admins)
   ingame-update-available: "&8[&6GPX&8] &e&lUPDATE AVAILABLE!&r &7Current: {current}, Latest: {latest}"
-  ingame-download-link: "&8[&6GPX&8] &7Download at: &e{url}"
+  ingame-download-link: "&8[&6GPX&8] &7Download at: &e&n{url}"
   ingame-check-failed: "&8[&6GPX&8] &cFailed to check for updates"
 
 # =============================================================================
@@ -105,6 +105,21 @@ sign-creation:
   gp3d-required: "&cMailbox signs require GP3D (GriefPrevention 3D) to be installed."
   mailbox-must-be-subdivision: "&cMailbox signs must reference a 3D subdivision."
   mailbox-wrong-size: "&cMailbox signs must reference a 1x1x1 subdivision (current: {width}x{height}x{depth})."
+
+# =============================================================================
+# SIGN PROTECTION MESSAGES
+# =============================================================================
+sign-protection:
+  # Sign management
+  sneak-to-manage: "&eSneak and break to manage this sign."
+  confirm-alternative: "&7You can also confirm by &6sneak + right clicking &7the sign."
+  
+  # Renter warning
+  renter-warning: "&eWarning: &f{renter} &eis currently renting this from you. Try &n/claim evict {renter}&e while standing in the claim to start the eviction process."
+  renter-warning-hover: "Click to run /claim evict {renter}"
+  
+  # Trust removal warning
+  trust-removal-warning: "&eWarning: trust will be removed for &6{player}"
 
 # =============================================================================
 # SIGN DESTRUCTION MESSAGES

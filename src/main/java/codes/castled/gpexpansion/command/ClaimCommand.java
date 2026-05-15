@@ -40,11 +40,9 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private static final class PendingClaimTeleport {
         private final TaskHandle task;
-        private final String claimId;
 
         private PendingClaimTeleport(TaskHandle task, String claimId) {
             this.task = task;
-            this.claimId = claimId;
         }
     }
     
@@ -503,8 +501,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                     // Now execute the command on the player's thread
                     Runnable playerTask = () -> {
                         org.bukkit.Location original = player.getLocation();
-                        plugin.teleportEntity(player, centerOpt.get());
-                        
+plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
+
                         // Execute the command with the player as the sender
                         String cmd = finalBaseCmd;
                         if (passArgs.length > 0) {
@@ -519,7 +517,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                         }
                         
                         // Teleport back
-                        plugin.teleportEntity(player, original);
+                        plugin.getSchedulerFacade().teleportEntity(player, original);
                     };
                     
                     if (isFolia()) {
@@ -1300,7 +1298,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
             if (insideClaim) {
                 Optional<Location> eject = gp.getClaimCenter(ctx.mainClaim);
-                eject.ifPresent(location -> plugin.teleportEntity(target, location));
+                eject.ifPresent(location -> plugin.getSchedulerFacade().teleportEntity(target, location));
             }
         }
 
@@ -1455,7 +1453,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             this.mainClaimId = mainClaimId;
         }
     }
-
+    
+    @SuppressWarnings("all")
     private Optional<ClaimContext> resolveClaimContext(CommandSender sender, Player player, Optional<Object> explicitClaim,
                                                        String explicitId, boolean allowOther, boolean requireOwnership, boolean allowAnywhere,
                                                        String actionDescription) {
@@ -1599,7 +1598,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         boolean allowOther = sender.hasPermission("griefprevention.evict.other");
 
         if (args.length == 0) {
-            String noticeDisplay = plugin.getEvictionNoticePeriodDisplay();
+            String noticeDisplay = plugin.getRentalSignManager().getEvictionNoticePeriodDisplay();
             sender.sendMessage(plugin.getMessages().get("claim.evict-usage"));
             sender.sendMessage(plugin.getMessages().get("claim.evict-help", "{duration}", noticeDisplay));
             return true;
@@ -1652,10 +1651,10 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        long noticeMs = plugin.getEvictionNoticePeriodMs();
+        long noticeMs = plugin.getRentalSignManager().getEvictionNoticePeriodMs();
         long initiatedAt = now;
         long effectiveAt = initiatedAt + noticeMs;
-        String noticeDisplay = plugin.getEvictionNoticePeriodDisplay();
+        String noticeDisplay = plugin.getRentalSignManager().getEvictionNoticePeriodDisplay();
 
         UUID ownerId = gp.getClaimOwner(ctx.mainClaim);
         if (ownerId == null) {
@@ -1777,6 +1776,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
+    @SuppressWarnings("null")
     private boolean handleRentalSignConfirm(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         Player player = (Player) sender;
@@ -1845,7 +1845,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         }
 
         if ("RENT".equals(signKind)) {
-            plugin.resetRentalSign(b);
+            plugin.getRentalSignManager().resetRentalSign(b);
         } else {
             // Non-rent signs (e.g. mailbox): clear data and remove block
             if (claimId != null) {
@@ -1912,8 +1912,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         // Give the player their pending payments
         boolean success = true;
 
-        if (totalMoney > 0 && plugin.isEconomyAvailable()) {
-            if (!plugin.depositMoney(player, totalMoney)) {
+        if (totalMoney > 0 && plugin.getEconomyManager().isEconomyAvailable()) {
+            if (!plugin.getEconomyManager().depositMoney(player, totalMoney)) {
                 success = false;
                 sender.sendMessage(plugin.getMessages().get("claim.pending-rent-failed-money",
                     "{amount}", String.valueOf(totalMoney)));
@@ -1985,7 +1985,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             for (String cid : claimIds) {
                 java.util.List<codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry> list = plugin.getSnapshotStore().listSnapshots(cid);
                 if (list.isEmpty()) continue;
-                sender.sendMessage(org.bukkit.ChatColor.GRAY + "--- Claim " + cid + " ---");
+                sender.sendMessage(net.kyori.adventure.text.Component.text("--- Claim " + cid + " ---", net.kyori.adventure.text.format.NamedTextColor.GRAY));
                 sender.sendMessage(plugin.getMessages().get("snapshot.list-header", "{count}", String.valueOf(list.size())));
                 for (codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry e : list) {
                     sender.sendMessage(plugin.getMessages().get("snapshot.list-entry", "{id}", e.id, "{date}", sdf.format(new java.util.Date(e.created))));
@@ -2017,7 +2017,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 for (String cid : claimIds) {
                     java.util.List<codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry> list = plugin.getSnapshotStore().listSnapshots(cid);
                     if (list.isEmpty()) continue;
-                    sender.sendMessage(org.bukkit.ChatColor.GRAY + "--- Claim " + cid + " ---");
+                    sender.sendMessage(net.kyori.adventure.text.Component.text("--- Claim " + cid + " ---", net.kyori.adventure.text.format.NamedTextColor.GRAY));
                     sender.sendMessage(plugin.getMessages().get("snapshot.list-header", "{count}", String.valueOf(list.size())));
                     for (codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry e : list) {
                         sender.sendMessage(plugin.getMessages().get("snapshot.list-entry", "{id}", e.id, "{date}", sdf.format(new java.util.Date(e.created))));
@@ -2074,23 +2074,13 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
             GPBridge.ClaimCorners corners = cornersOpt.get();
-            int minX = Math.min(corners.x1, corners.x2);
-            int maxX = Math.max(corners.x1, corners.x2);
-            int minY = Math.min(corners.y1, corners.y2);
-            int maxY = Math.max(corners.y1, corners.y2);
-            int minZ = Math.min(corners.z1, corners.z2);
-            int maxZ = Math.max(corners.z1, corners.z2);
-            if (!gp.is3DClaim(claim)) {
-                minY = world.getMinHeight();
-                maxY = world.getMaxHeight() - 1;
-            }
             Location loc = world.getBlockAt(corners.x1, corners.y1, corners.z1).getLocation();
             final String finalClaimId = claimId;
             final Object finalClaim = claim;
-            plugin.runAtLocation(loc, () -> {
+            plugin.getSchedulerFacade().runAtLocation(loc, () -> {
                 codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry entry =
                     plugin.getSnapshotStore().createSnapshot(finalClaimId, finalClaim, world);
-                plugin.runAtEntity(player, () -> {
+                plugin.getSchedulerFacade().runAtEntity(player, () -> {
                     if (entry == null) {
                         sender.sendMessage(plugin.getMessages().get("snapshot.create-failed"));
                     } else {
@@ -2139,7 +2129,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     }
 
     private void completeClaimTeleport(CommandSender sender, Player targetPlayer, String claimId, Location destination) {
-        plugin.teleportEntity(targetPlayer, destination);
+        plugin.getSchedulerFacade().teleportEntity(targetPlayer, destination);
         if (sender == targetPlayer) {
             applyClaimTeleportCooldown(targetPlayer);
         }
@@ -2642,6 +2632,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         return null;
     }
     
+    @SuppressWarnings("all")
     private List<String> completeTab(CommandSender sender, Command command, String alias, String[] args) {
         // Standalone /claimlist and /claimslist: no args (they show your claims list); return empty so no misleading /claim subcommands
         if (command.getName().equalsIgnoreCase("claimslist") || alias.equalsIgnoreCase("claimslist") || alias.equalsIgnoreCase("claimlist")) {

@@ -22,7 +22,7 @@ import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.command.ClaimCommand;
 
 import java.net.MalformedURLException;
-import java.net.URL;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.UUID;
@@ -130,6 +130,7 @@ public abstract class BaseGUI {
      * Create an item from a configuration section.
      * Supports textured player heads via 'skull-texture' or 'skull-owner' keys.
      */
+    @SuppressWarnings("deprecation")
     protected ItemStack createItemFromSection(ConfigurationSection section, Map<String, String> placeholders) {
         String materialName = section.getString("material", "STONE");
         Material material = Material.matchMaterial(materialName);
@@ -193,6 +194,7 @@ public abstract class BaseGUI {
      * @param base64Texture The base64 encoded texture string (or URL to texture)
      * @return ItemStack with the custom texture applied
      */
+    @SuppressWarnings("deprecation")
     protected ItemStack createTexturedSkull(String base64Texture) {
         ItemStack skull = new ItemStack(Material.PLAYER_HEAD);
         if (base64Texture == null || base64Texture.isEmpty()) return skull;
@@ -219,7 +221,11 @@ public abstract class BaseGUI {
             // Create a player profile with the texture
             PlayerProfile profile = Bukkit.createPlayerProfile(UUID.randomUUID());
             PlayerTextures textures = profile.getTextures();
-            textures.setSkin(new URL(textureUrl));
+            try {
+                textures.setSkin(URI.create(textureUrl).toURL());
+            } catch (MalformedURLException e) {
+                throw new MalformedURLException("Invalid URL: " + textureUrl);
+            }
             profile.setTextures(textures);
             
             meta.setOwnerProfile(profile);
@@ -572,8 +578,12 @@ public abstract class BaseGUI {
     /**
      * Play a click sound to the player.
      */
+    @SuppressWarnings("null")
     protected void playClickSound() {
-        player.playSound(player.getLocation(), org.bukkit.Sound.UI_BUTTON_CLICK, 0.5f, 1.0f);
+        org.bukkit.Location loc = player.getLocation();
+        if (loc != null) {
+            player.playSound(loc, org.bukkit.Sound.UI_BUTTON_CLICK, 0.5f, 1.0f);
+        }
     }
     
     /**

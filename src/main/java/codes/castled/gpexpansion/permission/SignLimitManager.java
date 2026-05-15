@@ -497,29 +497,23 @@ public class SignLimitManager {
     
     /**
      * Get the current number of signs a player has created
-     * This would need to be tracked separately or counted from existing signs
      */
     public int getCurrentSellSigns(Player player) {
-        // TODO: Implement tracking of current signs
-        // This could be done by counting signs in the world owned by the player
-        // or by maintaining a database of created signs
-        return 0;
+        return plugin.getClaimDataStore().countSellSignsForPlayer(player.getUniqueId());
     }
-    
+
     /**
      * Get the current number of rent signs a player has created
      */
     public int getCurrentRentSigns(Player player) {
-        // TODO: Implement tracking of current signs
-        return 0;
+        return plugin.getClaimDataStore().countRentSignsForPlayer(player.getUniqueId());
     }
-    
+
     /**
      * Get the current number of mailbox signs a player has created
      */
     public int getCurrentMailboxSigns(Player player) {
-        // TODO: Implement tracking of current signs
-        return 0;
+        return plugin.getClaimDataStore().countMailboxSignsForPlayer(player.getUniqueId());
     }
     
     /**

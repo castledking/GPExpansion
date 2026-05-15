@@ -140,6 +140,7 @@ public class GPFlagsBridge {
      * @param flagName The flag name
      * @return Optional containing the flag state, or empty if not set
      */
+    @SuppressWarnings("all")
     public static Optional<ClaimFlagState> getFlagState(String claimId, String flagName) {
         if (!isAvailable() || claimId == null || flagName == null) return Optional.empty();
 

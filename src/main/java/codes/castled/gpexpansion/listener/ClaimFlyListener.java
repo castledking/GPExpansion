@@ -38,6 +38,10 @@ public class ClaimFlyListener implements Listener {
     // legitimately granted. We must only undo what we ourselves enabled.
     private final Set<UUID> claimFlightGranted = ConcurrentHashMap.newKeySet();
 
+    // Tracks players who had flight enabled by external means (Essentials /fly, etc.) before claimfly.
+    // We preserve their flight when they exit claims instead of disabling it.
+    private final Set<UUID> externalFlightEnabled = ConcurrentHashMap.newKeySet();
+
     // Track last claim for each player (replaces PlayerData.lastClaim access)
     private final Map<UUID, Object> playerLastClaim = new ConcurrentHashMap<>();
 
@@ -57,10 +61,6 @@ public class ClaimFlyListener implements Listener {
         Player player = event.getPlayer();
         UUID playerID = player.getUniqueId();
         
-        if (playerID == null) {
-            return;
-        }
-
         // Initialize flight state based on whether the login location is inside a claim.
         Object spawnClaim = gpBridge.getClaimAt(player.getLocation()).orElse(null);
         if (spawnClaim != null) {
@@ -90,6 +90,9 @@ public class ClaimFlyListener implements Listener {
         // Drop our claim-flight grant marker; reconcileFlightForClaim will re-add it
         // on next join if the player is in a claim and meets the conditions.
         claimFlightGranted.remove(playerID);
+        
+        // Clean up external flight tracking
+        externalFlightEnabled.remove(playerID);
         
         // Clean up last claim tracking
         playerLastClaim.remove(playerID);
@@ -169,6 +172,11 @@ public class ClaimFlyListener implements Listener {
                 && gpBridge.hasBuildOrInventoryTrust(claim, playerID);
 
         if (shouldGrantClaimFlight) {
+            // Check if player already has flight from external sources (Essentials /fly, etc.)
+            if (player.getAllowFlight() && !claimFlightGranted.contains(playerID)) {
+                externalFlightEnabled.add(playerID);
+            }
+            
             if (!player.getAllowFlight()) {
                 player.setAllowFlight(true);
             }
@@ -178,12 +186,15 @@ public class ClaimFlyListener implements Listener {
         }
 
         if (claimFlightGranted.remove(playerID) && player.getAllowFlight()) {
-            boolean wasFlying = player.isFlying();
-            player.setAllowFlight(false);
-            player.setFlying(false);
-            if (wasFlying) {
-                SchedulerAdapter.runLaterEntity(plugin, player, () -> player.addPotionEffect(
-                        new PotionEffect(PotionEffectType.SLOW_FALLING, 5 * 20, 0)), 1L);
+            // Only disable flight if it wasn't from external sources
+            if (!externalFlightEnabled.remove(playerID)) {
+                boolean wasFlying = player.isFlying();
+                player.setAllowFlight(false);
+                player.setFlying(false);
+                if (wasFlying) {
+                    SchedulerAdapter.runLaterEntity(plugin, player, () -> player.addPotionEffect(
+                            new PotionEffect(PotionEffectType.SLOW_FALLING, 5 * 20, 0)), 1L);
+                }
             }
         }
     }

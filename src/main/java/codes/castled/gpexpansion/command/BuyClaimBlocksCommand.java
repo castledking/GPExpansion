@@ -1,6 +1,7 @@
 package codes.castled.gpexpansion.command;
 
-import org.bukkit.ChatColor;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
@@ -42,29 +43,29 @@ public class BuyClaimBlocksCommand implements TabExecutor {
         }
 
         if (!gp.isAvailable()) {
-            player.sendMessage(ChatColor.RED + "GriefPrevention is not available.");
+            player.sendMessage(Component.text("GriefPrevention is not available.", NamedTextColor.RED));
             return true;
         }
         if (!gp.isClaimBlocksEconomyEnabled()) {
-            player.sendMessage(ChatColor.RED + gp.getGPMessageOr("EconomyDisabled",
-                    "Economy features are disabled on this server."));
+            player.sendMessage(Component.text(gp.getGPMessageOr("EconomyDisabled",
+                    "Economy features are disabled on this server."), NamedTextColor.RED));
             return true;
         }
-        if (!plugin.isEconomyAvailable()) {
-            if (!plugin.isVaultPluginInstalled()) {
-                player.sendMessage(ChatColor.RED + gp.getGPMessageOr("EconomyNoVault",
-                        "Economy support requires Vault (or VaultUnlocked) to be installed."));
+        if (!plugin.getEconomyManager().isEconomyAvailable()) {
+            if (!plugin.getEconomyManager().isVaultPluginInstalled()) {
+                player.sendMessage(Component.text(gp.getGPMessageOr("EconomyNoVault",
+                        "Economy support requires Vault (or VaultUnlocked) to be installed."), NamedTextColor.RED));
             } else {
                 // Vault/VaultUnlocked is installed, but no economy plugin has registered a provider.
-                player.sendMessage(ChatColor.RED + "Vault is installed, but no economy provider plugin"
-                        + " is registered (e.g. TNE, EssentialsX, CMI). Install one and reload.");
+                player.sendMessage(Component.text("Vault is installed, but no economy provider plugin"
+                        + " is registered (e.g. TNE, EssentialsX, CMI). Install one and reload.", NamedTextColor.RED));
             }
             return true;
         }
 
         if (args.length < 1) {
-            player.sendMessage(ChatColor.RED + gp.getGPMessageOr("EconomyBuyBlocksUsage",
-                    "Usage: /" + label + " <amount>"));
+            player.sendMessage(Component.text(gp.getGPMessageOr("EconomyBuyBlocksUsage",
+                    "Usage: /" + label + " <amount>"), NamedTextColor.RED));
             return true;
         }
 
@@ -73,29 +74,29 @@ public class BuyClaimBlocksCommand implements TabExecutor {
             amount = Integer.parseInt(args[0]);
             if (amount <= 0) throw new NumberFormatException();
         } catch (NumberFormatException e) {
-            player.sendMessage(ChatColor.RED + gp.getGPMessageOr("EconomyInvalidAmount",
-                    "Please specify a valid positive number of blocks."));
+            player.sendMessage(Component.text(gp.getGPMessageOr("EconomyInvalidAmount",
+                    "Please specify a valid positive number of blocks."), NamedTextColor.RED));
             return true;
         }
 
         double costPerBlock = gp.getClaimBlocksPurchaseCost();
         if (costPerBlock <= 0) {
-            player.sendMessage(ChatColor.RED + "Claim block purchase cost is not configured.");
+            player.sendMessage(Component.text("Claim block purchase cost is not configured.", NamedTextColor.RED));
             return true;
         }
         double totalCost = amount * costPerBlock;
 
-        if (!plugin.hasMoney(player, totalCost)) {
-            String fmtCost = plugin.formatMoney(totalCost);
-            String fmtBalance = plugin.formatMoney(plugin.getBalance(player));
-            player.sendMessage(ChatColor.RED + gp.getGPMessageOr("EconomyNotEnoughMoney",
+        if (!plugin.getEconomyManager().hasMoney(player, totalCost)) {
+            String fmtCost = plugin.getEconomyManager().formatMoney(totalCost);
+            String fmtBalance = plugin.getEconomyManager().formatMoney(plugin.getEconomyManager().getBalance(player));
+            player.sendMessage(Component.text(gp.getGPMessageOr("EconomyNotEnoughMoney",
                     "You don't have enough money. Cost: " + fmtCost + ", Your balance: " + fmtBalance,
-                    fmtCost, fmtBalance));
+                    fmtCost, fmtBalance), NamedTextColor.RED));
             return true;
         }
 
         if (plugin.getGUIManager() == null) {
-            player.sendMessage(ChatColor.RED + "GUI subsystem is unavailable; cannot open confirmation.");
+            player.sendMessage(Component.text("GUI subsystem is unavailable; cannot open confirmation.", NamedTextColor.RED));
             return true;
         }
         plugin.getGUIManager().openGUI(player,

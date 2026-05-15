@@ -1,7 +1,8 @@
 package codes.castled.gpexpansion.reminder;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
@@ -142,7 +143,7 @@ public class RentalReminderService {
             if (remaining <= 0) {
                 // expired
                 if ((mask & (1 << BIT_EXPIRED)) == 0) {
-                    if (online) {
+                    if (online && renter != null) {
                         renter.sendMessage(plugin.getMessages().getRaw("eviction.rental-expired"));
                     } else {
                         // flag a pending notice
@@ -229,8 +230,8 @@ public class RentalReminderService {
         player.sendMessage(color(message));
     }
 
-    private String color(String amp) {
-        return ChatColor.translateAlternateColorCodes('&', amp);
+    private Component color(String amp) {
+        return LegacyComponentSerializer.legacyAmpersand().deserialize(amp);
     }
 
     private String getClaimCoordinates(String claimId) {
