@@ -49,6 +49,8 @@ public class MailboxListener implements Listener {
     private NamespacedKey keyEcoKind() { return new NamespacedKey(plugin, "sign.ecoKind"); }
     /** Comma-separated list of shared player names for self mailbox (display uses "N players"). */
     private NamespacedKey keyMailboxShared() { return new NamespacedKey(plugin, "sign.mailbox.shared"); }
+    /** Parent claim ID for buyable mailboxes (subdivision is created immediately). */
+    private NamespacedKey keyMailboxParentClaim() { return new NamespacedKey(plugin, "sign.mailbox.parent"); }
 
     public MailboxListener(GPExpansionPlugin plugin) {
         this.plugin = plugin;
@@ -106,7 +108,49 @@ public class MailboxListener implements Listener {
                 plugin.getMessages().send(player, "sign-creation.not-in-claim");
                 return;
             }
-            final String claimIdForPdc = parentClaimId;
+
+            // Create subdivision immediately for buyable mailboxes (fail fast if area changes)
+            boolean realProtocol = plugin.getConfigManager().isMailboxProtocolReal();
+            if (realProtocol && gp.isGP3D() && gp.isSubdivision(parentClaim)) {
+                boolean allowNested = gp.getAllowNestedSubclaims();
+                if (!allowNested) {
+                    if (debug) plugin.getLogger().info("[mailbox-buyable] Fail: subdivision + AllowNestedSubclaims=false");
+                    plugin.getMessages().send(player, "mailbox.nested-not-allowed");
+                    return;
+                }
+            }
+
+            String newClaimId;
+            if (!realProtocol) {
+                // Virtual: no subdivision, use synthetic id keyed by container location
+                org.bukkit.World w = containerBlock.getWorld();
+                if (w == null) return;
+                newClaimId = "v:" + w.getUID() + ":" + containerBlock.getX() + ":" + containerBlock.getY() + ":" + containerBlock.getZ();
+                claimDataStore.setMailbox(newClaimId, playerId);
+                claimDataStore.setMailboxSignLocation(newClaimId, signBlock.getLocation());
+                claimDataStore.setMailboxContainerLocation(newClaimId, containerBlock.getLocation());
+                claimDataStore.save();
+            } else {
+                // Real: create subdivision (3D if GP3D, 2D otherwise) and container-trust public
+                java.util.Optional<String> newClaimIdOpt = gp.isGP3D()
+                    ? gp.create1x1SubdivisionAt(containerBlock.getLocation(), playerId, parentClaim)
+                    : gp.create1x1Subdivision2DAt(containerBlock.getLocation(), playerId, parentClaim);
+                if (newClaimIdOpt.isEmpty()) {
+                    if (debug) plugin.getLogger().info("[mailbox-buyable] Fail: create subdivision returned empty");
+                    plugin.getMessages().send(player, "mailbox.create-failed");
+                    return;
+                }
+                newClaimId = newClaimIdOpt.get();
+                Object newClaim = gp.findClaimById(newClaimId).orElse(null);
+                if (newClaim != null) {
+                    gp.containerTrustPublic(newClaim);
+                    gp.saveClaim(newClaim);
+                }
+                claimDataStore.setMailbox(newClaimId, playerId);
+                claimDataStore.setMailboxSignLocation(newClaimId, signBlock.getLocation());
+                claimDataStore.save();
+            }
+
             final String ecoKindStr = parsed.kind.name();
             final String ecoAmtStr = parsed.amount;
             final String displayLine1 = parsed.displayLine;
@@ -115,7 +159,8 @@ public class MailboxListener implements Listener {
                     org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
                     PersistentDataContainer pdc = sign.getPersistentDataContainer();
                     pdc.set(keyKind(), PersistentDataType.STRING, "MAILBOX");
-                    pdc.set(keyClaim(), PersistentDataType.STRING, claimIdForPdc);
+                    pdc.set(keyClaim(), PersistentDataType.STRING, newClaimId); // The subdivision claim ID
+                    pdc.set(keyMailboxParentClaim(), PersistentDataType.STRING, parentClaimId); // For validation
                     pdc.set(keyEcoAmt(), PersistentDataType.STRING, ecoAmtStr);
                     pdc.set(keyEcoKind(), PersistentDataType.STRING, ecoKindStr);
                     front.line(0, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§9§l[Mailbox]"));
@@ -490,6 +535,16 @@ public class MailboxListener implements Listener {
         } catch (NumberFormatException e) {
             return false;
         }
+    }
+
+    /**
+     * Returns the PersistentDataContainer of the sign block associated with the given mailbox claimId, or null if unavailable.
+     */
+    private PersistentDataContainer getMailboxSignPDC(String claimId) {
+        Location signLoc = claimDataStore.getMailboxSignLocation(claimId).orElse(null);
+        if (signLoc == null) return null;
+        if (!(signLoc.getBlock().getState() instanceof Sign sign)) return null;
+        return sign.getPersistentDataContainer();
     }
 
     /**
@@ -1147,6 +1202,7 @@ public class MailboxListener implements Listener {
             return true;
         }
 
+        // Subdivision was created at sign placement time - now just transfer ownership
         String newClaimId;
         if (!realProtocol) {
             World w = containerBlock.getWorld();
@@ -1155,90 +1211,40 @@ public class MailboxListener implements Listener {
             claimDataStore.setMailboxSignLocation(newClaimId, signLocation);
             claimDataStore.setMailboxContainerLocation(newClaimId, containerBlock.getLocation());
         } else {
-            java.util.Optional<String> newClaimIdOpt = gp.isGP3D()
-                ? gp.create1x1SubdivisionAt(containerBlock.getLocation(), player.getUniqueId(), parentClaim)
-                : gp.create1x1Subdivision2DAt(containerBlock.getLocation(), player.getUniqueId(), parentClaim);
-            if (newClaimIdOpt.isEmpty()) {
+            // Subdivision already exists - just transfer ownership from seller to buyer
+            newClaimId = claimId; // The claimId passed in is the subdivision ID (stored in keyClaim at creation)
+            Object mailboxClaim = gp.findClaimById(newClaimId).orElse(null);
+            if (mailboxClaim == null) {
                 refundPayment(player, kind, ecoAmt);
-                plugin.getMessages().send(player, "mailbox.instant-creation-failed");
+                plugin.getMessages().send(player, "mailbox.claim-not-found");
                 return true;
             }
-            newClaimId = newClaimIdOpt.get();
-            Object newClaim = gp.findClaimById(newClaimId).orElse(null);
-            if (newClaim != null) {
-                gp.containerTrustPublic(newClaim);
-                gp.saveClaim(newClaim);
-            }
+            // Transfer ownership to buyer
+            gp.transferClaimOwner(mailboxClaim, player.getUniqueId());
+            gp.saveClaim(mailboxClaim);
+            // Update our records
             claimDataStore.setMailbox(newClaimId, player.getUniqueId());
             claimDataStore.setMailboxSignLocation(newClaimId, signLocation);
-        }
-        claimDataStore.save();
-
-        // Update sign PDC so claimId points to the new mailbox (future clicks open it)
-        if (signBlock != null && signBlock.getState() instanceof Sign signForPdc) {
-            signForPdc.getPersistentDataContainer().set(keyClaim(), PersistentDataType.STRING, newClaimId);
-            signForPdc.update(true);
+            claimDataStore.save();
         }
 
-        // Real protocol: grant container trust to owner
-        if (!newClaimId.startsWith("v:")) {
-            Object newClaim = gp.findClaimById(newClaimId).orElse(null);
-            if (newClaim != null) {
-                gp.grantInventoryTrust(player, player.getName(), newClaim);
+        // Update sign to show new owner and remove price
+        final Block finalSignBlock = signBlock;
+        codes.castled.gpexpansion.scheduler.SchedulerAdapter.runAtLocation(plugin, signBlock.getLocation(), () -> {
+            if (finalSignBlock.getState() instanceof Sign sign) {
+                org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
+                PersistentDataContainer signPdc = sign.getPersistentDataContainer();
+                signPdc.remove(keyEcoAmt());
+                signPdc.remove(keyEcoKind());
+                signPdc.set(keyMailboxShared(), PersistentDataType.STRING, ""); // No shared users initially
+                front.line(1, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§a" + player.getName()));
+                front.line(2, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§0(Click to open)"));
+                sign.update(true);
             }
-        }
+        });
 
-        updateMailboxSign(newClaimId, player.getName());
-        plugin.getMessages().send(player, "mailbox.purchase-success");
+        plugin.getMessages().send(player, "mailbox.purchased");
         return true;
-    }
-
-    @SuppressWarnings("null")
-    public PersistentDataContainer getMailboxSignPDC(String claimId) {
-        // First check stored sign location
-        Location storedLoc = claimDataStore.getMailboxSignLocation(claimId).orElse(null);
-        if (storedLoc != null) {
-            Block block = storedLoc.getBlock();
-            if (block.getState() instanceof Sign sign) {
-                PersistentDataContainer pdc = sign.getPersistentDataContainer();
-                String signType = pdc.get(keyKind(), PersistentDataType.STRING);
-                if ("MAILBOX".equals(signType)) {
-                    return pdc;
-                }
-            }
-        }
-        
-        // Fallback: search near the claim for legacy signs
-        Object claim = gp.findClaimById(claimId).orElse(null);
-        if (claim == null) return null;
-        
-        GPBridge.ClaimCorners corners = gp.getClaimCorners(claim).orElse(null);
-        World world = gp.getClaimWorld(claim).map(Bukkit::getWorld).orElse(null);
-        
-        if (world == null || corners == null) return null;
-        
-        // Check for signs attached to any side of the claim
-        for (int x = corners.x1 - 1; x <= corners.x2 + 1; x++) {
-            for (int y = corners.y1; y <= corners.y2 + 1; y++) {
-                for (int z = corners.z1 - 1; z <= corners.z2 + 1; z++) {
-                    boolean isPerimeter = (x == corners.x1 - 1 || x == corners.x2 + 1 || 
-                                          z == corners.z1 - 1 || z == corners.z2 + 1);
-                    
-                    if (!isPerimeter) continue;
-                    
-                    Block block = world.getBlockAt(x, y, z);
-                    if (block.getState() instanceof Sign sign) {
-                        PersistentDataContainer pdc = sign.getPersistentDataContainer();
-                        String signType = pdc.get(keyKind(), PersistentDataType.STRING);
-                        String signClaimId = pdc.get(keyClaim(), PersistentDataType.STRING);
-                        if ("MAILBOX".equals(signType) && claimId.equals(signClaimId)) {
-                            return pdc;
-                        }
-                    }
-                }
-            }
-        }
-        return null;
     }
 
     private boolean processPayment(Player player, EcoKind kind, String amount) {
