@@ -50,7 +50,6 @@ public final class ClaimMapEditorGUI extends BaseGUI {
     private final GPBridge gp;
     private final ClaimMapEditorBridge mapBridge;
 
-    private final Object initialClaim;
     private final String initialClaimId;
 
     private Object selectedClaim;
@@ -75,7 +74,6 @@ public final class ClaimMapEditorGUI extends BaseGUI {
         super(manager, player, "claim-map-editor");
         this.gp = new GPBridge();
         this.mapBridge = new ClaimMapEditorBridge(gp);
-        this.initialClaim = claim;
         this.initialClaimId = claimId;
         this.selectedClaim = claim;
         this.selectedClaimId = claimId;
@@ -105,12 +103,14 @@ public final class ClaimMapEditorGUI extends BaseGUI {
                 centerX = alignCenterAxisToClaimGrid(corners.x1, corners.x2, zoom);
                 centerZ = alignCenterAxisToClaimGrid(corners.z1, corners.z2, zoom);
             } else {
-                centerX = player.getLocation().getBlockX();
-                centerZ = player.getLocation().getBlockZ();
+                var location = player.getLocation();
+                centerX = location != null ? location.getBlockX() : 0;
+                centerZ = location != null ? location.getBlockZ() : 0;
             }
         } else {
-            centerX = player.getLocation().getBlockX();
-            centerZ = player.getLocation().getBlockZ();
+            var location = player.getLocation();
+            centerX = location != null ? location.getBlockX() : 0;
+            centerZ = location != null ? location.getBlockZ() : 0;
         }
         world = resolvedWorld;
 

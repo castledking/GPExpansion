@@ -1,7 +1,8 @@
 package codes.castled.gpexpansion.listener;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -72,11 +73,11 @@ public class BanEnforcementListener implements Listener {
             // BOUNDARY CROSSING - apply immediate knockback/rebound effect
             e.setCancelled(true);
             applyKnockback(player, from, to, result.claim);
-            player.sendMessage(ChatColor.RED + "You are not allowed to enter this claim!");
+            player.sendMessage(Component.text("You are not allowed to enter this claim!", NamedTextColor.RED));
         } else {
             // ALREADY INSIDE - teleport them out safely (banned while inside, or teleported in)
             handleDeepEjection(player, result.claim);
-            player.sendMessage(ChatColor.RED + "You are not allowed to be in this claim!");
+            player.sendMessage(Component.text("You are not allowed to be in this claim!", NamedTextColor.RED));
         }
     }
 
@@ -90,7 +91,7 @@ public class BanEnforcementListener implements Listener {
         
         // Cancel teleport into banned claim and eject
         e.setCancelled(true);
-        player.sendMessage(ChatColor.RED + "You cannot teleport into this claim - you are banned!");
+        player.sendMessage(Component.text("You cannot teleport into this claim - you are banned!", NamedTextColor.RED));
         
         // If they're currently in the claim, eject them
         if (isInsideClaim(player.getLocation(), result.claim)) {
@@ -109,13 +110,9 @@ public class BanEnforcementListener implements Listener {
     
     private static class BanCheckResult {
         final Object claim;
-        final Object mainClaim;
-        final String claimId;
-        
-        BanCheckResult(Object claim, Object mainClaim, String claimId) {
+
+        BanCheckResult(Object claim) {
             this.claim = claim;
-            this.mainClaim = mainClaim;
-            this.claimId = claimId;
         }
     }
     
@@ -143,7 +140,7 @@ public class BanEnforcementListener implements Listener {
         if (!pubBanned && !playerBanned) return null;
         if (pubBanned && isTrusted(main, player)) return null;
         
-        return new BanCheckResult(claim, main, claimId);
+        return new BanCheckResult(claim);
     }
     
     /**
@@ -209,9 +206,9 @@ public class BanEnforcementListener implements Listener {
      * Handle ejection for players already deep inside claim.
      */
     private void handleDeepEjection(Player player, Object claim) {
-        plugin.runAtEntity(player, () -> {
+        plugin.getSchedulerFacade().runAtEntity(player, () -> {
             if (!ejectFromClaim(player, toMainClaim(claim))) {
-                plugin.runGlobal(() -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "spawn " + player.getName()));
+                plugin.getSchedulerFacade().runGlobal(() -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "spawn " + player.getName()));
             }
         });
     }
@@ -272,8 +269,14 @@ public class BanEnforcementListener implements Listener {
                 return false;
             }
 
-            int x = target.getLocation().getBlockX();
-            int z = target.getLocation().getBlockZ();
+            Location targetLoc = target.getLocation();
+            if (targetLoc == null) {
+                beingEjected.remove(target.getUniqueId());
+                return false;
+            }
+
+            int x = targetLoc.getBlockX();
+            int z = targetLoc.getBlockZ();
             int minX = Math.min(lesser.getBlockX(), greater.getBlockX());
             int maxX = Math.max(lesser.getBlockX(), greater.getBlockX());
             int minZ = Math.min(lesser.getBlockZ(), greater.getBlockZ());
@@ -288,10 +291,10 @@ public class BanEnforcementListener implements Listener {
             } else {
                 if (Math.abs(z - minZ) <= Math.abs(maxZ - z)) targetZ = minZ - 1; else targetZ = maxZ + 1;
             }
-            
+
             final int finalTargetX = targetX;
             final int finalTargetZ = targetZ;
-            final int playerY = target.getLocation().getBlockY();
+            final int playerY = targetLoc.getBlockY();
             
             // On non-Folia: do everything synchronously for speed
             if (!codes.castled.gpexpansion.scheduler.SchedulerAdapter.isFolia()) {
@@ -300,7 +303,7 @@ public class BanEnforcementListener implements Listener {
                     dest = new Location(target.getWorld(), finalTargetX + 0.5, 
                         target.getWorld().getHighestBlockYAt(finalTargetX, finalTargetZ) + 1, finalTargetZ + 0.5);
                 }
-                plugin.teleportEntity(target, dest);
+                plugin.getSchedulerFacade().teleportEntity(target, dest);
                 beingEjected.remove(target.getUniqueId());
                 return true;
             }
@@ -316,7 +319,7 @@ public class BanEnforcementListener implements Listener {
                     dest = new Location(target.getWorld(), finalTargetX + 0.5, y, finalTargetZ + 0.5);
                 }
                 final Location finalDest = dest;
-                plugin.teleportEntity(target, finalDest);
+                plugin.getSchedulerFacade().teleportEntity(target, finalDest);
                 // Clear ejection flag after a short delay to ensure teleport completes
                 codes.castled.gpexpansion.scheduler.SchedulerAdapter.runLaterEntity(plugin, target, 
                     () -> beingEjected.remove(target.getUniqueId()), 5L);

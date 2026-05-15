@@ -32,6 +32,7 @@ public class ClaimTrustEditorGUI extends BaseGUI {
         this(manager, player, claim, claimId, targetName, resolveUuid(targetName));
     }
 
+    @SuppressWarnings("all")
     public ClaimTrustEditorGUI(GUIManager manager, Player player, Object claim, String claimId, String targetName, UUID targetId) {
         super(manager, player, "claim-trust-editor");
         this.claim = claim;

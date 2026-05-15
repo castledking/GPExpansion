@@ -1,5 +1,6 @@
 package codes.castled.gpexpansion.gui;
 
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -52,7 +53,7 @@ public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listen
     @Override
     public Inventory createInventory() {
         // This method is required but we won't use it since we create the hopper directly in open()
-        return Bukkit.createInventory(null, 9, "Icon Selection");
+        return Bukkit.createInventory(null, InventoryType.CHEST, Component.text("Icon Selection"));
     }
     
     @Override
@@ -80,10 +81,12 @@ public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listen
         inventory.setItem(backSlot, createBackItem());
 
         // Leave center slot empty for selection
-        
+
         // Register events and open the hopper
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
-        player.openInventory(inventory);
+        if (inventory != null) {
+            player.openInventory(inventory);
+        }
     }
     
     private ItemStack createInstructionsItem() {
@@ -138,7 +141,6 @@ public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listen
         if (!isOurSession()) return;
         Inventory clicked = event.getClickedInventory();
         ItemStack cursor = event.getCursor();
-        ItemStack current = event.getCurrentItem();
         int rawSlot = event.getRawSlot();
         int topSize = inventory.getSize();
         

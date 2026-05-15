@@ -1,8 +1,9 @@
 package codes.castled.gpexpansion.listener;
 
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.*;
+
+import java.nio.charset.StandardCharsets;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.Container;
@@ -25,7 +26,6 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
-import org.bukkit.util.io.BukkitObjectInputStream;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.gp.GPBridge;
@@ -33,7 +33,6 @@ import codes.castled.gpexpansion.scheduler.TaskHandle;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
 import codes.castled.gpexpansion.util.EcoKind;
 
-import java.io.ByteArrayInputStream;
 import java.util.*;
 
 public class MailboxListener implements Listener {
@@ -46,8 +45,6 @@ public class MailboxListener implements Listener {
     private NamespacedKey keyKind() { return new NamespacedKey(plugin, "sign.kind"); }
     private NamespacedKey keyClaim() { return new NamespacedKey(plugin, "sign.claimId"); }
     private NamespacedKey keyEcoAmt() { return new NamespacedKey(plugin, "sign.ecoAmt"); }
-    private NamespacedKey keyPerClick() { return new NamespacedKey(plugin, "sign.perClick"); }
-    private NamespacedKey keyMaxCap() { return new NamespacedKey(plugin, "sign.maxCap"); }
     private NamespacedKey keyItemB64() { return new NamespacedKey(plugin, "item-b64"); }
     private NamespacedKey keyEcoKind() { return new NamespacedKey(plugin, "sign.ecoKind"); }
     /** Comma-separated list of shared player names for self mailbox (display uses "N players"). */
@@ -115,15 +112,16 @@ public class MailboxListener implements Listener {
             final String displayLine1 = parsed.displayLine;
             codes.castled.gpexpansion.scheduler.SchedulerAdapter.runAtLocation(plugin, signBlock.getLocation(), () -> {
                 if (signBlock.getState() instanceof Sign sign) {
+                    org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
                     PersistentDataContainer pdc = sign.getPersistentDataContainer();
                     pdc.set(keyKind(), PersistentDataType.STRING, "MAILBOX");
                     pdc.set(keyClaim(), PersistentDataType.STRING, claimIdForPdc);
                     pdc.set(keyEcoAmt(), PersistentDataType.STRING, ecoAmtStr);
                     pdc.set(keyEcoKind(), PersistentDataType.STRING, ecoKindStr);
-                    sign.setLine(0, ChatColor.BLUE + "" + ChatColor.BOLD + "[Mailbox]");
-                    sign.setLine(1, displayLine1);
-                    sign.setLine(2, ChatColor.BLACK + "(Click to buy)");
-                    sign.setLine(3, "");
+                    front.line(0, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§9§l[Mailbox]"));
+                    front.line(1, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize(displayLine1));
+                    front.line(2, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§0(Click to buy)"));
+                    front.line(3, net.kyori.adventure.text.Component.empty());
                     sign.update(true);
                 }
             });
@@ -220,20 +218,21 @@ public class MailboxListener implements Listener {
         final String sharedPdc = String.join(",", sharedNames);
         final int totalAccess = 1 + sharedNames.size();
         final String displayLine1 = totalAccess == 1
-            ? (ChatColor.GREEN + ownerName)
-            : (ChatColor.GREEN + String.valueOf(totalAccess) + " players");
+            ? ("§a" + ownerName)
+            : ("§a" + totalAccess + " players");
         codes.castled.gpexpansion.scheduler.SchedulerAdapter.runAtLocation(plugin, signBlock.getLocation(), () -> {
             if (signBlock.getState() instanceof Sign sign) {
+                org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
                 PersistentDataContainer pdc = sign.getPersistentDataContainer();
                 pdc.set(keyKind(), PersistentDataType.STRING, "MAILBOX");
                 pdc.set(keyClaim(), PersistentDataType.STRING, claimIdForPdc);
                 pdc.set(keyEcoAmt(), PersistentDataType.STRING, "0");
                 pdc.set(keyEcoKind(), PersistentDataType.STRING, "MONEY");
                 if (!sharedPdc.isEmpty()) pdc.set(keyMailboxShared(), PersistentDataType.STRING, sharedPdc);
-                sign.setLine(0, ChatColor.BLUE + "" + ChatColor.BOLD + "[Mailbox]");
-                sign.setLine(1, displayLine1);
-                sign.setLine(2, ChatColor.BLACK + "(Click to open)");
-                sign.setLine(3, "");
+                front.line(0, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§9§l[Mailbox]"));
+                front.line(1, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize(displayLine1));
+                front.line(2, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§0(Click to open)"));
+                front.line(3, net.kyori.adventure.text.Component.empty());
                 sign.update(true);
             }
         });
@@ -279,6 +278,7 @@ public class MailboxListener implements Listener {
         return count;
     }
 
+    @SuppressWarnings("null")
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onSignInteract(PlayerInteractEvent event) {
         if (event.getHand() != EquipmentSlot.HAND || 
@@ -436,7 +436,7 @@ public class MailboxListener implements Listener {
                 else if (kindStr.equals("claimblocks") || kindStr.equals("blocks") || kindStr.equals("cb")) kind = EcoKind.CLAIMBLOCKS;
                 else if (kindStr.equals("item")) kind = EcoKind.ITEM;
                 if (kind != null) {
-                    String display = ChatColor.GREEN + amountStr + " " + kindStr;
+                    String display = "§a" + amountStr + " " + kindStr;
                     return new ParsedBuyable(kind, amountStr, display);
                 }
             }
@@ -444,9 +444,9 @@ public class MailboxListener implements Listener {
         // 2) Currency symbol + amount or amount + symbol (e.g. $100, 100$, €50) — instant money buyable
         String amountStr = parseMoneyAmountFromSymbolLine(trimmed);
         if (amountStr != null) {
-            String display = plugin.formatMoneyForSign(Double.parseDouble(amountStr));
-            if (display == null || display.isEmpty()) display = ChatColor.GREEN + amountStr + " money";
-            else display = ChatColor.GREEN + display;
+            String display = plugin.getEconomyManager().formatMoneyForSign(Double.parseDouble(amountStr));
+            if (display == null || display.isEmpty()) display = "§a" + amountStr + " money";
+            else display = "§a" + display;
             return new ParsedBuyable(EcoKind.MONEY, amountStr, display);
         }
         return null;
@@ -458,7 +458,7 @@ public class MailboxListener implements Listener {
      */
     private String parseMoneyAmountFromSymbolLine(String line) {
         if (line == null || line.isEmpty()) return null;
-        String symbols = codes.castled.gpexpansion.GPExpansionPlugin.getCurrencySymbolsForParsing();
+        String symbols = codes.castled.gpexpansion.economy.EconomyManager.getCurrencySymbolsForParsing();
         StringBuilder symbolClass = new StringBuilder();
         for (int i = 0; i < symbols.length(); i++) {
             char c = symbols.charAt(i);
@@ -512,6 +512,7 @@ public class MailboxListener implements Listener {
     /**
      * True if the player has full (owner) access: mailbox owner or shared names (PDC or legacy sign lines 1–3).
      */
+    @SuppressWarnings("null")
     private boolean isMailboxFullAccess(Player player, String claimId) {
         UUID mailboxOwner = claimDataStore.getMailboxOwner(claimId).orElse(null);
         if (mailboxOwner != null && mailboxOwner.equals(player.getUniqueId())) return true;
@@ -531,9 +532,10 @@ public class MailboxListener implements Listener {
             return false;
         }
         for (int i = 1; i <= 3; i++) {
-            String raw = sign.getLine(i);
-            if (raw == null) continue;
-            String line = raw.replaceAll("§.", "").trim();
+            org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
+            net.kyori.adventure.text.Component lineComp = front.line(i);
+            if (lineComp == null) continue;
+            String line = net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().serialize(lineComp).replaceAll("§.", "").trim();
             if (line.isEmpty()) continue;
             if (player.getName().equalsIgnoreCase(line)) return true;
             OfflinePlayer op = Bukkit.getOfflinePlayer(line);
@@ -550,6 +552,7 @@ public class MailboxListener implements Listener {
                material == Material.HOPPER;
     }
 
+    @SuppressWarnings("null")
     private void showPurchaseConfirmation(Player player, String claimId, PersistentDataContainer pdc, Location signLocation) {
         String ecoAmt = pdc.get(keyEcoAmt(), PersistentDataType.STRING);
         String kindName = pdc.get(keyEcoKind(), PersistentDataType.STRING);
@@ -561,7 +564,7 @@ public class MailboxListener implements Listener {
             case MONEY: {
                 try {
                     double amount = Double.parseDouble(ecoAmt);
-                    ecoFormatted = plugin.formatMoneyForSign(amount);
+                    ecoFormatted = plugin.getEconomyManager().formatMoneyForSign(amount);
                 } catch (NumberFormatException e) {
                     ecoFormatted = "$" + ecoAmt;
                 }
@@ -691,6 +694,7 @@ public class MailboxListener implements Listener {
      * Virtual protocol: virtualInv is the snapshot; changes applied to real chest on close.
      */
     private static class DepositSession {
+        @SuppressWarnings("unused")
         final String claimId;
         final Location containerLoc;
         final String containerKey;
@@ -786,9 +790,12 @@ public class MailboxListener implements Listener {
             plugin, player, () -> autoKickFromMailbox(player), AUTO_KICK_TICKS);
 
         playMailboxOpenSound(player, containerBlock.getType());
-        player.openInventory(virtualInv);
+        if (virtualInv != null) {
+            player.openInventory(virtualInv);
+        }
     }
 
+    @SuppressWarnings("null")
     private void playMailboxOpenSound(Player player, Material containerType) {
         if (containerType == null) return;
         if (containerType == Material.CHEST || containerType == Material.TRAPPED_CHEST) {
@@ -809,15 +816,6 @@ public class MailboxListener implements Listener {
         plugin.getMessages().send(player, "mailbox.auto-kicked");
     }
     
-    private boolean isFolia() {
-        try {
-            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
-            return true;
-        } catch (ClassNotFoundException e) {
-            return false;
-        }
-    }
-    
     /**
      * Get top inventory from InventoryView using reflection (Paper 1.21+ compatibility)
      * In Paper 1.21+, InventoryView changed from class to interface
@@ -834,20 +832,6 @@ public class MailboxListener implements Listener {
         }
     }
     
-    /**
-     * Get bottom inventory from InventoryView using reflection (Paper 1.21+ compatibility)
-     */
-    private Inventory getBottomInventory(Object inventoryView) {
-        try {
-            // Try to find InventoryView class/interface and get method from there
-            Class<?> viewClass = Class.forName("org.bukkit.inventory.InventoryView");
-            java.lang.reflect.Method method = viewClass.getMethod("getBottomInventory");
-            return (Inventory) method.invoke(inventoryView);
-        } catch (Exception e) {
-            plugin.getLogger().warning("Failed to get bottom inventory via reflection: " + e.getMessage());
-            return null;
-        }
-    }
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onInventoryClick(InventoryClickEvent event) {
@@ -1101,6 +1085,7 @@ public class MailboxListener implements Listener {
         }
     }
 
+    @SuppressWarnings("null")
     public boolean handlePurchaseConfirmation(Player player, String claimId, Location signLocation) {
         // Check if still available
         if (claimDataStore.isMailbox(claimId)) {
@@ -1208,6 +1193,7 @@ public class MailboxListener implements Listener {
         return true;
     }
 
+    @SuppressWarnings("null")
     public PersistentDataContainer getMailboxSignPDC(String claimId) {
         // First check stored sign location
         Location storedLoc = claimDataStore.getMailboxSignLocation(claimId).orElse(null);
@@ -1262,18 +1248,18 @@ public class MailboxListener implements Listener {
             switch (kind) {
                 case MONEY:
                     // Try a late hook in case the economy registered after onEnable
-                    if (!plugin.isEconomyAvailable()) {
-                        plugin.refreshEconomy();
+                    if (!plugin.getEconomyManager().isEconomyAvailable()) {
+                        plugin.getEconomyManager().refreshEconomy();
                     }
-                    if (!plugin.isEconomyAvailable()) {
+                    if (!plugin.getEconomyManager().isEconomyAvailable()) {
                         plugin.getMessages().send(player, "mailbox.economy-not-available");
                         return false;
                     }
-                    if (!plugin.hasMoney(player, amt)) {
+                    if (!plugin.getEconomyManager().hasMoney(player, amt)) {
                         plugin.getMessages().send(player, "mailbox.not-enough-money");
                         return false;
                     }
-                    plugin.withdrawMoney(player, amt);
+                    plugin.getEconomyManager().withdrawMoney(player, amt);
                     break;
                 case EXPERIENCE:
                     int totalExp = getPlayerTotalExperience(player);
@@ -1305,8 +1291,8 @@ public class MailboxListener implements Listener {
             double amt = Double.parseDouble(amount);
             switch (kind) {
                 case MONEY:
-                    if (plugin.isEconomyAvailable()) {
-                        plugin.depositMoney(player, amt);
+                    if (plugin.getEconomyManager().isEconomyAvailable()) {
+                        plugin.getEconomyManager().depositMoney(player, amt);
                     }
                     break;
                 case EXPERIENCE:
@@ -1358,19 +1344,21 @@ public class MailboxListener implements Listener {
         }
     }
 
+    @SuppressWarnings("null")
     private void updateMailboxSign(String claimId, String ownerName) {
         // First check stored sign location
         Location storedLoc = claimDataStore.getMailboxSignLocation(claimId).orElse(null);
         if (storedLoc != null) {
-            Block block = storedLoc.getBlock();
-            if (block.getState() instanceof Sign sign) {
+            Block signBlock = storedLoc.getBlock();
+            if (signBlock.getState() instanceof Sign sign) {
+                org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
                 PersistentDataContainer signPdc = sign.getPersistentDataContainer();
                 String signType = signPdc.get(keyKind(), PersistentDataType.STRING);
                 if ("MAILBOX".equals(signType)) {
-                    sign.setLine(0, ChatColor.BLUE + "" + ChatColor.BOLD + "[Mailbox]");
-                    sign.setLine(1, ChatColor.GREEN + ownerName);
-                    sign.setLine(2, ChatColor.BLACK + "(Click to open)");
-                    sign.setLine(3, "");
+                    front.line(0, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§9§l[Mailbox]"));
+                    front.line(1, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§a" + ownerName));
+                    front.line(2, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§0(Click to open)"));
+                    front.line(3, net.kyori.adventure.text.Component.empty());
                     sign.update(true);
                     return;
                 }
@@ -1400,10 +1388,11 @@ public class MailboxListener implements Listener {
                         String signType = signPdc.get(keyKind(), PersistentDataType.STRING);
                         String signClaimId = signPdc.get(keyClaim(), PersistentDataType.STRING);
                         if ("MAILBOX".equals(signType) && claimId.equals(signClaimId)) {
-                            sign.line(0, Component.text(ChatColor.BLUE + "" + ChatColor.BOLD + "[Mailbox]"));
-                            sign.line(1, Component.text(ChatColor.GREEN + ownerName));
-                            sign.line(2, Component.text(ChatColor.BLACK + "(Click to open)"));
-                            sign.line(3, Component.text(""));
+                            var front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
+                            front.line(0, Component.text("[Mailbox]", net.kyori.adventure.text.format.NamedTextColor.BLUE, net.kyori.adventure.text.format.TextDecoration.BOLD));
+                            front.line(1, Component.text(ownerName, net.kyori.adventure.text.format.NamedTextColor.GREEN));
+                            front.line(2, Component.text("(Click to open)", net.kyori.adventure.text.format.NamedTextColor.BLACK));
+                            front.line(3, Component.text(""));
                             sign.update(true);
                             return;
                         }
@@ -1415,9 +1404,13 @@ public class MailboxListener implements Listener {
     
     private ItemStack decodeItem(String base64) {
         try {
-            ByteArrayInputStream in = new ByteArrayInputStream(Base64.getDecoder().decode(base64));
-            BukkitObjectInputStream is = new BukkitObjectInputStream(in);
-            return (ItemStack) is.readObject();
+            if (base64 == null || base64.isEmpty()) {
+                return null;
+            }
+            String yaml = new String(Base64.getDecoder().decode(base64), StandardCharsets.UTF_8);
+            org.bukkit.configuration.file.YamlConfiguration conf = new org.bukkit.configuration.file.YamlConfiguration();
+            conf.loadFromString(yaml);
+            return conf.getItemStack("i");
         } catch (Exception e) {
             return null;
         }

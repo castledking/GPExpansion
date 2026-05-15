@@ -1,7 +1,8 @@
 package codes.castled.gpexpansion.listener;
 
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -12,17 +13,14 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
-import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
-import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.util.EcoKind;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 
 public class SignDisplayListener implements Listener {
@@ -75,6 +73,7 @@ public class SignDisplayListener implements Listener {
      * Scan signs near the given location and update displays (eviction countdown, [Renew], etc).
      * Called from onPlayerMove and from periodic eviction tick. No throttle when called from periodic.
      */
+    @SuppressWarnings("null")
     public void scanAndUpdateSignsNear(Player p, Location base, long now) {
         // Scan nearby 4-block radius cube
         int r = 4;
@@ -104,11 +103,14 @@ public class SignDisplayListener implements Listener {
                                 if (ownerName == null) ownerName = "Unknown";
                                 
                                 // Update sign display for owned mailbox
-                                if (!sign.getLine(0).contains(ChatColor.BLUE + "" + ChatColor.BOLD + "[Mailbox]")) {
-                                    sign.setLine(0, ChatColor.BLUE + "" + ChatColor.BOLD + "[Mailbox]");
-                                    sign.setLine(1, ChatColor.GREEN + ownerName);
-                                    sign.setLine(2, ChatColor.BLACK + "(Click to open)");
-                                    sign.setLine(3, "");
+                                org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
+                                net.kyori.adventure.text.Component line0 = front.line(0);
+                                String line0Str = line0 != null ? LegacyComponentSerializer.legacySection().serialize(line0) : "";
+                                if (!line0Str.contains("§9§l[Mailbox]")) {
+                                    front.line(0, LegacyComponentSerializer.legacySection().deserialize("§9§l[Mailbox]"));
+                                    front.line(1, LegacyComponentSerializer.legacySection().deserialize("§a" + ownerName));
+                                    front.line(2, LegacyComponentSerializer.legacySection().deserialize("§0(Click to open)"));
+                                    front.line(3, net.kyori.adventure.text.Component.empty());
                                     sign.update();
                                 }
                             }
@@ -118,7 +120,9 @@ public class SignDisplayListener implements Listener {
                     }
 
                     // Toggle display for renter near sign
-                    String line0Plain = ChatColor.stripColor(sign.getLine(0) == null ? "" : sign.getLine(0));
+                    org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
+                    net.kyori.adventure.text.Component line0Comp = front.line(0);
+                    String line0Plain = PlainTextComponentSerializer.plainText().serialize(line0Comp != null ? line0Comp : net.kyori.adventure.text.Component.empty());
                     
                     // Check eviction state for this claim
                     codes.castled.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
@@ -131,23 +135,23 @@ public class SignDisplayListener implements Listener {
 
                     // Auto-reset sign when eviction has become effective (no sneak+break needed)
                     if (evictionEffective && "RENT".equals(signType)) {
-                        plugin.resetRentalSign(b);
+                        plugin.getRentalSignManager().resetRentalSign(b);
                         continue; // resetRentalSign updated the sign; skip display logic this tick
                     }
 
                     // Auto-reset when rental has naturally expired (no eviction was started)
                     if ("RENT".equals(signType) && renterStr != null && expiry != null && expiry <= nowMs && eviction == null) {
-                        plugin.resetRentalSign(b);
+                        plugin.getRentalSignManager().resetRentalSign(b);
                         continue;
                     }
 
                     // When eviction is pending: always show [Evicted] for everyone (not per-player)
                     if (evictionPending) {
                         if (!line0Plain.equalsIgnoreCase("[Evicted]")) {
-                            sign.setLine(0, ChatColor.DARK_RED + "" + ChatColor.BOLD + "[Evicted]");
+                            front.line(0, LegacyComponentSerializer.legacySection().deserialize("§4§l[Evicted]"));
                         }
-                        sign.setLine(2, ChatColor.DARK_RED + "Remaining Time");
-                        sign.setLine(3, ChatColor.RED + formatDuration(evictionRemaining));
+                        front.line(2, LegacyComponentSerializer.legacySection().deserialize("§4Remaining Time"));
+                        front.line(3, LegacyComponentSerializer.legacySection().deserialize("§c" + formatDuration(evictionRemaining)));
                         sign.update();
                         continue;
                     }
@@ -155,15 +159,15 @@ public class SignDisplayListener implements Listener {
                     // No eviction pending: show [Renew] for renter, [Rented] for others when rented
                     if (isRenter) {
                         if (!line0Plain.equalsIgnoreCase("[Renew]")) {
-                            sign.setLine(0, ChatColor.GREEN + "" + ChatColor.BOLD + "[Renew]");
+                            front.line(0, LegacyComponentSerializer.legacySection().deserialize("§a§l[Renew]"));
                             sign.update();
                         }
                     } else {
                         if (line0Plain.equalsIgnoreCase("[Renew]") || line0Plain.equalsIgnoreCase("[Evicted]")) {
                             if (isRented) {
-                                sign.setLine(0, ChatColor.RED + "" + ChatColor.BOLD + "[Rented]");
+                                front.line(0, LegacyComponentSerializer.legacySection().deserialize("§c§l[Rented]"));
                                 String renterName = resolveRenterName(renterStr);
-                                sign.setLine(1, ChatColor.BLACK + renterName);
+                                front.line(1, LegacyComponentSerializer.legacySection().deserialize("§0" + renterName));
                                 String ecoAmt = pdc.get(keyEcoAmt, PersistentDataType.STRING);
                                 String ecoKindStr = pdc.get(keyEcoKind, PersistentDataType.STRING);
                                 String perClick = pdc.get(keyPerClick, PersistentDataType.STRING);
@@ -172,16 +176,17 @@ public class SignDisplayListener implements Listener {
                                 if (perClick == null) perClick = "";
                                 if (maxCap == null) maxCap = "";
                                 String ecoFormatted = formatEcoForSign(ecoKindStr, ecoAmt);
-                                sign.setLine(2, ChatColor.BLACK + ecoFormatted + ChatColor.BLACK + "/" + perClick);
-                                sign.setLine(3, ChatColor.BLACK + "Max: " + maxCap);
+                                front.line(2, LegacyComponentSerializer.legacySection().deserialize("§0" + ecoFormatted + "§0/" + perClick));
+                                front.line(3, LegacyComponentSerializer.legacySection().deserialize("§0Max: " + maxCap));
                             } else {
                                 boolean hanging = isHangingSign(type);
                                 String kind = pdc.get(keyKind, PersistentDataType.STRING);
                                 String displayKey = "RENT".equals(kind)
                                     ? (hanging ? "sign-interaction.sign-display-rent-hanging" : "sign-interaction.sign-display-rent-full")
                                     : (hanging ? "sign-interaction.sign-display-buy-hanging" : "sign-interaction.sign-display-buy-full");
-                                String display = ChatColor.translateAlternateColorCodes('&', plugin.getMessages().getRaw(displayKey));
-                                sign.setLine(0, display);
+                                String display = LegacyComponentSerializer.legacySection().serialize(
+                                    LegacyComponentSerializer.legacyAmpersand().deserialize(plugin.getMessages().getRaw(displayKey)));
+                                front.line(0, LegacyComponentSerializer.legacySection().deserialize(display));
                             }
                             sign.update();
                         }
@@ -205,10 +210,11 @@ public class SignDisplayListener implements Listener {
     public void tickEvictionDisplays(Player p) {
         if (!p.isOnline()) return;
         Location loc = p.getLocation();
-        if (loc.getWorld() == null) return;
+        if (loc == null || loc.getWorld() == null) return;
         scanAndUpdateSignsNear(p, loc, System.currentTimeMillis());
     }
 
+    @SuppressWarnings("null")
     private void animateItemLine(Sign sign, PersistentDataContainer pdc) {
         String signType = pdc.get(keyKind, PersistentDataType.STRING);
         if (!"ITEM".equals(signType) && !"MAILBOX".equals(signType)) return;
@@ -227,13 +233,14 @@ public class SignDisplayListener implements Listener {
         } catch (Exception ignored) {}
         int amt = 0;
         try { amt = Integer.parseInt(ecoAmt); } catch (Exception ignored) {}
-        String base = ChatColor.GREEN + "" + amt + " " + itemName;
+        String base = "§a" + amt + " " + itemName;
         // compute room for base before "/per"
         int max = 15;
         int room = Math.max(0, max - (1 + (perClick == null ? 0 : perClick.length())));
-        String scrollSrc = ChatColor.stripColor(base);
+        String scrollSrc = PlainTextComponentSerializer.plainText().serialize(LegacyComponentSerializer.legacySection().deserialize(base));
         if (scrollSrc.length() <= room) {
-            sign.setLine(2, ChatColor.BLACK + ChatColor.stripColor(base) + ChatColor.BLACK + "/" + perClick);
+            org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
+            front.line(2, LegacyComponentSerializer.legacySection().deserialize("§0" + scrollSrc + "§0/" + perClick));
             sign.update();
             return;
         }
@@ -267,7 +274,8 @@ public class SignDisplayListener implements Listener {
         }
         
         pdc.set(keyScrollIdx, PersistentDataType.INTEGER, idx + 1);
-        sign.setLine(2, ChatColor.BLACK + view + ChatColor.BLACK + "/" + perClick);
+        org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
+        front.line(2, LegacyComponentSerializer.legacySection().deserialize("§0" + view + "§0/" + perClick));
         sign.update();
     }
 
@@ -285,21 +293,6 @@ public class SignDisplayListener implements Listener {
             sb.append(Character.toUpperCase(p.charAt(0))).append(p.substring(1)).append(' ');
         }
         return sb.toString().trim();
-    }
-    
-    private String resolveClaimOwnerName(String claimId) {
-        if (claimId == null || claimId.isEmpty()) return "Unknown";
-        try {
-            GPBridge gpBridge = new GPBridge();
-            java.util.Optional<Object> claimOpt = gpBridge.findClaimById(claimId);
-            if (!claimOpt.isPresent()) return "Unknown";
-            Object ownerId = claimOpt.get().getClass().getMethod("getOwnerID").invoke(claimOpt.get());
-            if (!(ownerId instanceof UUID)) return "Unknown";
-            String name = Bukkit.getOfflinePlayer((UUID) ownerId).getName();
-            return name != null ? name : "Unknown";
-        } catch (Exception e) {
-            return "Unknown";
-        }
     }
 
     private String resolveRenterName(String renterUuidStr) {
@@ -322,7 +315,7 @@ public class SignDisplayListener implements Listener {
                 case MONEY:
                     try {
                         double amount = Double.parseDouble(ecoAmtRaw);
-                        return plugin.formatMoneyForSign(amount);
+                        return plugin.getEconomyManager().formatMoneyForSign(amount);
                     } catch (NumberFormatException ignored) {
                         return "$" + ecoAmtRaw;
                     }

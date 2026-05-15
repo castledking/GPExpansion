@@ -9,7 +9,6 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.SkullMeta;
 
-import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
 
 import java.util.ArrayList;
@@ -33,7 +32,6 @@ public class BannedPlayersGUI extends BaseGUI {
     private static final int BACK_SLOT = 51;
     private static final int NEXT_PAGE_SLOT = 53;
 
-    private final GPBridge gp;
     private final ClaimDataStore claimDataStore;
     private final Object claim;
     private final String claimId;
@@ -42,7 +40,6 @@ public class BannedPlayersGUI extends BaseGUI {
 
     public BannedPlayersGUI(GUIManager manager, Player player, Object claim, String claimId) {
         super(manager, player, "banned-players");
-        this.gp = new GPBridge();
         this.claimDataStore = plugin.getClaimDataStore();
         this.claim = claim;
         this.claimId = claimId;
@@ -81,7 +78,9 @@ public class BannedPlayersGUI extends BaseGUI {
             String playerName = entry.playerNames.getOrDefault(playerId,
                 offlinePlayer.getName() != null ? offlinePlayer.getName() : playerId.toString().substring(0, 8));
 
-            bannedPlayers.add(new BannedPlayerInfo(playerId, playerName, offlinePlayer.getLastPlayed()));
+            @SuppressWarnings("deprecation")
+            long lastPlayed = offlinePlayer.getLastPlayed();
+            bannedPlayers.add(new BannedPlayerInfo(playerId, playerName, lastPlayed));
         }
 
         bannedPlayers.sort(Comparator.comparing(info -> info.playerName.toLowerCase()));
@@ -221,7 +220,7 @@ public class BannedPlayersGUI extends BaseGUI {
         player.closeInventory();
         String[] lines = {"", "Ban Player:", "Enter name", ""};
         new SignInputGUI(plugin, player, lines,
-            playerName -> plugin.runAtEntity(player, () -> {
+            playerName -> plugin.getSchedulerFacade().runAtEntity(player, () -> {
                 runClaimCommand("ban", playerName, claimId);
                 runLater(() -> BannedPlayersGUI.openAsync(manager, player, claim, claimId), 5L);
             }),

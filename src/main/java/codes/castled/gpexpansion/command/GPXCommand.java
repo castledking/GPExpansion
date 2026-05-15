@@ -236,6 +236,7 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
     }
     
     @Override
+    @SuppressWarnings("all")
     public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         // Only allow tab completion for admins
         if (!sender.hasPermission("griefprevention.admin")) {

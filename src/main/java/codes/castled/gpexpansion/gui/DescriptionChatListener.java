@@ -37,7 +37,7 @@ public class DescriptionChatListener implements Listener {
         }
         
         event.setCancelled(true);
-        plugin.runAtEntity(player, () -> manager.processInput(player, message));
+        plugin.getSchedulerFacade().runAtEntity(player, () -> manager.processInput(player, message));
     }
 
     @SuppressWarnings("deprecation")

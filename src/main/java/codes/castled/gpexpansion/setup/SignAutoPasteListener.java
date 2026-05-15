@@ -42,17 +42,11 @@ public class SignAutoPasteListener implements Listener {
     
     private static class PendingSignEdit {
         final Location signLocation;
-        final Material signType;
-        final BlockData blockData;
         final ItemStack itemUsed;
-        final String[] formatLines;
         
-        PendingSignEdit(Location loc, Material type, BlockData data, ItemStack item, String[] lines) {
+        PendingSignEdit(Location loc, ItemStack item) {
             this.signLocation = loc;
-            this.signType = type;
-            this.blockData = data;
             this.itemUsed = item;
-            this.formatLines = lines;
         }
     }
     
@@ -74,6 +68,7 @@ public class SignAutoPasteListener implements Listener {
      * Only intercepts when the sign is being placed in a claim the player owns (or rents for self mailbox).
      */
     @EventHandler(priority = EventPriority.LOWEST)
+    @SuppressWarnings("deprecation")
     public void onBlockPlace(BlockPlaceEvent event) {
         Player player = event.getPlayer();
         Block block = event.getBlockPlaced();
@@ -121,10 +116,10 @@ public class SignAutoPasteListener implements Listener {
         Material signType = block.getType();
         BlockData blockData = block.getBlockData().clone();
         ItemStack itemInHand = event.getItemInHand().clone();
-        
+
         // Track this pending edit
-        pendingEdits.put(player.getUniqueId(), 
-            new PendingSignEdit(loc, signType, blockData, itemInHand, lines));
+        pendingEdits.put(player.getUniqueId(),
+            new PendingSignEdit(loc, itemInHand));
         
         // Schedule sign placement 1 tick later (so cancel is applied), then send content to client and open editor.
         runAtLocationLater(loc, () -> {

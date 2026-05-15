@@ -8,15 +8,15 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Set;
 
+@SuppressWarnings("null")
 public final class SafeTeleportUtil {
 
     private static final int RADIUS = 16;
     private static final int MAX_Y_SEARCH = 10;
     private static volatile Vector3D[] volume;
 
-    private static final Set<Material> DAMAGING_TYPES = EnumSet.of(
+    private static final EnumSet<Material> DAMAGING_TYPES = EnumSet.of(
         Material.CACTUS,
         Material.CAMPFIRE,
         Material.FIRE,
@@ -27,7 +27,7 @@ public final class SafeTeleportUtil {
         Material.WITHER_ROSE
     );
 
-    private static final Set<Material> LAVA_TYPES;
+    private static final EnumSet<Material> LAVA_TYPES;
 
     static {
         LAVA_TYPES = EnumSet.of(Material.LAVA);
@@ -36,7 +36,7 @@ public final class SafeTeleportUtil {
         } catch (IllegalArgumentException ignored) {}
     }
 
-    private static final Set<Material> HOLLOW_BY_NAME;
+    private static final EnumSet<Material> HOLLOW_BY_NAME;
 
     static {
         HOLLOW_BY_NAME = EnumSet.noneOf(Material.class);
@@ -125,8 +125,8 @@ public final class SafeTeleportUtil {
             return true;
         }
 
-        // Water is also unsafe - must have solid ground
-        if (below.name().contains("WATER") || below.name().contains("ICE")) {
+        // Water is unsafe - must have solid ground, must not be standing in water
+        if (block.name().contains("WATER") || below.name().contains("WATER")) {
             return true;
         }
 
@@ -176,7 +176,7 @@ public final class SafeTeleportUtil {
             // Must be solid (not hollow) AND not dangerous
             if (!isHollow(checkBlock) && !LAVA_TYPES.contains(checkBlock) && 
                 !DAMAGING_TYPES.contains(checkBlock) && !checkBlock.name().contains("WATER") &&
-                !checkBlock.name().contains("ICE") && !isBedBlock(checkBlock)) {
+                !isBedBlock(checkBlock)) {
                 safeGroundY = checkY;
                 break;
             }
@@ -259,9 +259,9 @@ public final class SafeTeleportUtil {
         int y = loc.getBlockY();
         int z = loc.getBlockZ();
         
-        // Check the block at player position - should be air/hollow
+        // Check the block at player position - should be air/hollow and not water
         Material block = world.getBlockAt(x, y, z).getType();
-        if (!isHollow(block)) {
+        if (!isHollow(block) || block.name().contains("WATER")) {
             return false;
         }
         

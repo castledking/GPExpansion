@@ -56,7 +56,7 @@ public class ClaimAbandonListener implements Listener {
                         plugin.getMessages().send(player, "eviction.active-renter");
                         plugin.getMessages().send(player, "eviction.start-eviction-notice", 
                             "{command}", plugin.getMessages().getRaw("eviction.abandon-eviction-command", "{id}", claimId),
-                            "{duration}", plugin.getEvictionNoticePeriodDisplay());
+                            "{duration}", plugin.getRentalSignManager().getEvictionNoticePeriodDisplay());
                         return;
                     } else {
                         boolean effective = System.currentTimeMillis() >= eviction.effectiveAt;
@@ -118,6 +118,7 @@ public class ClaimAbandonListener implements Listener {
     /**
      * Check if there's a rental sign with a renter for this claim.
      */
+    @SuppressWarnings("null")
     private boolean hasRenterSign(String claimId) {
         try {
             var gp = new codes.castled.gpexpansion.gp.GPBridge();

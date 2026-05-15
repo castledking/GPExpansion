@@ -1,6 +1,7 @@
 package codes.castled.gpexpansion.command;
 
-import org.bukkit.ChatColor;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -28,14 +29,14 @@ public class ConfirmCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         if (!(sender instanceof Player)) {
-            sender.sendMessage(ChatColor.RED + "Only players can use this.");
+            sender.sendMessage(Component.text("Only players can use this.", NamedTextColor.RED));
             return true;
         }
         Player player = (Player) sender;
 
         ConfirmationService svc = plugin.getConfirmationService();
         if (svc == null) {
-            sender.sendMessage(ChatColor.RED + "Confirmation service unavailable.");
+            sender.sendMessage(Component.text("Confirmation service unavailable.", NamedTextColor.RED));
             return true;
         }
 
@@ -54,7 +55,7 @@ public class ConfirmCommand implements CommandExecutor, TabCompleter {
                 token = null;
                 accept = false;
             } else {
-                sender.sendMessage(ChatColor.YELLOW + "Usage: /" + label + " [accept|cancel] or /" + label + " <token> <accept|cancel>");
+                sender.sendMessage(Component.text("Usage: /" + label + " [accept|cancel] or /" + label + " <token> <accept|cancel>", NamedTextColor.YELLOW));
                 return true;
             }
         } else {
@@ -65,13 +66,13 @@ public class ConfirmCommand implements CommandExecutor, TabCompleter {
             } else if (action.equals("cancel") || action.equals("deny") || action.equals("no")) {
                 accept = false;
             } else {
-                sender.sendMessage(ChatColor.RED + "Second argument must be 'accept' or 'cancel'.");
+                sender.sendMessage(Component.text("Second argument must be 'accept' or 'cancel'.", NamedTextColor.RED));
                 return true;
             }
         }
 
         if (!svc.handle(player, token, accept)) {
-            sender.sendMessage(ChatColor.RED + "No pending confirmation or invalid/expired token.");
+            sender.sendMessage(Component.text("No pending confirmation or invalid/expired token.", NamedTextColor.RED));
             return true;
         }
 

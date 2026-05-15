@@ -56,15 +56,14 @@ public class SignListener implements Listener {
     private NamespacedKey keyPerClick() { return new NamespacedKey(plugin, "sign.perClick"); }
     private NamespacedKey keyMaxCap() { return new NamespacedKey(plugin, "sign.maxCap"); }
     private NamespacedKey keyItemB64() { return new NamespacedKey(plugin, "item-b64"); }
-    private NamespacedKey keyRenter() { return new NamespacedKey(plugin, "rent.renter"); }
-    private NamespacedKey keyExpiry() { return new NamespacedKey(plugin, "rent.expiry"); }
-    private NamespacedKey keyScrollIdx() { return new NamespacedKey(plugin, "sign.scrollIdx"); }
 
     public SignListener(GPExpansionPlugin plugin) {
         this.plugin = plugin;
         this.signLimitManager = new SignLimitManager(plugin);
         plugin.getLogger().info("SignListener has been instantiated");
-        plugin.getLogger().info("Plugin version: " + plugin.getDescription().getVersion());
+        @SuppressWarnings("deprecation")
+        String version = plugin.getDescription().getVersion();
+        plugin.getLogger().info("Plugin version: " + version);
         plugin.getLogger().info("Server version: " + plugin.getServer().getVersion());
     }
 
@@ -74,43 +73,9 @@ public class SignListener implements Listener {
         return component != null ? LegacyComponentSerializer.legacySection().serialize(component) : "";
     }
     
-    // Helper method to format duration in a short format (e.g., 1h, 30m, 7d)
-    private String formatDurationShort(String duration) {
-        if (duration == null || duration.isEmpty()) return "";
-        
-        // Simple implementation - adjust based on your duration format
-        return duration.replace("hour", "h")
-                      .replace("minute", "m")
-                      .replace("day", "d")
-                      .replace(" ", "");
-    }
-
     private String stripLegacyColors(String input) {
         if (input == null || input.isEmpty()) return "";
         return input.replaceAll("§[0-9A-FK-ORa-fk-or]", "");
-    }
-    
-    // Helper method to format line 3 of sign text
-    private String formatLine3(EcoKind kind, RenewalSpec renewal, ItemStack item) {
-        if (renewal == null) return "";
-        
-        // Get amount and per click from renewal spec
-        String amount = renewal.ecoAmtRaw;
-        String perClick = formatDurationShort(renewal.perClick);
-        
-        switch (kind) {
-            case MONEY:
-                return String.format("%s$ per %s", amount, perClick);
-            case EXPERIENCE:
-                return String.format("%s XP per %s", amount, perClick);
-            case CLAIMBLOCKS:
-                return String.format("%s blocks per %s", amount, perClick);
-            case ITEM:
-                String itemName = formatItemName(item);
-                return String.format("%s %s per %s", amount, itemName, perClick);
-            default:
-                return "";
-        }
     }
     
     // Parse EcoKind from string input
@@ -174,23 +139,6 @@ public class SignListener implements Listener {
         }
         
         return new RenewalSpec(amount, perClick, maxCap);
-    }
-    
-    // Parse formatted ID from string
-    private String parseFormattedId(String input) {
-        if (input == null || input.isEmpty()) return "";
-        return input.replaceAll("[^0-9]", "");
-    }
-    
-    // Parse formatted EcoKind from string
-    private EcoKind parseFormattedEcoKind(String input) {
-        if (input == null || input.isEmpty()) return null;
-        return parseEcoKind(input);
-    }
-    
-    // Parse formatted renewal from string
-    private RenewalSpec parseFormattedRenewal(String input, EcoKind kind) {
-        return parseRenewal(input, kind);
     }
     
     // Check if a string looks like a number (for flexible ecoType/ecoAmt parsing)
@@ -718,7 +666,7 @@ public class SignListener implements Listener {
 
         // Validate eco tag and amount format
         EcoKind kind;
-        boolean economyAvailable = plugin.isEconomyAvailable();
+        boolean economyAvailable = plugin.getEconomyManager().isEconomyAvailable();
         try {
             kind = parseEcoKind(ecoKindStr);
         } catch (IllegalArgumentException e) {
@@ -885,6 +833,7 @@ public class SignListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    @SuppressWarnings("null")
     public void onSignInteract(@NotNull PlayerInteractEvent event) {
         // Only process right-clicks on blocks with main hand
         if (event.getHand() != EquipmentSlot.HAND || 
@@ -986,7 +935,7 @@ public class SignListener implements Listener {
             }
             EcoKind kind = EcoKind.valueOf(ecoKindStr);
 
-            if (kind == EcoKind.MONEY && !plugin.isEconomyAvailable()) {
+            if (kind == EcoKind.MONEY && !plugin.getEconomyManager().isEconomyAvailable()) {
                 plugin.getMessages().send(player, "sign-interaction.economy-required");
                 return;
             }
@@ -1003,6 +952,7 @@ public class SignListener implements Listener {
         }
     }
 
+    @SuppressWarnings("null")
     private void completeSignInteraction(PlayerInteractEvent event, Player player, Sign sign, boolean rent, boolean sell, boolean mailbox, boolean globalClaim,
                                      EcoKind kind, String claimId, String ecoAmtRaw, String perClick,
                                      String maxCap, PersistentDataContainer pdc) {
@@ -1133,7 +1083,7 @@ public class SignListener implements Listener {
         String ecoFormatted = ecoDisplayForDialog(kind, ecoAmtRaw, pdc);
         
         // Run on the player's thread for chat messages
-        plugin.runAtEntity(player, () -> {
+        plugin.getSchedulerFacade().runAtEntity(player, () -> {
             if (rent) {
                 plugin.getConfirmationService().prompt(
                     player,
@@ -1164,24 +1114,25 @@ public class SignListener implements Listener {
     }
 
     // Payments
+    @SuppressWarnings("null")
     public boolean charge(Player player, EcoKind kind, String ecoAmtRaw, PersistentDataContainer pdc) {
         switch (kind) {
             case MONEY: {
                 // Try a late hook in case the economy registered after onEnable
-                if (!plugin.isEconomyAvailable()) {
-                    plugin.refreshEconomy();
+                if (!plugin.getEconomyManager().isEconomyAvailable()) {
+                    plugin.getEconomyManager().refreshEconomy();
                 }
-                if (!plugin.isEconomyAvailable()) {
-                    player.sendMessage(ChatColor.RED + "Economy not available. Please ensure Vault and an economy provider are installed.");
+                if (!plugin.getEconomyManager().isEconomyAvailable()) {
+                    player.sendMessage(Component.text("Economy not available. Please ensure Vault and an economy provider are installed.", NamedTextColor.RED));
                     return false;
                 }
                 double amount = Double.parseDouble(ecoAmtRaw);
                 amount = Math.min(amount, 9_999_999.99);
-                if (!plugin.hasMoney(player, amount)) {
-                    player.sendMessage(ChatColor.RED + "You don't have enough money.");
+                if (!plugin.getEconomyManager().hasMoney(player, amount)) {
+                    player.sendMessage(Component.text("You don't have enough money.", NamedTextColor.RED));
                     return false;
                 }
-                return plugin.withdrawMoney(player, amount);
+                return plugin.getEconomyManager().withdrawMoney(player, amount);
             }
             case EXPERIENCE: {
                 boolean levels = ecoAmtRaw.toUpperCase().endsWith("L");
@@ -1189,7 +1140,7 @@ public class SignListener implements Listener {
                 if (levels) amt = Math.min(amt, 999); else amt = Math.min(amt, 999_999_999);
                 if (levels) {
                     if (player.getLevel() < amt) {
-                        player.sendMessage(ChatColor.RED + "You need " + amt + " levels.");
+                        player.sendMessage(Component.text("You need " + amt + " levels.", NamedTextColor.RED));
                         return false;
                     }
                     player.setLevel(player.getLevel() - amt);
@@ -1198,7 +1149,7 @@ public class SignListener implements Listener {
                     // Bukkit handles negative giveExp to subtract points
                     // Note: this may reduce levels accordingly
                     if (getTotalExp(player) < amt) {
-                        player.sendMessage(ChatColor.RED + "You need " + amt + " experience points.");
+                        player.sendMessage(Component.text("You need " + amt + " experience points.", NamedTextColor.RED));
                         return false;
                     }
                     player.giveExp(-amt);
@@ -1208,18 +1159,18 @@ public class SignListener implements Listener {
             case ITEM: {
                 String b64 = pdc.get(keyItemB64(), PersistentDataType.STRING);
                 if (b64 == null || b64.isEmpty()) {
-                    player.sendMessage(ChatColor.RED + "This sign is missing item data.");
+                    player.sendMessage(Component.text("This sign is missing item data.", NamedTextColor.RED));
                     return false;
                 }
                 ItemStack target = decodeItem(b64);
                 if (target == null || target.getType() == Material.AIR) {
-                    player.sendMessage(ChatColor.RED + "This sign's item is invalid.");
+                    player.sendMessage(Component.text("This sign's item is invalid.", NamedTextColor.RED));
                     return false;
                 }
                 int amt = Integer.parseInt(ecoAmtRaw);
                 boolean ok = consumeMatchingItem(player, target, amt);
                 if (!ok) {
-                    player.sendMessage(ChatColor.RED + "You don't have enough items (need " + amt + " of " + formatItemName(target) + ").");
+                    player.sendMessage(Component.text("You don't have enough items (need " + amt + " of " + formatItemName(target) + ").", NamedTextColor.RED));
                     return false;
                 }
                 return true;
@@ -1303,7 +1254,8 @@ public class SignListener implements Listener {
     private String formatItemName(ItemStack item) {
         ItemMeta meta = item.getItemMeta();
         if (meta != null && meta.hasDisplayName()) {
-            return meta.getDisplayName();
+            Component displayName = meta.displayName();
+            return displayName != null ? LegacyComponentSerializer.legacySection().serialize(displayName) : StringUtils.capitalize(item.getType().toString().toLowerCase().replace('_', ' '));
         }
         return StringUtils.capitalize(item.getType().toString().toLowerCase().replace('_', ' '));
     }
@@ -1360,12 +1312,13 @@ public class SignListener implements Listener {
     private String formatMoneyForSign(String raw) {
         try {
             double amount = Double.parseDouble(raw);
-            return plugin.formatMoneyForSign(amount);
+            return plugin.getEconomyManager().formatMoneyForSign(amount);
         } catch (NumberFormatException e) {
             return raw;
         }
     }
 
+    @SuppressWarnings("null")
     private String ecoDisplayForDialog(EcoKind kind, String ecoAmtRaw, PersistentDataContainer pdc) {
         if (ecoAmtRaw == null) return "";
         
@@ -1373,7 +1326,7 @@ public class SignListener implements Listener {
             case MONEY: {
                 try {
                     double amount = Double.parseDouble(ecoAmtRaw);
-                    return plugin.formatMoneyForSign(amount);
+                    return plugin.getEconomyManager().formatMoneyForSign(amount);
                 } catch (NumberFormatException e) {
                     return ecoAmtRaw;
                 }
@@ -1428,10 +1381,10 @@ public class SignListener implements Listener {
         org.bukkit.block.sign.SignSide frontSide = sign.getSide(org.bukkit.block.sign.Side.FRONT);
         
         // Set sign lines
-        frontSide.setLine(0, "§a§l[Global Claim]");
-        frontSide.setLine(1, "§6" + player.getName());
-        frontSide.setLine(2, ""); // Empty
-        frontSide.setLine(3, ""); // Empty
+        frontSide.line(0, LegacyComponentSerializer.legacySection().deserialize("§a§l[Global Claim]"));
+        frontSide.line(1, LegacyComponentSerializer.legacySection().deserialize("§6" + player.getName()));
+        frontSide.line(2, Component.empty());
+        frontSide.line(3, Component.empty());
         
         sign.update(true);
         

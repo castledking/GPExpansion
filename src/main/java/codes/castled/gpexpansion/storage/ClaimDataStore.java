@@ -1210,4 +1210,79 @@ public class ClaimDataStore {
         
         return count;
     }
+
+    /**
+     * Count the number of sell signs a player has created (claims for sale)
+     */
+    public int countSellSignsForPlayer(UUID playerId) {
+        if (playerId == null) return 0;
+        
+        codes.castled.gpexpansion.gp.GPBridge gp = new codes.castled.gpexpansion.gp.GPBridge();
+        int count = 0;
+        
+        for (Map.Entry<String, ClaimData> entry : claimData.entrySet()) {
+            ClaimData data = entry.getValue();
+            // Check if claim has rental data (for sale/rent) and is owned by the player
+            if (data.rental != null) {
+                String claimId = entry.getKey();
+                java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
+                if (claimOpt.isPresent()) {
+                    UUID ownerId = gp.getClaimOwner(claimOpt.get());
+                    if (playerId.equals(ownerId)) {
+                        // Check if it's for sale (has rental data but no current renter, or check for sale flag)
+                        // For now, any claim with rental data owned by the player counts as a sell sign
+                        count++;
+                    }
+                }
+            }
+        }
+        
+        return count;
+    }
+
+    /**
+     * Count the number of rent signs a player has created (claims for rent)
+     */
+    public int countRentSignsForPlayer(UUID playerId) {
+        if (playerId == null) return 0;
+        
+        codes.castled.gpexpansion.gp.GPBridge gp = new codes.castled.gpexpansion.gp.GPBridge();
+        int count = 0;
+        
+        for (Map.Entry<String, ClaimData> entry : claimData.entrySet()) {
+            ClaimData data = entry.getValue();
+            // Check if claim has rental data and is owned by the player
+            if (data.rental != null) {
+                String claimId = entry.getKey();
+                java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
+                if (claimOpt.isPresent()) {
+                    UUID ownerId = gp.getClaimOwner(claimOpt.get());
+                    if (playerId.equals(ownerId)) {
+                        count++;
+                    }
+                }
+            }
+        }
+        
+        return count;
+    }
+
+    /**
+     * Count the number of mailbox signs a player has created
+     */
+    public int countMailboxSignsForPlayer(UUID playerId) {
+        if (playerId == null) return 0;
+        
+        int count = 0;
+        
+        for (Map.Entry<String, ClaimData> entry : claimData.entrySet()) {
+            ClaimData data = entry.getValue();
+            // Check if claim has mailbox data and is owned by the player
+            if (data.mailbox != null && playerId.equals(data.mailbox.owner)) {
+                count++;
+            }
+        }
+        
+        return count;
+    }
 }

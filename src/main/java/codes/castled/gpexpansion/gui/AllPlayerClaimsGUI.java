@@ -134,7 +134,6 @@ public class AllPlayerClaimsGUI extends BaseGUI {
             
             // Get owner info
             UUID ownerUUID = gp.getClaimOwner(claim);
-            info.ownerUUID = ownerUUID;
             if (ownerUUID != null) {
                 OfflinePlayer owner = Bukkit.getOfflinePlayer(ownerUUID);
                 info.ownerName = owner.getName() != null ? owner.getName() : ownerUUID.toString().substring(0, 8);
@@ -405,7 +404,6 @@ public class AllPlayerClaimsGUI extends BaseGUI {
         final String claimId;
         String name;
         String ownerName;
-        UUID ownerUUID;
         int childCount;
         int area;
         String location;

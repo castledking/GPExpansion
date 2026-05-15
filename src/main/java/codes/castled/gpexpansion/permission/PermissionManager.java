@@ -34,6 +34,7 @@ public class PermissionManager {
     /**
      * Setup Vault permission provider
      */
+    @SuppressWarnings("all")
     private void setupVault() {
         if (Bukkit.getPluginManager().getPlugin("Vault") == null) {
             plugin.getLogger().info("Vault not found - permission management via /gpx max will use in-memory limits only");

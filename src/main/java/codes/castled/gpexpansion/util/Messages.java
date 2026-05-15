@@ -1,10 +1,13 @@
 package codes.castled.gpexpansion.util;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
 
@@ -230,7 +233,7 @@ public class Messages {
         DEFAULTS.put("claim.sign-not-managed", "&cThat sign is not managed by GPExpansion.");
         DEFAULTS.put("claim.sign-use-denied", "&cYou don't have permission to use this sign.");
         DEFAULTS.put("claim.pending-rent-none", "&eYou have no pending rental payments to collect.");
-        DEFAULTS.put("claim.pending-rent-failed-money", "&cFailed to give you ${amount} from rentals.");
+        DEFAULTS.put("claim.pending-rent-failed-money", "&cFailed to give you  from rentals.");
         DEFAULTS.put("claim.pending-rent-claimblocks", "&aYou received {amount} claim blocks from rentals!");
         DEFAULTS.put("claim.pending-rent-collected", "&aSuccessfully collected all pending rental payments!");
         DEFAULTS.put("claim.teleport-safe-location-fail", "&cCould not compute a safe location in claim {id}.");
@@ -513,6 +516,7 @@ public class Messages {
      * Get the project version from plugin.yml
      * Falls back to reading from pom.properties or hardcoded version
      */
+    @SuppressWarnings("deprecation")
     private String getProjectVersion() {
         String version = plugin.getDescription().getVersion();
         // Remove any ${project.version} placeholders if present
@@ -539,8 +543,8 @@ public class Messages {
      * Auto-bump lang version to project version (when no migrations are needed)
      */
     private void autoBumpLangVersion(String targetVersion) {
-        String currentVersion = langConfig.getString("version", "0.1.3a");
-        
+        currentVersion = langConfig.getString("version", "0.1.3a");
+
         if (isOlderVersion(currentVersion, targetVersion)) {
             langConfig.set("version", targetVersion);
             saveLanguageFile();
@@ -646,7 +650,7 @@ public class Messages {
     /**
      * Get a message as a Component with placeholders replaced.
      */
-    public Component get(String path, String... replacements) {
+    public @Nullable @NotNull TextComponent get(String path, String... replacements) {
         return LegacyComponentSerializer.legacyAmpersand().deserialize(getRaw(path, replacements));
     }
     

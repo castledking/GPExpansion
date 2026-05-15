@@ -17,20 +17,15 @@ import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.listener.SignListener;
 import codes.castled.gpexpansion.listener.MailboxListener;
 import codes.castled.gpexpansion.listener.BanEnforcementListener;
-import codes.castled.gpexpansion.listener.DiscordSRVChatCaptureBridge;
 import codes.castled.gpexpansion.command.PaperCommandWrapper;
 import codes.castled.gpexpansion.permission.SignLimitManager;
 import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
 import codes.castled.gpexpansion.util.Messages;
 import org.bukkit.Bukkit;
-import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
-import net.milkbowl.vault.economy.Economy;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandMap;
-import org.bukkit.Location;
 import org.bukkit.entity.Player;
-import org.bukkit.OfflinePlayer;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -38,12 +33,11 @@ import java.util.Locale;
 
 public final class GPExpansionPlugin extends JavaPlugin {
 
-    private static GPExpansionPlugin instance;
-
-    private Economy economy; // optional
-    // Optional: modern Vault 2 provider (stored as raw Object to avoid compile dep)
-    private Object economyV2; // net.milkbowl.vault2.economy.Economy
-    private Class<?> economyV2Class; // cached class for reflection
+    private codes.castled.gpexpansion.economy.EconomyManager economyManager;
+    private codes.castled.gpexpansion.economy.TaxManager taxManager;
+    private codes.castled.gpexpansion.sign.RentalSignManager rentalSignManager;
+    private codes.castled.gpexpansion.scheduler.SchedulerFacade schedulerFacade;
+    private codes.castled.gpexpansion.permission.PermissionService permissionService;
     private codes.castled.gpexpansion.reminder.RentalReminderService reminderService;
     private codes.castled.gpexpansion.confirm.ConfirmationService confirmationService;
     private codes.castled.gpexpansion.storage.ClaimDataStore claimDataStore;
@@ -63,15 +57,6 @@ public final class GPExpansionPlugin extends JavaPlugin {
     private codes.castled.gpexpansion.scheduler.TaskHandle evictionDisplayTickTask;
     private ClaimFlyManager claimFlyManager;
 
-    // Tax settings
-    private double taxPercent = 5.0;
-    private String taxAccountName = "Tax";
-
-    @Override
-    public void onLoad() {
-        instance = this;
-    }
-
     @Override
     public void onEnable() {
         // Initialize config manager (handles defaults automatically)
@@ -87,12 +72,19 @@ public final class GPExpansionPlugin extends JavaPlugin {
             getLogger().info("Debug mode enabled for GPBridge");
         }
         
+        // Initialize managers
+        economyManager = new codes.castled.gpexpansion.economy.EconomyManager(this);
+        taxManager = new codes.castled.gpexpansion.economy.TaxManager(this);
+        rentalSignManager = new codes.castled.gpexpansion.sign.RentalSignManager(this);
+        schedulerFacade = new codes.castled.gpexpansion.scheduler.SchedulerFacade(this);
+        permissionService = new codes.castled.gpexpansion.permission.PermissionService();
+
         // Load tax settings
-        loadTaxSettings();
+        taxManager.loadTaxSettings();
 
         // Setup economy if Vault present
-        setupEconomy();
-        setupVaultPermission();
+        economyManager.setupEconomy();
+        permissionService.setupVaultPermission();
 
         // Initialize version manager and check for migrations
         versionManager = new VersionManager(this);
@@ -554,7 +546,9 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
         for (Player player : Bukkit.getOnlinePlayers()) {
             try {
-                player.updateCommands();
+                if (player != null) {
+                    player.updateCommands();
+                }
             } catch (Throwable ignored) { }
         }
     }
@@ -572,6 +566,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
     }
 
     /** Starts a periodic task (every 1 second) that updates eviction countdowns for all online players, even when standing still. */
+    @SuppressWarnings("null")
     private void startEvictionDisplayTick() {
         if (signDisplayListener == null) return;
         if (evictionDisplayTickTask != null) {
@@ -581,7 +576,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
         evictionDisplayTickTask = SchedulerAdapter.runRepeatingGlobal(this, () -> {
             for (Player p : Bukkit.getOnlinePlayers()) {
                 if (p.isValid() && p.getWorld() != null) {
-                    runAtEntity(p, () -> signDisplayListener.tickEvictionDisplays(p));
+                    schedulerFacade.runAtEntity(p, () -> signDisplayListener.tickEvictionDisplays(p));
                 }
             }
         }, 20L, 20L);
@@ -640,143 +635,6 @@ public final class GPExpansionPlugin extends JavaPlugin {
         getLogger().info(() -> "GPExpansion disabled");
     }
 
-    public void setupEconomy() {
-        // Try legacy Vault if present
-        try {
-            if (getServer().getPluginManager().getPlugin("Vault") != null) {
-                RegisteredServiceProvider<Economy> rsp = getServer().getServicesManager().getRegistration(Economy.class);
-                if (rsp != null) {
-                    economy = rsp.getProvider();
-                    getLogger().info("Hooked into Vault economy (legacy): " + economy.getName());
-                }
-                // If typed lookup failed, scan all legacy Vault registrations
-                if (economy == null) {
-                    java.util.Collection<RegisteredServiceProvider<Economy>> regs = getServer().getServicesManager().getRegistrations(Economy.class);
-                    if (regs != null && !regs.isEmpty()) {
-                        // Choose first for simplicity (ServicesManager already orders by priority)
-                        RegisteredServiceProvider<Economy> pick = regs.iterator().next();
-                        if (pick != null && pick.getProvider() != null) {
-                            economy = pick.getProvider();
-                            getLogger().info("Hooked into Vault economy (legacy via scan): " + economy.getName());
-                        }
-                    }
-                }
-                // Reflective fallback in case typed lookup failed due to classloader or API shim
-                if (economy == null) {
-                    try {
-                        Class<?> legacyEcoClass = Class.forName("net.milkbowl.vault.economy.Economy");
-                        @SuppressWarnings({"rawtypes", "unchecked"})
-                        RegisteredServiceProvider<?> rsp2 = (RegisteredServiceProvider) getServer().getServicesManager().getRegistration((Class) legacyEcoClass);
-                        if (rsp2 == null) {
-                            @SuppressWarnings({"rawtypes", "unchecked"})
-                            java.util.Collection<RegisteredServiceProvider<?>> regs2 = (java.util.Collection) getServer().getServicesManager().getRegistrations((Class) legacyEcoClass);
-                            if (regs2 != null && !regs2.isEmpty()) {
-                                rsp2 = regs2.iterator().next();
-                            }
-                        }
-                        if (rsp2 != null && rsp2.getProvider() != null) {
-                            // Store under reflective path so format/has/withdraw methods still work
-                            this.economyV2Class = legacyEcoClass;
-                            this.economyV2 = rsp2.getProvider();
-                            getLogger().info("Hooked into Vault economy via reflective legacy bridge: " + economyV2.getClass().getName());
-                        }
-                    } catch (Throwable ignored2) { }
-                }
-            }
-        } catch (NoClassDefFoundError ignored) {
-            // Vault legacy API not on classpath; continue to try Vault 2
-        } catch (Throwable t) {
-            getLogger().warning("Error while hooking legacy Vault: " + t.getMessage());
-        }
-
-        // Always try Vault 2 (VaultUnlocked) modern API under package net.milkbowl.vault2
-        if (economy == null) {
-            try {
-                economyV2Class = Class.forName("net.milkbowl.vault2.economy.Economy");
-                @SuppressWarnings({"rawtypes", "unchecked"})
-                RegisteredServiceProvider<?> rsp2 = (RegisteredServiceProvider) getServer().getServicesManager().getRegistration((Class) economyV2Class);
-                if (rsp2 != null) {
-                    economyV2 = rsp2.getProvider();
-                    getLogger().info("Hooked into Vault economy (modern v2): " + economyV2.getClass().getName());
-                }
-            } catch (ClassNotFoundException ignored) {
-                // Vault 2 API not present
-            } catch (Throwable t) {
-                getLogger().warning("Failed to hook Vault v2 economy: " + t.getMessage());
-            }
-        }
-
-        // FINAL FALLBACK: classloader-agnostic scan of known services, then bind via the actual service class objects
-        if (this.economy == null && this.economyV2 == null) {
-            try {
-                org.bukkit.plugin.ServicesManager sm = getServer().getServicesManager();
-                java.util.Collection<Class<?>> known = sm.getKnownServices();
-                if (known != null) {
-                    for (Class<?> svc : known) {
-                        String name = svc.getName();
-                        if ("net.milkbowl.vault.economy.Economy".equals(name) || "net.milkbowl.vault2.economy.Economy".equals(name)) {
-                            @SuppressWarnings({"rawtypes", "unchecked"})
-                            RegisteredServiceProvider<?> reg = (RegisteredServiceProvider) sm.getRegistration((Class) svc);
-                            if (reg != null && reg.getProvider() != null) {
-                                this.economyV2Class = svc; // bind to the exact class object that ServicesManager knows
-                                this.economyV2 = reg.getProvider();
-                                getLogger().info("Hooked into economy via known-services scan: " + svc.getName() + " -> " + economyV2.getClass().getName());
-                                break;
-                            }
-                        }
-                    }
-                }
-            } catch (Throwable t) {
-                getLogger().fine("Known-services scan failed: " + t.getMessage());
-            }
-        }
-    }
-
-    public void refreshEconomy() {
-        setupEconomy();
-    }
-
-    private net.milkbowl.vault.permission.Permission vaultPermission;
-
-    private void setupVaultPermission() {
-        try {
-            if (getServer().getPluginManager().getPlugin("Vault") != null) {
-                RegisteredServiceProvider<net.milkbowl.vault.permission.Permission> rsp =
-                    getServer().getServicesManager().getRegistration(net.milkbowl.vault.permission.Permission.class);
-                if (rsp != null && rsp.getProvider() != null) {
-                    vaultPermission = rsp.getProvider();
-                }
-            }
-        } catch (Throwable ignored) {}
-    }
-
-    /**
-     * Check if player has griefprevention.restoresnapshot.
-     * Uses Bukkit API for online players; Vault Permission API for offline (required since owner may be offline).
-     */
-    public boolean hasRestoreSnapshotPermission(OfflinePlayer player) {
-        if (player.isOnline() && player.getPlayer() != null) {
-            if (player.getPlayer().hasPermission(codes.castled.gpexpansion.storage.ClaimSnapshotStore.getPermission())) {
-                return true;
-            }
-        }
-        if (vaultPermission != null) {
-            try {
-                String worldName = null;
-                if (player.getPlayer() != null && player.getPlayer().getWorld() != null) {
-                    worldName = player.getPlayer().getWorld().getName();
-                } else if (!getServer().getWorlds().isEmpty()) {
-                    worldName = getServer().getWorlds().get(0).getName();
-                }
-                String playerName = player.getName();
-                if (playerName != null && !playerName.isEmpty()) {
-                    return vaultPermission.has(worldName, playerName, codes.castled.gpexpansion.storage.ClaimSnapshotStore.getPermission());
-                }
-            } catch (Throwable ignored) {}
-        }
-        return false;
-    }
-
     public codes.castled.gpexpansion.storage.ClaimSnapshotStore getSnapshotStore() {
         return snapshotStore;
     }
@@ -808,405 +666,12 @@ public final class GPExpansionPlugin extends JavaPlugin {
         GPBridge.setDebug(configManager.isDebugEnabled());
         
         // Reload tax settings
-        loadTaxSettings();
+        taxManager.loadTaxSettings();
         
         // Reload permission manager (updates gpx.player children)
         if (permissionManager != null) {
             permissionManager.reload();
         }
-    }
-
-    // Economy bridge methods to support both legacy Vault and Vault 2 without a hard compile dependency on v2
-    /** Plugin name passed to VaultUnlocked v2 API methods that require a pluginName argument. */
-    private static final String VAULT2_PLUGIN_NAME = "GPExpansion";
-
-    /** True if a Vault-compatible plugin (Vault or VaultUnlocked) is installed, regardless of whether a provider is hooked. */
-    public boolean isVaultPluginInstalled() {
-        return getServer().getPluginManager().getPlugin("Vault") != null
-                || getServer().getPluginManager().getPlugin("VaultUnlocked") != null;
-    }
-
-    public boolean isEconomyAvailable() {
-        boolean ok = economy != null || economyV2 != null;
-        if (!ok) {
-            // Light debug - use FINE to avoid spam
-            getLogger().fine("Economy queried but no provider hooked yet.");
-        } else {
-            getLogger().fine("Economy available via: " + (economy != null ? ("Vault legacy - " + economy.getName()) : ("reflective/modern - " + economyV2.getClass().getName())));
-        }
-        return ok;
-    }
-
-    public String formatMoney(double amount) {
-        try {
-            if (economy != null) return economy.format(amount);
-            if (economyV2 != null && economyV2Class != null) {
-                java.math.BigDecimal bd = java.math.BigDecimal.valueOf(amount);
-                // VaultUnlocked v2: format(BigDecimal)
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("format", java.math.BigDecimal.class);
-                    Object out = m.invoke(economyV2, bd);
-                    if (out != null) return out.toString();
-                } catch (NoSuchMethodException ignored) {}
-                // Older legacy-style v2: format(double)
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("format", double.class);
-                    Object out = m.invoke(economyV2, amount);
-                    if (out != null) return out.toString();
-                } catch (NoSuchMethodException ignored) {}
-            }
-        } catch (Throwable ignored) { }
-        return String.format(java.util.Locale.US, "%,.2f", amount);
-    }
-
-    private static final String CURRENCY_SYMBOLS = "$€£¥₩₽₹₺₫₴₦₱₪₡₲₵₸₭₮₨";
-
-    /** Currency symbols used for formatting and for parsing sign input (e.g. $100 or 100$). */
-    public static String getCurrencySymbolsForParsing() {
-        return CURRENCY_SYMBOLS;
-    }
-
-    /**
-     * Format money for sign display using Vault's economy.format().
-     * Respects the provider's currency symbol and position (prefix or suffix).
-     * Trims trailing .00 for cleaner sign display when appropriate.
-     * Falls back to "$" prefix when the economy returns a plain number with no symbol.
-     */
-    public String formatMoneyForSign(double amount) {
-        String formatted = formatMoney(amount);
-        if (formatted == null || formatted.isEmpty()) return "$" + compactAmount(amount);
-        // Trim trailing .00 for whole numbers (e.g. "100.00" -> "100", "$1,000.00" -> "$1,000")
-        if (amount == Math.floor(amount) && formatted.contains(".00")) {
-            formatted = formatted.replace(".00", "");
-        }
-        // If economy format has no currency symbol, use $ prefix as fallback
-        boolean hasSymbol = false;
-        for (int i = 0; i < CURRENCY_SYMBOLS.length(); i++) {
-            if (formatted.indexOf(CURRENCY_SYMBOLS.charAt(i)) >= 0) {
-                hasSymbol = true;
-                break;
-            }
-        }
-        if (!hasSymbol) return "$" + compactAmount(amount);
-        return formatted;
-    }
-
-    private String compactAmount(double amount) {
-        return amount == Math.floor(amount)
-            ? String.format(java.util.Locale.US, "%,.0f", amount)
-            : String.format(java.util.Locale.US, "%,.2f", amount);
-    }
-
-    /**
-     * Reset a rental sign to available-for-rent state: clear rental/eviction data, untrust renter,
-     * remove renter from sign PDC, and update display to [Rent].
-     */
-    public void resetRentalSign(org.bukkit.block.Block signBlock) {
-        if (!(signBlock.getState() instanceof org.bukkit.block.Sign sign)) return;
-        org.bukkit.persistence.PersistentDataContainer pdc = sign.getPersistentDataContainer();
-        org.bukkit.NamespacedKey keyKind = new org.bukkit.NamespacedKey(this, "sign.kind");
-        org.bukkit.NamespacedKey keyClaim = new org.bukkit.NamespacedKey(this, "sign.claimId");
-        org.bukkit.NamespacedKey keyRenter = new org.bukkit.NamespacedKey(this, "rent.renter");
-        org.bukkit.NamespacedKey keyExpiry = new org.bukkit.NamespacedKey(this, "rent.expiry");
-        org.bukkit.NamespacedKey keyEcoAmt = new org.bukkit.NamespacedKey(this, "sign.ecoAmt");
-        org.bukkit.NamespacedKey keyEcoKind = new org.bukkit.NamespacedKey(this, "sign.ecoKind");
-        org.bukkit.NamespacedKey keyPerClick = new org.bukkit.NamespacedKey(this, "sign.perClick");
-        org.bukkit.NamespacedKey keyMaxCap = new org.bukkit.NamespacedKey(this, "sign.maxCap");
-        if (!"RENT".equals(pdc.get(keyKind, org.bukkit.persistence.PersistentDataType.STRING))) return;
-        String claimId = pdc.get(keyClaim, org.bukkit.persistence.PersistentDataType.STRING);
-        String renterStr = pdc.get(keyRenter, org.bukkit.persistence.PersistentDataType.STRING);
-        codes.castled.gpexpansion.storage.ClaimDataStore dataStore = getClaimDataStore();
-
-        // Only restore snapshot when we're actually clearing an active rental/eviction from the data store.
-        // Skip restore if rental/eviction are already cleared (e.g. eviction was already processed, or after
-        // server restart when owner sneak+breaks the sign) so we don't restore the same snapshot twice.
-        boolean hasActiveRentalOrEviction = claimId != null && (
-            dataStore.getRental(claimId).isPresent() || dataStore.getEviction(claimId).isPresent());
-
-        // Restore claim from snapshot if owner has permission (owner may be offline; use Vault)
-        // Use sign block location for runAtLocation to ensure Folia runs in loaded region
-        if (claimId != null && hasActiveRentalOrEviction) {
-            java.util.Optional<Object> claimOpt = new codes.castled.gpexpansion.gp.GPBridge().findClaimById(claimId);
-            if (claimOpt.isPresent()) {
-                try {
-                    Object ownerId = claimOpt.get().getClass().getMethod("getOwnerID").invoke(claimOpt.get());
-                    if (ownerId instanceof java.util.UUID ownerUuid) {
-                        OfflinePlayer owner = Bukkit.getOfflinePlayer(ownerUuid);
-                        if (hasRestoreSnapshotPermission(owner)) {
-                            java.util.Optional<codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry> latest =
-                                snapshotStore.getLatestSnapshot(claimId);
-                            if (latest.isPresent()) {
-                                // Use the sign's world so we restore in the same dimension the player sees (avoids world-name mismatch)
-                                org.bukkit.World world = signBlock.getWorld();
-                                String snapId = latest.get().id;
-                                final String fid = claimId;
-                                final String fsid = snapId;
-                                getLogger().info("Restoring claim " + claimId + " from snapshot " + snapId + " in world " + world.getName() + " (Folia=" + codes.castled.gpexpansion.scheduler.SchedulerAdapter.isFolia() + ")");
-                                if (codes.castled.gpexpansion.scheduler.SchedulerAdapter.isFolia()) {
-                                    java.util.Optional<org.bukkit.Location> originOpt = snapshotStore.getSnapshotOrigin(claimId, snapId, world);
-                                    org.bukkit.Location runAt = originOpt.orElse(signBlock.getLocation());
-                                    codes.castled.gpexpansion.scheduler.SchedulerAdapter.runAtLocationLater(this, runAt, () -> {
-                                        boolean ok = snapshotStore.restoreSnapshot(claimId, snapId, world, null);
-                                        if (ok) getLogger().info("Claim " + claimId + " restored from snapshot on eviction.");
-                                        else getLogger().warning("Failed to restore snapshot for claim " + claimId + " (snapshot " + snapId + ")");
-                                    }, 1L);
-                                } else {
-                                        // Non-Folia: run restore on main thread. If we're already on primary thread, run now so chunks are loaded.
-                                        Runnable doRestore = () -> {
-                                            boolean ok = snapshotStore.restoreSnapshot(fid, fsid, world);
-                                            if (ok) getLogger().info("Claim " + fid + " restored from snapshot on eviction.");
-                                            else getLogger().warning("Failed to restore snapshot for claim " + fid + " (snapshot " + fsid + ")");
-                                        };
-                                        if (Bukkit.isPrimaryThread()) {
-                                            doRestore.run();
-                                        } else {
-                                            codes.castled.gpexpansion.scheduler.SchedulerAdapter.runLaterGlobal(this, doRestore, 1L);
-                                        }
-                                }
-                            }
-                        }
-                    }
-                } catch (ReflectiveOperationException ignored) {}
-            }
-        }
-
-        if (claimId != null) {
-            dataStore.clearRental(claimId);
-            dataStore.clearEviction(claimId);
-            dataStore.save();
-        }
-        if (claimId != null && renterStr != null) {
-            codes.castled.gpexpansion.gp.GPBridge gpBridge = new codes.castled.gpexpansion.gp.GPBridge();
-            java.util.Optional<Object> claimOpt = gpBridge.findClaimById(claimId);
-            if (claimOpt.isPresent()) {
-                try {
-                    java.util.UUID renter = java.util.UUID.fromString(renterStr);
-                    String renterName = Bukkit.getOfflinePlayer(renter).getName();
-                    if (renterName != null) {
-                        boolean untrusted = gpBridge.untrust(renterName, claimOpt.get());
-                        if (untrusted) {
-                            gpBridge.saveClaim(claimOpt.get()); // Persist so untrust survives server restarts
-                            getLogger().info("Removed trust for " + renterName + " from claim " + claimId);
-                        }
-                    }
-                } catch (IllegalArgumentException ignored) {}
-            }
-        }
-        pdc.remove(keyRenter);
-        pdc.remove(keyExpiry);
-        String ecoAmt = pdc.get(keyEcoAmt, org.bukkit.persistence.PersistentDataType.STRING);
-        String ecoKindStr = pdc.get(keyEcoKind, org.bukkit.persistence.PersistentDataType.STRING);
-        String perClick = pdc.get(keyPerClick, org.bukkit.persistence.PersistentDataType.STRING);
-        String maxCap = pdc.get(keyMaxCap, org.bukkit.persistence.PersistentDataType.STRING);
-        if (ecoAmt == null) ecoAmt = "";
-        if (perClick == null) perClick = "";
-        if (maxCap == null) maxCap = "";
-        String ecoFormatted = formatEcoForSign(ecoKindStr, ecoAmt);
-        boolean hanging = signBlock.getType().name().contains("HANGING_SIGN");
-        String displayLine0 = org.bukkit.ChatColor.translateAlternateColorCodes('&',
-            messages.getRaw(hanging ? "sign-interaction.sign-display-rent-hanging" : "sign-interaction.sign-display-rent-full"));
-        org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
-        net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer legacy =
-            net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection();
-        front.line(0, legacy.deserialize(displayLine0));
-        front.line(1, legacy.deserialize(org.bukkit.ChatColor.BLACK + "ID: " + org.bukkit.ChatColor.GOLD + (claimId != null ? claimId : "")));
-        front.line(2, legacy.deserialize(org.bukkit.ChatColor.BLACK + ecoFormatted + "/" + perClick));
-        front.line(3, legacy.deserialize(org.bukkit.ChatColor.BLACK + "Max: " + maxCap));
-        sign.update(true);
-    }
-
-    private String formatEcoForSign(String ecoKindStr, String ecoAmtRaw) {
-        if (ecoAmtRaw == null || ecoAmtRaw.isEmpty()) return "";
-        if (ecoKindStr == null) ecoKindStr = "MONEY";
-        try {
-            codes.castled.gpexpansion.util.EcoKind kind = codes.castled.gpexpansion.util.EcoKind.valueOf(ecoKindStr.toUpperCase());
-            switch (kind) {
-                case MONEY:
-                    try {
-                        return formatMoneyForSign(Double.parseDouble(ecoAmtRaw));
-                    } catch (NumberFormatException ignored) {
-                        return "$" + ecoAmtRaw;
-                    }
-                case EXPERIENCE:
-                    return ecoAmtRaw.toUpperCase().endsWith("L")
-                        ? ecoAmtRaw.substring(0, ecoAmtRaw.length() - 1) + " Levels"
-                        : ecoAmtRaw + " XP";
-                case CLAIMBLOCKS:
-                    return ecoAmtRaw + " blocks";
-                case ITEM:
-                    return ecoAmtRaw + " items";
-                default:
-                    return ecoAmtRaw;
-            }
-        } catch (IllegalArgumentException ignored) {
-            return ecoAmtRaw;
-        }
-    }
-
-    /**
-     * Parse eviction notice period from config.
-     * Supports: "14d", "1h", "10m", "10s", "1w", or plain number (treated as days).
-     */
-    public long getEvictionNoticePeriodMs() {
-        Object val = getConfig().get("eviction.notice-period");
-        if (val != null) {
-            if (val instanceof Number n) {
-                return n.longValue() * 24L * 60L * 60L * 1000L;
-            }
-            String s = String.valueOf(val).trim();
-            if (!s.isEmpty()) {
-                long ms = parseDurationToMillis(s);
-                if (ms > 0) return ms;
-            }
-        }
-        return 14L * 24L * 60L * 60L * 1000L; // default 14 days
-    }
-
-    /** Human-readable eviction notice duration for messages (e.g. "14 days", "1 hour"). */
-    public String getEvictionNoticePeriodDisplay() {
-        long ms = getEvictionNoticePeriodMs();
-        long sec = ms / 1000L;
-        long min = sec / 60L;
-        long hr = min / 60L;
-        long d = hr / 24L;
-        if (d > 0) return d + " day" + (d == 1 ? "" : "s");
-        if (hr > 0) return hr + " hour" + (hr == 1 ? "" : "s");
-        if (min > 0) return min + " minute" + (min == 1 ? "" : "s");
-        return sec + " second" + (sec == 1 ? "" : "s");
-    }
-
-    private long parseDurationToMillis(String s) {
-        if (s == null || s.isEmpty()) return 0L;
-        String numStr = s.replaceAll("[^0-9]", "");
-        if (numStr.isEmpty()) return 0L;
-        long n = Long.parseLong(numStr);
-        if (s.length() == numStr.length()) return n * 24L * 60L * 60L * 1000L; // plain number = days
-        char unit = Character.toLowerCase(s.charAt(s.length() - 1));
-        return switch (unit) {
-            case 's' -> n * 1000L;
-            case 'm' -> n * 60L * 1000L;
-            case 'h' -> n * 60L * 60L * 1000L;
-            case 'd' -> n * 24L * 60L * 60L * 1000L;
-            case 'w' -> n * 7L * 24L * 60L * 60L * 1000L;
-            default -> 0L;
-        };
-    }
-
-    public double getBalance(OfflinePlayer player) {
-        try {
-            if (economy != null) return economy.getBalance(player);
-            if (economyV2 != null && economyV2Class != null) {
-                java.util.UUID uuid = player.getUniqueId();
-                // VaultUnlocked v2: BigDecimal getBalance(String pluginName, UUID)
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("getBalance", String.class, java.util.UUID.class);
-                    Object out = m.invoke(economyV2, VAULT2_PLUGIN_NAME, uuid);
-                    if (out instanceof Number n) return n.doubleValue();
-                } catch (NoSuchMethodException ignored) {}
-                // VaultUnlocked v2: default BigDecimal balance(String, UUID)
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("balance", String.class, java.util.UUID.class);
-                    Object out = m.invoke(economyV2, VAULT2_PLUGIN_NAME, uuid);
-                    if (out instanceof Number n) return n.doubleValue();
-                } catch (NoSuchMethodException ignored) {}
-                // Legacy-style v2 fallbacks
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("getBalance", OfflinePlayer.class);
-                    Object out = m.invoke(economyV2, player);
-                    if (out instanceof Number n) return n.doubleValue();
-                } catch (NoSuchMethodException ignored) {}
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("balance", OfflinePlayer.class);
-                    Object out = m.invoke(economyV2, player);
-                    if (out instanceof Number n) return n.doubleValue();
-                } catch (NoSuchMethodException ignored) {}
-            }
-        } catch (Throwable ignored) { }
-        return 0.0D;
-    }
-
-    public boolean hasMoney(OfflinePlayer player, double amount) {
-        try {
-            if (economy != null) return economy.has(player, amount);
-            if (economyV2 != null && economyV2Class != null) {
-                java.util.UUID uuid = player.getUniqueId();
-                java.math.BigDecimal bd = java.math.BigDecimal.valueOf(amount);
-                // VaultUnlocked v2: has(String pluginName, UUID, BigDecimal)
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("has", String.class, java.util.UUID.class, java.math.BigDecimal.class);
-                    Object out = m.invoke(economyV2, VAULT2_PLUGIN_NAME, uuid, bd);
-                    if (out instanceof Boolean) return (Boolean) out;
-                } catch (NoSuchMethodException ignored) {}
-                // Legacy-style v2 fallbacks
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("has", OfflinePlayer.class, double.class);
-                    Object out = m.invoke(economyV2, player, amount);
-                    if (out instanceof Boolean) return (Boolean) out;
-                } catch (NoSuchMethodException ignored) {}
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("hasBalance", OfflinePlayer.class, double.class);
-                    Object out = m.invoke(economyV2, player, amount);
-                    if (out instanceof Boolean) return (Boolean) out;
-                } catch (NoSuchMethodException ignored) {}
-                // Last resort: query balance and compare
-                return getBalance(player) >= amount;
-            }
-        } catch (Throwable ignored) { }
-        return false;
-    }
-
-    public boolean withdrawMoney(OfflinePlayer player, double amount) {
-        try {
-            if (economy != null) {
-                net.milkbowl.vault.economy.EconomyResponse resp = economy.withdrawPlayer(player, amount);
-                return resp != null && resp.transactionSuccess();
-            }
-            if (economyV2 != null && economyV2Class != null) {
-                java.util.UUID uuid = player.getUniqueId();
-                java.math.BigDecimal bd = java.math.BigDecimal.valueOf(amount);
-                // VaultUnlocked v2: EconomyResponse withdraw(String pluginName, UUID, BigDecimal)
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("withdraw", String.class, java.util.UUID.class, java.math.BigDecimal.class);
-                    Object out = m.invoke(economyV2, VAULT2_PLUGIN_NAME, uuid, bd);
-                    return interpretEconomyResponse(out);
-                } catch (NoSuchMethodException ignored) {}
-                // Legacy-style v2 fallbacks
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("withdraw", OfflinePlayer.class, double.class);
-                    Object out = m.invoke(economyV2, player, amount);
-                    return interpretEconomyResponse(out);
-                } catch (NoSuchMethodException ignored) {}
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("withdrawPlayer", OfflinePlayer.class, double.class);
-                    Object out = m.invoke(economyV2, player, amount);
-                    return interpretEconomyResponse(out);
-                } catch (NoSuchMethodException ignored) {}
-            }
-        } catch (Throwable ignored) { }
-        return false;
-    }
-
-    /**
-     * Interpret a return value from a Vault/VaultUnlocked transaction call.
-     * Handles raw Boolean, EconomyResponse-like objects (transactionSuccess/isSuccessful/success/wasSuccessful), and null.
-     */
-    private boolean interpretEconomyResponse(Object out) {
-        if (out == null) return true; // void/null response: assume ok
-        if (out instanceof Boolean) return (Boolean) out;
-        for (String method : new String[]{"transactionSuccess", "isSuccessful", "success", "wasSuccessful"}) {
-            try {
-                java.lang.reflect.Method ok = out.getClass().getMethod(method);
-                Object b = ok.invoke(out);
-                if (b instanceof Boolean) return (Boolean) b;
-            } catch (ReflectiveOperationException ignored) {}
-        }
-        // Some responses expose a public `type` field with a SUCCESS enum
-        try {
-            java.lang.reflect.Field typeField = out.getClass().getField("type");
-            Object type = typeField.get(out);
-            if (type != null) return "SUCCESS".equalsIgnoreCase(type.toString());
-        } catch (ReflectiveOperationException ignored) {}
-        return true; // assume ok if no recognizable shape
     }
 
     /**
@@ -1250,165 +715,33 @@ public final class GPExpansionPlugin extends JavaPlugin {
         return confirmationService;
     }
 
-    // Folia/Paper compatible helpers
-    public void runGlobal(Runnable task) {
-        SchedulerAdapter.runGlobal(this, task);
-    }
-
-    public void runAtEntity(Player player, Runnable task) {
-        SchedulerAdapter.runEntity(this, player, () -> {
-            if (player.isValid()) {
-                task.run();
-            }
-        }, () -> {});
-    }
-
-    public void teleportEntity(Player player, Location to) {
-        if (SchedulerAdapter.isFolia()) {
-            // On Folia, use teleportAsync for cross-region teleportation
-            try {
-                player.teleportAsync(to);
-            } catch (Throwable ignored) {}
-        } else {
-            // On Bukkit/Paper, use standard teleport
-            try {
-                player.teleport(to);
-            } catch (Throwable ignored) {}
-        }
-    }
-
-    /**
-     * Schedule a task on the region thread that owns the given location (Folia),
-     * or on the main thread if Folia region scheduler is unavailable.
-     */
-    public void runAtLocation(org.bukkit.Location loc, Runnable task) {
-        SchedulerAdapter.runAtLocation(this, loc, task);
-    }
-
     public MailboxListener getMailboxListener() {
         return mailboxListener;
     }
 
-    public boolean depositMoney(Player player, double amount) {
-        try {
-            if (economy != null) {
-                net.milkbowl.vault.economy.EconomyResponse resp = economy.depositPlayer(player, amount);
-                return resp != null && resp.transactionSuccess();
-            }
-            if (economyV2 != null && economyV2Class != null) {
-                java.util.UUID uuid = player.getUniqueId();
-                java.math.BigDecimal bd = java.math.BigDecimal.valueOf(amount);
-                // VaultUnlocked v2: EconomyResponse deposit(String pluginName, UUID, BigDecimal)
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("deposit", String.class, java.util.UUID.class, java.math.BigDecimal.class);
-                    Object out = m.invoke(economyV2, VAULT2_PLUGIN_NAME, uuid, bd);
-                    return interpretEconomyResponse(out);
-                } catch (NoSuchMethodException ignored) {}
-                // Legacy-style v2 fallbacks
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("deposit", OfflinePlayer.class, double.class);
-                    Object out = m.invoke(economyV2, player, amount);
-                    return interpretEconomyResponse(out);
-                } catch (NoSuchMethodException ignored) {}
-                try {
-                    java.lang.reflect.Method m = economyV2Class.getMethod("depositPlayer", OfflinePlayer.class, double.class);
-                    Object out = m.invoke(economyV2, player, amount);
-                    return interpretEconomyResponse(out);
-                } catch (NoSuchMethodException ignored) {}
-            }
-        } catch (Throwable ignored) { }
-        return false;
-    }
-    
-    /**
-     * Check if PacketEvents plugin is available.
-     */
-    private boolean isPacketEventsAvailable() {
-        // Check by plugin instance - more reliable than Class.forName
-        org.bukkit.plugin.Plugin pe = Bukkit.getPluginManager().getPlugin("packetevents");
-        if (pe == null) {
-            pe = Bukkit.getPluginManager().getPlugin("PacketEvents");
-        }
-        if (pe != null && pe.isEnabled()) {
-            getLogger().info("PacketEvents detected: " + pe.getName() + " v" + pe.getDescription().getVersion());
-            return true;
-        }
-        return false;
-    }
-    
-    /**
-     * Load tax settings from config.
-     */
-    private void loadTaxSettings() {
-        taxPercent = configManager.getTaxPercent();
-        taxAccountName = configManager.getTaxAccountName();
-        if (taxPercent > 0) {
-            getLogger().info("Tax enabled: " + taxPercent + "% to account '" + taxAccountName + "'");
-        }
-    }
-    
-    /**
-     * Get the config manager.
-     */
     public codes.castled.gpexpansion.util.Config getConfigManager() {
         return configManager;
     }
     
-    /**
-     * Get the configured tax percentage (0 = disabled).
-     */
-    public double getTaxPercent() {
-        return taxPercent;
+    // New manager getters
+    
+    public codes.castled.gpexpansion.economy.EconomyManager getEconomyManager() {
+        return economyManager;
     }
     
-    /**
-     * Get the configured tax account name.
-     */
-    public String getTaxAccountName() {
-        return taxAccountName;
+    public codes.castled.gpexpansion.economy.TaxManager getTaxManager() {
+        return taxManager;
     }
     
-    /**
-     * Check if tax is enabled (percent > 0 and economy available).
-     */
-    public boolean isTaxEnabled() {
-        return taxPercent > 0 && isEconomyAvailable();
+    public codes.castled.gpexpansion.sign.RentalSignManager getRentalSignManager() {
+        return rentalSignManager;
     }
     
-    /**
-     * Deposit money to an NPC/fake account (for tax collection).
-     * Uses Vault's depositPlayer with an OfflinePlayer created from the account name.
-     */
-    public boolean depositToAccount(String accountName, double amount) {
-        if (!isEconomyAvailable() || amount <= 0) return false;
-        try {
-            if (economy != null) {
-                // Create a fake OfflinePlayer for the NPC account
-                // Most economy plugins support this for NPC/server accounts
-                @SuppressWarnings("deprecation")
-                OfflinePlayer fakePlayer = Bukkit.getOfflinePlayer(accountName);
-                
-                // Some economy plugins have createPlayerAccount - try to ensure account exists
-                if (!economy.hasAccount(fakePlayer)) {
-                    economy.createPlayerAccount(fakePlayer);
-                }
-                
-                net.milkbowl.vault.economy.EconomyResponse resp = economy.depositPlayer(fakePlayer, amount);
-                return resp != null && resp.transactionSuccess();
-            }
-        } catch (Throwable e) {
-            getLogger().warning("Failed to deposit " + amount + " to tax account '" + accountName + "': " + e.getMessage());
-        }
-        return false;
+    public codes.castled.gpexpansion.scheduler.SchedulerFacade getSchedulerFacade() {
+        return schedulerFacade;
     }
     
-    /**
-     * Calculate tax amount from a payment.
-     * @param amount The full payment amount
-     * @return The tax amount to deduct
-     */
-    public double calculateTax(double amount) {
-        if (taxPercent <= 0) return 0;
-        return amount * (taxPercent / 100.0);
+    public codes.castled.gpexpansion.permission.PermissionService getPermissionService() {
+        return permissionService;
     }
 }

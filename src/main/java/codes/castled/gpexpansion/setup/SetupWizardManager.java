@@ -1,11 +1,8 @@
 package codes.castled.gpexpansion.setup;
 
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
-
 import org.bukkit.entity.Player;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerQuitEvent;
+
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.gp.GPBridge;
@@ -431,7 +428,7 @@ public class SetupWizardManager {
         }
         
         // Check if money requires Vault
-        if (kind == EcoKind.MONEY && !plugin.isEconomyAvailable()) {
+        if (kind == EcoKind.MONEY && !plugin.getEconomyManager().isEconomyAvailable()) {
             plugin.getMessages().send(player, "wizard.vault-required");
             return true;
         }

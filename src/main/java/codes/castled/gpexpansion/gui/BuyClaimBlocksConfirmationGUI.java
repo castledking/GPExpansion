@@ -1,7 +1,7 @@
 package codes.castled.gpexpansion.gui;
 
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -82,8 +82,8 @@ public class BuyClaimBlocksConfirmationGUI extends BaseGUI {
     private Map<String, String> buildPlaceholders() {
         Map<String, String> placeholders = new HashMap<>();
         placeholders.put("{amount}", String.valueOf(amount));
-        placeholders.put("{cost}", plugin.formatMoney(costPerBlock));
-        placeholders.put("{totalCost}", plugin.formatMoney(totalCost));
+        placeholders.put("{cost}", plugin.getEconomyManager().formatMoney(costPerBlock));
+        placeholders.put("{totalCost}", plugin.getEconomyManager().formatMoney(totalCost));
         return placeholders;
     }
 
@@ -136,34 +136,34 @@ public class BuyClaimBlocksConfirmationGUI extends BaseGUI {
 
     private void processPurchase() {
         // Re-check economy and balance at the moment of confirmation.
-        if (!plugin.isEconomyAvailable()) {
+        if (!plugin.getEconomyManager().isEconomyAvailable()) {
             sendLegacy("&c" + gp.getGPMessageOr("EconomyNoVault",
                     "Economy is not available; purchase aborted."));
             return;
         }
-        if (!plugin.hasMoney(player, totalCost)) {
-            String fmtCost = plugin.formatMoney(totalCost);
-            String fmtBalance = plugin.formatMoney(plugin.getBalance(player));
+        if (!plugin.getEconomyManager().hasMoney(player, totalCost)) {
+            String fmtCost = plugin.getEconomyManager().formatMoney(totalCost);
+            String fmtBalance = plugin.getEconomyManager().formatMoney(plugin.getEconomyManager().getBalance(player));
             sendLegacy("&c" + gp.getGPMessageOr("EconomyNotEnoughMoney",
                     "You don't have enough money. Cost: " + fmtCost + ", Your balance: " + fmtBalance,
                     fmtCost, fmtBalance));
             return;
         }
 
-        if (!plugin.withdrawMoney(player, totalCost)) {
+        if (!plugin.getEconomyManager().withdrawMoney(player, totalCost)) {
             sendLegacy("&cCould not withdraw funds for this purchase.");
             return;
         }
 
         if (!gp.creditBonusClaimBlocks(player, amount)) {
             // Refund on failure to credit.
-            plugin.depositMoney(player, totalCost);
+            plugin.getEconomyManager().depositMoney(player, totalCost);
             sendLegacy("&cFailed to credit claim blocks. Your money has been refunded.");
             return;
         }
 
         int newRemaining = gp.getRemainingClaimBlocks(player);
-        String fmtCost = plugin.formatMoney(totalCost);
+        String fmtCost = plugin.getEconomyManager().formatMoney(totalCost);
         String fallback = "Purchased " + amount + " claim blocks for " + fmtCost
                 + ". You now have " + newRemaining + " claim blocks.";
         sendLegacy("&a" + gp.getGPMessageOr("EconomyBuyBlocksConfirmation",
@@ -171,8 +171,8 @@ public class BuyClaimBlocksConfirmationGUI extends BaseGUI {
                 String.valueOf(amount), fmtCost, String.valueOf(newRemaining)));
     }
 
-    /** Translate &-codes and send the resulting legacy-section string to the player. */
+    /** Translate &-codes and send the resulting Component to the player. */
     private void sendLegacy(String text) {
-        player.sendMessage(ChatColor.translateAlternateColorCodes('&', text));
+        player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(text));
     }
 }

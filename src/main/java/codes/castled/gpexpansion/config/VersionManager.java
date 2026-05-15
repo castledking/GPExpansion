@@ -1,9 +1,12 @@
 package codes.castled.gpexpansion.config;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextComponent;
+import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
+import org.jetbrains.annotations.NotNull;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.gp.GPBridge;
@@ -209,6 +212,9 @@ public class VersionManager {
         ensureGlobalClaimPlayerCommandDefault();
         ensureClaimMapEditorModeSlotPresent();
 
+        // Migrate to 0.1.10a: add sign-protection section to lang.yml
+        migrateSignProtectionToLang();
+
         // Auto-bump version if no migrations needed and version is older than project version
         // Only auto-bump if player-commands section exists (to avoid bumping before migration)
         String projectVersion = getProjectVersion();
@@ -241,6 +247,7 @@ public class VersionManager {
      * Get the project version from plugin.yml
      * Falls back to reading from pom.properties or hardcoded version
      */
+    @SuppressWarnings("deprecation")
     private String getProjectVersion() {
         String version = plugin.getDescription().getVersion();
         // Remove any ${project.version} placeholders if present
@@ -394,6 +401,7 @@ public class VersionManager {
     /**
      * Notify admins about completed migration
      */
+    @SuppressWarnings("all")
     private void notifyAdminsAboutMigration() {
         Bukkit.getOnlinePlayers().stream()
             .filter(player -> player.hasPermission("gpx.admin"))
@@ -1008,6 +1016,7 @@ public class VersionManager {
     /**
      * Notify admins about available update
      */
+    @SuppressWarnings("all")
     private void notifyAdminsAboutUpdate(String currentVersion, String latestVersion) {
         String downloadUrl = "https://www.spigotmc.org/resources/gpexpansion-%E2%9C%85-folia-support.131358/";
         
@@ -1016,8 +1025,14 @@ public class VersionManager {
             .forEach(player -> {
                 player.sendMessage(plugin.getMessages().get("update-checker.ingame-update-available", 
                     "{current}", currentVersion, "{latest}", latestVersion));
-                player.sendMessage(plugin.getMessages().get("update-checker.ingame-download-link", 
-                    "{url}", downloadUrl));
+                
+                // Create clickable link using Kyori Adventure API
+                @NotNull TextComponent linkMessage = plugin.getMessages().get("update-checker.ingame-download-link", 
+                    "{url}", downloadUrl);
+                
+                // Add click event to make the URL clickable
+                Component clickableComponent = linkMessage.clickEvent(ClickEvent.openUrl(downloadUrl));
+                player.sendMessage(clickableComponent);
             });
     }
     
@@ -1062,5 +1077,95 @@ public class VersionManager {
      */
     public boolean isUpdateCheckerEnabled() {
         return updateCheckerEnabled;
+    }
+
+    /**
+     * Migrate sign-protection section to lang.yml
+     */
+    private void migrateSignProtectionToLang() {
+        File langFile = new File(dataFolder, "lang.yml");
+        if (!langFile.exists()) {
+            plugin.getLogger().info("VersionManager: lang.yml does not exist, skipping sign-protection migration");
+            return;
+        }
+
+        try {
+            String content = Files.readString(langFile.toPath());
+            if (content.contains("sign-protection:")) {
+                plugin.getLogger().info("VersionManager: sign-protection section already exists in lang.yml, skipping migration");
+                return;
+            }
+
+            // Build the sign-protection section
+            StringBuilder signProtectionSection = new StringBuilder();
+            signProtectionSection.append("# =============================================================================\n");
+            signProtectionSection.append("# SIGN PROTECTION MESSAGES\n");
+            signProtectionSection.append("# =============================================================================\n");
+            signProtectionSection.append("sign-protection:\n");
+            signProtectionSection.append("  # Sign management\n");
+            signProtectionSection.append("  sneak-to-manage: \"&eSneak and break to manage this sign.\"\n");
+            signProtectionSection.append("  confirm-alternative: \"&7You can also confirm by &6sneak + right clicking &7the sign.\"\n");
+            signProtectionSection.append("  \n");
+            signProtectionSection.append("  # Renter warning\n");
+            signProtectionSection.append("  renter-warning: \"&eWarning: &f{renter} &eis currently renting this from you. Try &n/claim evict {renter}&e while standing in the claim to start the eviction process.\"\n");
+            signProtectionSection.append("  renter-warning-hover: \"Click to run /claim evict {renter}\"\n");
+            signProtectionSection.append("  \n");
+            signProtectionSection.append("  # Trust removal warning\n");
+            signProtectionSection.append("  trust-removal-warning: \"&eWarning: trust will be removed for &6{player}\"\n");
+
+            // Find insertion point (before sign-destruction section)
+            String[] lines = content.split("\\R", -1);
+            java.util.List<String> newLines = new java.util.ArrayList<>();
+            int insertAt = -1;
+
+            for (int i = 0; i < lines.length; i++) {
+                if (lines[i].contains("sign-destruction:") || lines[i].contains("# SIGN DESTRUCTION")) {
+                    insertAt = i;
+                    break;
+                }
+            }
+
+            // If still not found, append at end
+            if (insertAt == -1) {
+                insertAt = lines.length;
+            }
+
+            // Build new file content
+            for (int i = 0; i < insertAt; i++) {
+                newLines.add(lines[i]);
+            }
+
+            // Ensure there's a blank line before insertion
+            if (!newLines.isEmpty() && !newLines.get(newLines.size() - 1).trim().isEmpty()) {
+                newLines.add("");
+            }
+
+            // Add sign-protection section
+            String[] sectionLines = signProtectionSection.toString().split("\\R", -1);
+            for (String sectionLine : sectionLines) {
+                newLines.add(sectionLine);
+            }
+
+            // Add remaining lines
+            for (int i = insertAt; i < lines.length; i++) {
+                newLines.add(lines[i]);
+            }
+
+            // Write to file
+            String newContent = String.join(System.lineSeparator(), newLines);
+            Files.writeString(langFile.toPath(), newContent);
+            plugin.getLogger().info("VersionManager: Successfully migrated lang.yml - added sign-protection section");
+            
+            // Verify the save worked
+            String verifyContent = Files.readString(langFile.toPath());
+            if (verifyContent.contains("sign-protection:")) {
+                plugin.getLogger().info("VersionManager: Verified sign-protection section was saved to lang.yml");
+            } else {
+                plugin.getLogger().warning("VersionManager: Failed to verify sign-protection section in lang.yml");
+            }
+
+        } catch (IOException e) {
+            plugin.getLogger().warning("VersionManager: Failed to migrate sign-protection to lang.yml: " + e.getMessage());
+        }
     }
 }

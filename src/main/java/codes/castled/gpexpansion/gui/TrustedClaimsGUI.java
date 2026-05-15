@@ -219,7 +219,7 @@ public class TrustedClaimsGUI extends BaseGUI {
     
     private String getCurrentTrustedClaimId() {
         Location location = player.getLocation();
-        if (location.getWorld() == null) return null;
+        if (location == null || location.getWorld() == null) return null;
 
         String worldName = location.getWorld().getName();
         String currentClaimId = null;

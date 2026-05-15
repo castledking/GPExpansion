@@ -67,7 +67,7 @@ public class ConfirmationService {
         String time = perClick; // display per click duration
 
         // Always use chat-based confirmation
-        plugin.runAtEntity(player, () -> {
+        plugin.getSchedulerFacade().runAtEntity(player, () -> {
             showChatConfirmation(player, action, claimId, ecoFormatted, time, token);
         });
     }
@@ -154,10 +154,10 @@ public class ConfirmationService {
             }
             
             // Charge on player's entity thread first
-            plugin.runAtEntity(player, () -> {
+            plugin.getSchedulerFacade().runAtEntity(player, () -> {
                 if (!signListener.charge(player, EcoKind.valueOf(p.kind), p.ecoAmtRaw, null)) return; // message already sent on failure
                 // Then update the sign and store on the sign's region thread
-                plugin.runAtLocation(p.signLoc, () -> completeRent(player, p.claimId, p.perClick, p.maxCap, p.signLoc, p.kind, p.ecoAmtRaw));
+                plugin.getSchedulerFacade().runAtLocation(p.signLoc, () -> completeRent(player, p.claimId, p.perClick, p.maxCap, p.signLoc, p.kind, p.ecoAmtRaw));
             });
             return true;
         } else {
@@ -165,8 +165,9 @@ public class ConfirmationService {
         }
     }
 
+    @SuppressWarnings("null")
     private void performBuy(Player player, String claimId, String kind, String ecoAmtRaw, Location signLoc) {
-        plugin.runAtEntity(player, () -> {
+        plugin.getSchedulerFacade().runAtEntity(player, () -> {
             // Check if this is a mailbox purchase by checking the sign's PDC directly
             boolean isMailbox = false;
             if (signLoc != null && signLoc.getBlock().getState() instanceof Sign sign) {
@@ -210,7 +211,7 @@ public class ConfirmationService {
 
             // Update the sign to show ownership instead of removing it
             if (signLoc != null && signLoc.getWorld() != null) {
-                plugin.runAtLocation(signLoc, () -> {
+                plugin.getSchedulerFacade().runAtLocation(signLoc, () -> {
                     org.bukkit.block.Block signBlock = signLoc.getBlock();
                     if (signBlock.getState() instanceof Sign sign) {
                         // Update sign to show owned status
@@ -232,6 +233,7 @@ public class ConfirmationService {
     }
 
     // Must be called on the sign's region thread. Charging is expected to be done beforehand.
+    @SuppressWarnings("null")
     private void completeRent(Player player, String claimId, String perClick, String maxCap, Location signLoc, String kind, String ecoAmtRaw) {
         org.bukkit.block.Block b = signLoc.getBlock();
         if (!(b.getState() instanceof Sign)) return;
@@ -279,7 +281,6 @@ public class ConfirmationService {
 
             // Show current renter's name on line 1 (the player who just rented)
             String renterName = player.getName();
-            if (renterName == null) renterName = "Unknown";
 
             String per = pdc.get(new org.bukkit.NamespacedKey(plugin, "sign.perClick"), PersistentDataType.STRING);
             String maxCapPdc = pdc.get(new org.bukkit.NamespacedKey(plugin, "sign.maxCap"), PersistentDataType.STRING);
@@ -343,19 +344,19 @@ public class ConfirmationService {
             double amt = Double.parseDouble(amount);
             switch (kind) {
                 case "MONEY":
-                    if (plugin.isEconomyAvailable()) {
+                    if (plugin.getEconomyManager().isEconomyAvailable()) {
                         // Apply tax if enabled
                         double taxAmount = 0;
                         double netAmount = amt;
-                        if (plugin.isTaxEnabled()) {
-                            taxAmount = plugin.calculateTax(amt);
+                        if (plugin.getTaxManager().isTaxEnabled()) {
+                            taxAmount = plugin.getTaxManager().calculateTax(amt);
                             netAmount = amt - taxAmount;
                             // Deposit tax to tax account
                             if (taxAmount > 0) {
-                                plugin.depositToAccount(plugin.getTaxAccountName(), taxAmount);
+                                plugin.getEconomyManager().depositToAccount(plugin.getTaxManager().getTaxAccountName(), taxAmount);
                             }
                         }
-                        plugin.depositMoney(player, netAmount);
+                        plugin.getEconomyManager().depositMoney(player, netAmount);
                     }
                     break;
                 case "EXPERIENCE":
@@ -429,7 +430,7 @@ public class ConfirmationService {
             case "MONEY":
                 try {
                     double amount = Double.parseDouble(ecoAmtRaw);
-                    return plugin.formatMoneyForSign(amount);
+                    return plugin.getEconomyManager().formatMoneyForSign(amount);
                 } catch (NumberFormatException e) {
                     return "$" + ecoAmtRaw;
                 }
