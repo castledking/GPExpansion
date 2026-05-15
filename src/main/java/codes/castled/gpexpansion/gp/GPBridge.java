@@ -4175,14 +4175,15 @@ public class GPBridge {
             if (world == null) return Optional.empty();
 
             Class<?> dsClass = dataStore.getClass();
-            Object[] args = new Object[]{world, x, x, y, y, z, z, ownerId, parentClaim, null, null, false};
+            // GP3D createClaim has 13 params: World, x1, x2, y1, y2, z1, z2, UUID, Claim, Long, Player, dryRun, is3D
+            Object[] args = new Object[]{world, x, x, y, y, z, z, ownerId, parentClaim, null, null, false, true};
 
-            // Find and invoke createClaim(World, int, int, int, int, int, int, UUID, Claim, Long, Player, boolean)
+            // Find and invoke createClaim(World, int, int, int, int, int, int, UUID, Claim, Long, Player, boolean, boolean)
             for (Method m : dsClass.getMethods()) {
-                if (!"createClaim".equals(m.getName()) || m.getParameterCount() != 12) continue;
+                if (!"createClaim".equals(m.getName()) || m.getParameterCount() != 13) continue;
                 Class<?>[] params = m.getParameterTypes();
                 if (params[0] != org.bukkit.World.class || params[7] != UUID.class || params[9] != Long.class
-                    || params[10] != org.bukkit.entity.Player.class || params[11] != boolean.class) continue;
+                    || params[10] != org.bukkit.entity.Player.class || params[11] != boolean.class || params[12] != boolean.class) continue;
                 if (params[1] != int.class || params[2] != int.class || params[3] != int.class
                     || params[4] != int.class || params[5] != int.class || params[6] != int.class) continue;
                 if (!params[8].isAssignableFrom(parentClaim.getClass())) continue;
