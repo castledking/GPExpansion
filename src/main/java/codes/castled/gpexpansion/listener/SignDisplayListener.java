@@ -214,7 +214,7 @@ public class SignDisplayListener implements Listener {
         scanAndUpdateSignsNear(p, loc, System.currentTimeMillis());
     }
 
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     private void animateItemLine(Sign sign, PersistentDataContainer pdc) {
         String signType = pdc.get(keyKind, PersistentDataType.STRING);
         if (!"ITEM".equals(signType) && !"MAILBOX".equals(signType)) return;

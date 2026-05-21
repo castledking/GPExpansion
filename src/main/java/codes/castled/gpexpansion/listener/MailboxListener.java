@@ -323,7 +323,7 @@ public class MailboxListener implements Listener {
         return count;
     }
 
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onSignInteract(PlayerInteractEvent event) {
         if (event.getHand() != EquipmentSlot.HAND || 
@@ -567,7 +567,7 @@ public class MailboxListener implements Listener {
     /**
      * True if the player has full (owner) access: mailbox owner or shared names (PDC or legacy sign lines 1–3).
      */
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     private boolean isMailboxFullAccess(Player player, String claimId) {
         UUID mailboxOwner = claimDataStore.getMailboxOwner(claimId).orElse(null);
         if (mailboxOwner != null && mailboxOwner.equals(player.getUniqueId())) return true;
@@ -607,7 +607,7 @@ public class MailboxListener implements Listener {
                material == Material.HOPPER;
     }
 
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     private void showPurchaseConfirmation(Player player, String claimId, PersistentDataContainer pdc, Location signLocation) {
         String ecoAmt = pdc.get(keyEcoAmt(), PersistentDataType.STRING);
         String kindName = pdc.get(keyEcoKind(), PersistentDataType.STRING);
@@ -850,7 +850,7 @@ public class MailboxListener implements Listener {
         }
     }
 
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     private void playMailboxOpenSound(Player player, Material containerType) {
         if (containerType == null) return;
         if (containerType == Material.CHEST || containerType == Material.TRAPPED_CHEST) {
@@ -1350,7 +1350,7 @@ public class MailboxListener implements Listener {
         }
     }
 
-    @SuppressWarnings("null")
+    @SuppressWarnings({"all"})
     private void updateMailboxSign(String claimId, String ownerName) {
         // First check stored sign location
         Location storedLoc = claimDataStore.getMailboxSignLocation(claimId).orElse(null);

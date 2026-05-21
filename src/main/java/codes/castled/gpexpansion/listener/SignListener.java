@@ -833,7 +833,7 @@ public class SignListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     public void onSignInteract(@NotNull PlayerInteractEvent event) {
         // Only process right-clicks on blocks with main hand
         if (event.getHand() != EquipmentSlot.HAND || 
@@ -952,7 +952,7 @@ public class SignListener implements Listener {
         }
     }
 
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     private void completeSignInteraction(PlayerInteractEvent event, Player player, Sign sign, boolean rent, boolean sell, boolean mailbox, boolean globalClaim,
                                      EcoKind kind, String claimId, String ecoAmtRaw, String perClick,
                                      String maxCap, PersistentDataContainer pdc) {
@@ -1114,7 +1114,7 @@ public class SignListener implements Listener {
     }
 
     // Payments
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     public boolean charge(Player player, EcoKind kind, String ecoAmtRaw, PersistentDataContainer pdc) {
         switch (kind) {
             case MONEY: {
@@ -1318,7 +1318,7 @@ public class SignListener implements Listener {
         }
     }
 
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     private String ecoDisplayForDialog(EcoKind kind, String ecoAmtRaw, PersistentDataContainer pdc) {
         if (ecoAmtRaw == null) return "";
         

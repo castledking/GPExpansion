@@ -25,7 +25,7 @@ public class PermissionService {
         } catch (Throwable ignored) {}
     }
 
-    @SuppressWarnings({"null", "deprecation"})
+    @SuppressWarnings({"all", "deprecation"})
     public boolean hasRestoreSnapshotPermission(OfflinePlayer player) {
         if (player.isOnline() && player.getPlayer() != null) {
             if (player.getPlayer().hasPermission(codes.castled.gpexpansion.storage.ClaimSnapshotStore.getPermission())) {

@@ -306,7 +306,6 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    @SuppressWarnings("deprecation")
     private boolean handleAccrualsGroup(CommandSender sender, String[] args, PermissionManager permissionManager) {
         if (args.length < 6) {
             sender.sendMessage(plugin.getMessages().get("commands.accruals-group-usage"));
@@ -353,7 +352,6 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    @SuppressWarnings("deprecation")
     private boolean handleAccrualsPlayer(CommandSender sender, String[] args, PermissionManager permissionManager) {
         if (args.length < 4) {
             sender.sendMessage(plugin.getMessages().get("commands.accruals-player-usage"));

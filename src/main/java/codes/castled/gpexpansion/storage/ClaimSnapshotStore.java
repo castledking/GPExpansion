@@ -539,7 +539,7 @@ public class ClaimSnapshotStore {
     /**
      * Get the origin location of a snapshot (claim min corner). Use this on Folia to schedule restore at the claim's region.
      */
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     public Optional<Location> getSnapshotOrigin(String claimId, String snapshotId, World world) {
         File claimDir = new File(dataDir, sanitize(claimId));
         File indexF = new File(claimDir, "index.yml");

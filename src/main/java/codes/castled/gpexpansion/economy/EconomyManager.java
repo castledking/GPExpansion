@@ -27,14 +27,14 @@ public class EconomyManager {
     public void setupEconomy() {
         try {
             if (Bukkit.getPluginManager().getPlugin("Vault") != null) {
-                @SuppressWarnings("null")
+                @SuppressWarnings("all")
                 RegisteredServiceProvider<Economy> rsp = Bukkit.getServicesManager().getRegistration(Economy.class);
                 if (rsp != null) {
                     economy = rsp.getProvider();
                     plugin.getLogger().info("Hooked into Vault economy (legacy): " + economy.getName());
                 }
                 if (economy == null) {
-                    @SuppressWarnings("null")
+                    @SuppressWarnings("all")
                     java.util.Collection<RegisteredServiceProvider<Economy>> regs = Bukkit.getServicesManager().getRegistrations(Economy.class);
                     if (regs != null && !regs.isEmpty()) {
                         RegisteredServiceProvider<Economy> pick = regs.iterator().next();
