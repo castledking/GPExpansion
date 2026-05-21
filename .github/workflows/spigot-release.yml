@@ -35,8 +35,15 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout GPExpansion
         uses: actions/checkout@v4
+
+      - name: Clone and Build GriefPrevention3D
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_modrinth || inputs.run_spigot }}
+        run: |
+          git clone https://github.com/castledking/GriefPrevention3D.git /tmp/GriefPrevention3D
+          cd /tmp/GriefPrevention3D
+          mvn --batch-mode install -DskipTests
 
       - name: Set up JDK 21
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_modrinth || inputs.run_spigot }}
