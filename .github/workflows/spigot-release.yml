@@ -38,13 +38,6 @@ jobs:
       - name: Checkout GPExpansion
         uses: actions/checkout@v4
 
-      - name: Clone and Build GriefPrevention3D
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_modrinth || inputs.run_spigot }}
-        run: |
-          git clone https://github.com/castledking/GriefPrevention3D.git /tmp/GriefPrevention3D
-          cd /tmp/GriefPrevention3D
-          mvn --batch-mode install -DskipTests
-
       - name: Set up JDK 21
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_modrinth || inputs.run_spigot }}
         uses: actions/setup-java@v4
@@ -52,6 +45,13 @@ jobs:
           java-version: 21
           distribution: temurin
           cache: maven
+
+      - name: Clone and Build GriefPrevention3D
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_modrinth || inputs.run_spigot }}
+        run: |
+          git clone https://github.com/castledking/GriefPrevention3D.git /tmp/GriefPrevention3D
+          cd /tmp/GriefPrevention3D
+          mvn --batch-mode install -DskipTests
 
       - name: Build with Maven
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_modrinth || inputs.run_spigot }}
