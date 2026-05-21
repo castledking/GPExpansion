@@ -161,8 +161,23 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Claim flight listener
         Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.ClaimFlyListener(this), this);
         getLogger().info("- Registered ClaimFlyListener for claim flight feature");
+        registerAccrualListener();
         
         getLogger().info(() -> "GPExpansion enabled");
+    }
+
+    private void registerAccrualListener() {
+        if (!Bukkit.getPluginManager().isPluginEnabled("GriefPrevention")) {
+            getLogger().info("- Skipped AccrualListener because GriefPrevention is not enabled");
+            return;
+        }
+
+        try {
+            Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.AccrualListener(this), this);
+            getLogger().info("- Registered AccrualListener for claim block accrual profiles");
+        } catch (NoClassDefFoundError error) {
+            getLogger().warning("- Skipped AccrualListener because this GriefPrevention build does not expose the required accrual events: " + error.getMessage());
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -672,6 +687,10 @@ public final class GPExpansionPlugin extends JavaPlugin {
         if (permissionManager != null) {
             permissionManager.reload();
         }
+    }
+
+    public codes.castled.gpexpansion.permission.PermissionManager getPermissionManager() {
+        return permissionManager;
     }
 
     /**

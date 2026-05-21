@@ -1,7 +1,7 @@
 # GPExpansion Language File
 # Use & for color codes, supports MiniMessage format
 # Placeholders are shown in {brackets}
-version: "0.1.10a"
+version: "1.1.1"
 
 # =============================================================================
 # GENERAL MESSAGES
@@ -42,6 +42,8 @@ migration:
   console-file-recreated: "&8[&6GPX&8] &7Recreated file: {file} with new format"
   console-migration-complete: "&8[&6GPX&8] &aConfiguration migration completed successfully!"
   console-migration-failed: "&8[&6GPX&8] &cConfiguration migration failed: {error}"
+  accruals-section-added: "&8[&6GPX&8] &7Added missing accruals.groups section to config.yml."
+  accruals-section-failed: "&8[&6GPX&8] &cFailed to add accruals.groups section: {error}"
   
   # In-game messages (to admins)
   ingame-migration-complete: "&8[&6GPX&8] &aConfiguration has been migrated to the new version!"
@@ -350,6 +352,54 @@ commands:
   gpx-max-desync-cleanup: "&aPermissions will be automatically cleaned up using {plugin}."
   gpx-max-desync-unsupported: "&cNo supported permission plugin found for automatic cleanup."
   gpx-max-desync-manual: "&cPlease manually remove duplicate permissions and set the highest one."
+  accruals-manager-unavailable: "&cAccrual permission manager is not available."
+  accruals-usage: "&cUsage: /gpx accruals <check|group|player|creategroup|deletegroup> ..."
+  accruals-usage-check: "&7/gpx accruals check [player]"
+  accruals-usage-group: "&7/gpx accruals group <group> set|add|remove <per-hour|max-blocks|max-claims|all> <amount>"
+  accruals-usage-player: "&7/gpx accruals player <name> set|add|remove|reset <per-hour|max-blocks|max-claims|all> [amount]"
+  accruals-usage-creategroup: "&7/gpx accruals creategroup <name> [blocks-per-hour] [max-blocks] [max-claims] [permission]"
+  accruals-usage-deletegroup: "&7/gpx accruals deletegroup <name>"
+  accruals-unknown-action: "&cUnknown accruals action. Use check, group, player, creategroup, or deletegroup."
+  accruals-check-online-required: "&cPlayer must be online to resolve effective accrual group: {player}"
+  accruals-check-console-usage: "&cUsage from console: /gpx accruals check <player>"
+  accruals-check-header: "&b{player} accruals:"
+  accruals-check-group: "&7  group: &f{group} &8({source})"
+  accruals-check-blocks: "&7  blocks/hour: &f{amount}"
+  accruals-check-max-blocks: "&7  max blocks: &f{amount}"
+  accruals-check-max-claims: "&7  max claims: &f{amount}"
+  accruals-check-override: "&7  player override: &f{override}"
+  accruals-disabled: "disabled"
+  accruals-unlimited: "unlimited"
+  accruals-none: "none"
+  accruals-source-fallback: "fallback"
+  accruals-source-player-override: "player override"
+  accruals-source-group: "accrual group"
+  accruals-group-usage: "&cUsage: /gpx accruals group <group> set|add|remove <per-hour|max-blocks|max-claims|all> <amount>"
+  accruals-unknown-group: "&cUnknown accrual group: {group}"
+  accruals-invalid-group-action: "&cInvalid action. Use set, add, or remove."
+  accruals-invalid-field: "&cInvalid field. Use per-hour, max-blocks, max-claims, or all."
+  accruals-amount-number: "&cAmount must be a number."
+  accruals-amount-nonnegative: "&cAmount cannot be negative."
+  accruals-group-updated: "&aUpdated accrual group {group}: {fields} {action} {amount}."
+  accruals-player-usage: "&cUsage: /gpx accruals player <name> set|add|remove|reset <per-hour|max-blocks|max-claims|all> [amount]"
+  accruals-unknown-player: "&cUnknown player: {player}"
+  accruals-player-reset: "&aReset {fields} accrual override for {player}."
+  accruals-player-reset-none: "&eNo matching accrual override was set for {player}."
+  accruals-invalid-player-action: "&cInvalid action. Use set, add, remove, or reset."
+  accruals-player-action-usage: "&cUsage: /gpx accruals player <name> {action} <per-hour|max-blocks|max-claims|all> <amount>"
+  accruals-player-updated: "&aUpdated player {player} accrual override: {fields} {action} {amount}."
+  accruals-effective-now: "&7Effective now: {blocks}/hour, max {maxBlocks} blocks, {maxClaims} claims."
+  accruals-creategroup-usage: "&cUsage: /gpx accruals creategroup <name> [blocks-per-hour] [max-blocks] [max-claims] [permission]"
+  accruals-group-exists: "&cAccrual group already exists: {group}"
+  accruals-group-create-failed: "&cFailed to create accrual group {group}."
+  accruals-group-created: "&aCreated accrual group {group} with {blocks}/hour, max {maxBlocks} blocks, {maxClaims} claims."
+  accruals-luckperms-weight: "&7LuckPerms weight {weight} detected; accruals.groups was sorted with lower weights higher."
+  accruals-luckperms-no-weight: "&7LuckPerms group detected without a weight; existing list order was preserved for this group."
+  accruals-deletegroup-usage: "&cUsage: /gpx accruals deletegroup <name>"
+  accruals-group-deleted: "&aDeleted accrual group {group}."
+  accruals-claim-limit: "&cYou have reached your claim limit ({max}) for accrual profile {profile}."
+  accruals-redundant-group-warning: "No 'permission:' section found for accrual group '{group}', and no matching Vault or LuckPerms group was found. This accrual config is redundant."
+  accruals-invalid-group-entry-warning: "Skipping accruals.groups entry {index} because it has no name."
 
 # =============================================================================
 # SETUP WIZARD MESSAGES
@@ -638,6 +688,7 @@ admin:
   gpx-debug: "&e/gpx debug &7- Toggle debug mode"
   gpx-info: "&e/gpx info &7- Show plugin information"
   gpx-max: "&e/gpx max &7- Modify player creation limits."
+  gpx-accruals: "&e/gpx accruals &7- Check and modify claim block accrual profiles."
   no-permission: "&cYou don't have permission to use this command."
   
   # Debug mode

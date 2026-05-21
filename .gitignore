@@ -45,3 +45,12 @@ CHANGES-*.md
 PLAN-*.md
 .modrinth/
 wiki/
+.release/old/
+
+# SpigotMC release automation
+.release/node_modules/
+.release/.spigot-cookies.json
+.release/.screenshots/
+
+# Track the latest release notes pointer
+!.release/latest/

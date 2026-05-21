@@ -20,6 +20,39 @@ passive-claim-flight: false
 # virtual = no subdivision, virtual view, non-updating (useful for non-GP3D users who want stackable mailboxes)
 mailbox-protocol: virtual
 
+accruals:
+  # Amount of accrued claim blocks per hour and max cap, based on permissions.
+  # You can add/remove as many names here that you want.
+  # Permission nodes are in the format griefprevention.accruals.<groupname>.<type>
+  # Examples:
+  #   - default: 10 blocks/hour, max 1000 blocks |
+  #       * griefprevention.accruals.default.blocks
+  #       * griefprevention.accruals.default.max
+  #       * griefprevention.accruals.default.claims
+  #   - vip: 20 blocks/hour, max 2000 blocks |
+  #       * griefprevention.accruals.vip.blocks
+  #       * griefprevention.accruals.vip.max
+  #       * griefprevention.accruals.vip.claims
+  #   - elite: 50 blocks/hour, max 5000 blocks |
+  #       * griefprevention.accruals.elite.blocks
+  #       * griefprevention.accruals.elite.max
+  #       * griefprevention.accruals.elite.claims
+  # Or you can give the griefprevention.accruals.<groupname> for all types.
+  groups:
+  - name: default
+    blocks-per-hour: 100
+    max-blocks: 80000
+    max-claims: 0 # disabled
+  - name: vip
+    blocks-per-hour: 20
+    max-blocks: 250000
+    max-claims: 10
+  - name: elite
+    blocks-per-hour: 50
+    max-blocks: 1000000
+    max-claims: 20
+    permission: elite-reward # optional additional permission for this type (griefprevention.accruals.elite-reward)
+
 # Default limits for sign creation (can be overridden by permissions)
 defaults:
   # Default maximum number of global claims a player can have
@@ -92,7 +125,7 @@ player-commands:
 
 # Permission tracking settings
 permission-tracking:
-  # Enable tracking of player permissions for sign limits
+  # Enable tracking of player permissions for sign/accrual limits
   enabled: true
   # How often to check for permission changes (in minutes)
   check-interval: 5
@@ -130,7 +163,7 @@ eviction:
 version:
   # Current configuration version (DO NOT MODIFY)
   # Used to handle configuration migrations between versions
-  config-version: "0.1.10a"
+  config-version: "1.1.1"
   
   # Update checking settings
   update-checker:

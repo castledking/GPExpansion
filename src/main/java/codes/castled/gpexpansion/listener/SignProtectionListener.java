@@ -349,7 +349,7 @@ public class SignProtectionListener implements Listener {
                     TextComponent hoverText = plugin.getMessages().get("sign-protection.renter-warning-hover", 
                         "{renter}", renterName);
                     
-                    Component message = LegacyComponentSerializer.legacySection().deserialize(warningMessage)
+                    Component message = LegacyComponentSerializer.legacyAmpersand().deserialize(warningMessage)
                             .clickEvent(ClickEvent.suggestCommand("/claim evict " + renterName))
                             .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, hoverText));
                     p.sendMessage(message);
