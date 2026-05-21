@@ -219,9 +219,9 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
                     Block block = world.getBlockAt(x, y, z);
                     if (block.getState() instanceof Sign sign) {
                         PersistentDataContainer pdc = sign.getPersistentDataContainer();
-                        @SuppressWarnings("null")
+                        @SuppressWarnings("all")
                         String signKind = pdc.get(keyKind, stringType);
-                        @SuppressWarnings("null")
+                        @SuppressWarnings("nallull")
                         String signClaimId = pdc.get(keyClaim, stringType);
                         
                         // Check if this sign references our claim

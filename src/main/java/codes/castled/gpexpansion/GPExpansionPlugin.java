@@ -581,7 +581,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
     }
 
     /** Starts a periodic task (every 1 second) that updates eviction countdowns for all online players, even when standing still. */
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     private void startEvictionDisplayTick() {
         if (signDisplayListener == null) return;
         if (evictionDisplayTickTask != null) {

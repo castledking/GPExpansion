@@ -118,7 +118,7 @@ public class ClaimAbandonListener implements Listener {
     /**
      * Check if there's a rental sign with a renter for this claim.
      */
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     private boolean hasRenterSign(String claimId) {
         try {
             var gp = new codes.castled.gpexpansion.gp.GPBridge();

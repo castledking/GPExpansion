@@ -50,7 +50,7 @@ public class SignProtectionListener implements Listener {
         this.keyRenter = new NamespacedKey(plugin, "rent.renter");
     }
 
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     private boolean isOurSign(Block b) {
         if (b == null) return false;
         Material t = b.getType();
@@ -145,7 +145,7 @@ public class SignProtectionListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     public void onSignInteract(PlayerInteractEvent event) {
         // Only process right-clicks on blocks with main hand
         if (event.getHand() != org.bukkit.inventory.EquipmentSlot.HAND ||
@@ -257,7 +257,7 @@ public class SignProtectionListener implements Listener {
         return handleBreakOfManagedSign(signBlock, p, event);
     }
 
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     private boolean handleBreakOfManagedSign(Block signBlock, Player p, BlockBreakEvent event) {
         Sign sign = (Sign) signBlock.getState();
         String signKind = sign.getPersistentDataContainer().get(keyKind, PersistentDataType.STRING);
@@ -386,7 +386,7 @@ public class SignProtectionListener implements Listener {
         return allowBreak;
     }
 
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     private boolean performDelete(Block signBlock, Player player) {
         try {
             Sign sign = (Sign) signBlock.getState();

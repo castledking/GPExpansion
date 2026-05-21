@@ -1776,7 +1776,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         return true;
     }
 
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     private boolean handleRentalSignConfirm(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         Player player = (Player) sender;

@@ -9,7 +9,7 @@ import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
 
-@SuppressWarnings("null")
+@SuppressWarnings("all")
 public final class SafeTeleportUtil {
 
     private static final int RADIUS = 16;

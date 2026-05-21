@@ -130,7 +130,6 @@ public abstract class BaseGUI {
      * Create an item from a configuration section.
      * Supports textured player heads via 'skull-texture' or 'skull-owner' keys.
      */
-    @SuppressWarnings("deprecation")
     protected ItemStack createItemFromSection(ConfigurationSection section, Map<String, String> placeholders) {
         String materialName = section.getString("material", "STONE");
         Material material = Material.matchMaterial(materialName);
@@ -578,7 +577,7 @@ public abstract class BaseGUI {
     /**
      * Play a click sound to the player.
      */
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     protected void playClickSound() {
         org.bukkit.Location loc = player.getLocation();
         if (loc != null) {

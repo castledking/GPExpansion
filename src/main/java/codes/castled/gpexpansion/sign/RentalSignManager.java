@@ -26,7 +26,7 @@ public class RentalSignManager {
         this.plugin = plugin;
     }
 
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     public void resetRentalSign(Block signBlock) {
         if (!(signBlock.getState() instanceof Sign sign)) return;
         PersistentDataContainer pdc = sign.getPersistentDataContainer();

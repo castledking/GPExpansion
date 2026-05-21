@@ -165,7 +165,7 @@ public class ConfirmationService {
         }
     }
 
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     private void performBuy(Player player, String claimId, String kind, String ecoAmtRaw, Location signLoc) {
         plugin.getSchedulerFacade().runAtEntity(player, () -> {
             // Check if this is a mailbox purchase by checking the sign's PDC directly
@@ -233,7 +233,7 @@ public class ConfirmationService {
     }
 
     // Must be called on the sign's region thread. Charging is expected to be done beforehand.
-    @SuppressWarnings("null")
+    @SuppressWarnings("all")
     private void completeRent(Player player, String claimId, String perClick, String maxCap, Location signLoc, String kind, String ecoAmtRaw) {
         org.bukkit.block.Block b = signLoc.getBlock();
         if (!(b.getState() instanceof Sign)) return;

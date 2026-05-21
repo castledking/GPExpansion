@@ -12,8 +12,8 @@
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <!-- Paper's new calendar versioning. Matches GriefPrevention3D for 1.26.1 support. -->
-    <paper.version>26.1.2.build.18-alpha</paper.version>
+    <!-- Paper API version for 1.20.x server compatibility -->
+    <paper.version>1.20.6-R0.1-SNAPSHOT</paper.version>
     <adventure.minimessage.version>4.17.0</adventure.minimessage.version>
     <vault.api.version>1.7</vault.api.version>
     <griefprevention3d.version>17.5.2</griefprevention3d.version>
