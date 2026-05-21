@@ -210,6 +210,7 @@ public class VersionManager {
         ensureEvictionSectionPresent();
         ensurePlayerCommandPresent("claimfly.use");
         ensureGlobalClaimPlayerCommandDefault();
+        ensureAccrualsSectionPresent();
         ensureClaimMapEditorModeSlotPresent();
 
         // Migrate to 0.1.10a: add sign-protection section to lang.yml
@@ -843,6 +844,116 @@ public class VersionManager {
     private void ensureGlobalClaimPlayerCommandDefault() {
         // Disabled - regex replacement was corrupting YAML structure
         // Users can manually configure claim.toggleglobal.X permissions in config.yml
+    }
+
+    private static final String ACCRUALS_SECTION_111 =
+        "accruals:\n" +
+        "  # Amount of accrued claim blocks per hour and max cap, based on permissions.\n" +
+        "  # You can add/remove as many names here that you want.\n" +
+        "  # Permission nodes are in the format griefprevention.accruals.<groupname>.<type>\n" +
+        "  # Examples:\n" +
+        "  #   - default: 10 blocks/hour, max 1000 blocks |\n" +
+        "  #       * griefprevention.accruals.default.blocks\n" +
+        "  #       * griefprevention.accruals.default.max\n" +
+        "  #       * griefprevention.accruals.default.claims\n" +
+        "  #   - vip: 20 blocks/hour, max 2000 blocks |\n" +
+        "  #       * griefprevention.accruals.vip.blocks\n" +
+        "  #       * griefprevention.accruals.vip.max\n" +
+        "  #       * griefprevention.accruals.vip.claims\n" +
+        "  #   - elite: 50 blocks/hour, max 5000 blocks |\n" +
+        "  #       * griefprevention.accruals.elite.blocks\n" +
+        "  #       * griefprevention.accruals.elite.max\n" +
+        "  #       * griefprevention.accruals.elite.claims\n" +
+        "  # Or you can give the griefprevention.accruals.<groupname> for all types.\n" +
+        "  groups:\n" +
+        "  - name: default\n" +
+        "    blocks-per-hour: 100\n" +
+        "    max-blocks: 80000\n" +
+        "    max-claims: 0 # disabled\n" +
+        "  - name: vip\n" +
+        "    blocks-per-hour: 20\n" +
+        "    max-blocks: 250000\n" +
+        "    max-claims: 10\n" +
+        "  - name: elite\n" +
+        "    blocks-per-hour: 50\n" +
+        "    max-blocks: 1000000\n" +
+        "    max-claims: 20\n" +
+        "    permission: elite-reward # optional additional permission for this type (griefprevention.accruals.elite-reward)";
+
+    private void ensureAccrualsSectionPresent() {
+        File configFile = new File(dataFolder, "config.yml");
+        if (!configFile.exists()) return;
+
+        try {
+            String content = Files.readString(configFile.toPath());
+            boolean hasAccruals = content.matches("(?sm).*^accruals:\\s*$.*");
+            boolean hasAccrualGroups = content.matches("(?sm).*^accruals:\\s*$.*^\\s+groups:\\s*$.*");
+
+            if (hasAccruals && hasAccrualGroups) {
+                return;
+            }
+
+            String[] lines = content.split("\\R", -1);
+            int replaceStart = hasAccruals ? findTopLevelSection(lines, "accruals:") : -1;
+            int replaceEnd = replaceStart >= 0 ? findNextTopLevelSection(lines, replaceStart + 1) : -1;
+            int insertAt = replaceStart;
+            if (insertAt < 0) {
+                insertAt = findTopLevelSection(lines, "defaults:");
+            }
+            if (insertAt < 0) {
+                insertAt = findTopLevelSection(lines, "permission-tracking:");
+            }
+            if (insertAt < 0) {
+                insertAt = findTopLevelSection(lines, "version:");
+            }
+            if (insertAt < 0) {
+                insertAt = lines.length;
+            }
+            if (replaceEnd < 0) {
+                replaceEnd = insertAt;
+            }
+
+            java.util.List<String> newLines = new java.util.ArrayList<>();
+            for (int i = 0; i < insertAt; i++) {
+                newLines.add(lines[i]);
+            }
+            if (!newLines.isEmpty() && !newLines.get(newLines.size() - 1).trim().isEmpty()) {
+                newLines.add("");
+            }
+            for (String line : ACCRUALS_SECTION_111.split("\\R", -1)) {
+                newLines.add(line);
+            }
+            newLines.add("");
+            for (int i = replaceEnd; i < lines.length; i++) {
+                newLines.add(lines[i]);
+            }
+
+            Files.writeString(configFile.toPath(), String.join(System.lineSeparator(), newLines));
+            plugin.reloadConfig();
+            plugin.getLogger().info(plainText(plugin.getMessages().get("migration.accruals-section-added")));
+        } catch (IOException e) {
+            plugin.getLogger().warning(plainText(plugin.getMessages().get("migration.accruals-section-failed",
+                "{error}", e.getMessage())));
+        }
+    }
+
+    private int findTopLevelSection(String[] lines, String sectionHeader) {
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].trim().equals(sectionHeader) && !lines[i].startsWith(" ")) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private int findNextTopLevelSection(String[] lines, int startAt) {
+        for (int i = startAt; i < lines.length; i++) {
+            String trimmed = lines[i].trim();
+            if (!trimmed.isEmpty() && !trimmed.startsWith("#") && !lines[i].startsWith(" ") && trimmed.endsWith(":")) {
+                return i;
+            }
+        }
+        return lines.length;
     }
 
     private void ensurePlayerCommandPresent(String commandPermission) {

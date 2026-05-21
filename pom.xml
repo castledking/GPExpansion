@@ -5,7 +5,7 @@
 
   <groupId>codes.castled.gpexpansion</groupId>
   <artifactId>gpexpansion</artifactId>
-  <version>1.1.0</version>
+  <version>1.1.1</version>
   <name>GPExpansion</name>
   <description>GriefPrevention Expansion</description>
 
@@ -16,6 +16,7 @@
     <paper.version>26.1.2.build.18-alpha</paper.version>
     <adventure.minimessage.version>4.17.0</adventure.minimessage.version>
     <vault.api.version>1.7</vault.api.version>
+    <griefprevention3d.version>17.4.9</griefprevention3d.version>
   </properties>
 
   <repositories>
@@ -83,6 +84,12 @@
       <groupId>me.clip</groupId>
       <artifactId>placeholderapi</artifactId>
       <version>2.11.6</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.griefprevention</groupId>
+      <artifactId>GriefPrevention3D</artifactId>
+      <version>${griefprevention3d.version}</version>
       <scope>provided</scope>
     </dependency>
   </dependencies>

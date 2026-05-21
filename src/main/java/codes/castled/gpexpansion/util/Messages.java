@@ -43,6 +43,10 @@ public class Messages {
         DEFAULTS.put("general.no-permission", "&cYou don't have permission to do that.");
         DEFAULTS.put("general.reload-success", "&aConfiguration and language files reloaded successfully.");
         DEFAULTS.put("general.player-only", "&cThis command can only be used by players.");
+
+        // Configuration migration
+        DEFAULTS.put("migration.accruals-section-added", "&8[&6GPX&8] &7Added missing accruals.groups section to config.yml.");
+        DEFAULTS.put("migration.accruals-section-failed", "&8[&6GPX&8] &cFailed to add accruals.groups section: {error}");
         
         // Permissions
         DEFAULTS.put("permissions.economy-type-denied", "&c✖ You don't have permission to use &6{economy}&c economy for {signtype} signs.");
@@ -245,6 +249,7 @@ public class Messages {
         DEFAULTS.put("admin.gpx-reload", "&e/gpx reload &7- Reload config and language files");
         DEFAULTS.put("admin.gpx-debug", "&e/gpx debug &7- Toggle debug mode");
         DEFAULTS.put("admin.gpx-max", "&e/gpx max &7- Modify player creation limits.");
+        DEFAULTS.put("admin.gpx-accruals", "&e/gpx accruals &7- Check and modify claim block accrual profiles.");
         DEFAULTS.put("admin.debug-enabled", "&aDebug mode enabled.");
         DEFAULTS.put("admin.debug-disabled", "&cDebug mode disabled.");
         DEFAULTS.put("admin.no-permission", "&cYou don't have permission to use this command.");
@@ -278,6 +283,54 @@ public class Messages {
         DEFAULTS.put("commands.gpx-max-desync-cleanup", "&aPermissions will be automatically cleaned up using {plugin}.");
         DEFAULTS.put("commands.gpx-max-desync-unsupported", "&cNo supported permission plugin found for automatic cleanup.");
         DEFAULTS.put("commands.gpx-max-desync-manual", "&cPlease manually remove duplicate permissions and set the highest one.");
+        DEFAULTS.put("commands.accruals-manager-unavailable", "&cAccrual permission manager is not available.");
+        DEFAULTS.put("commands.accruals-usage", "&cUsage: /gpx accruals <check|group|player|creategroup|deletegroup> ...");
+        DEFAULTS.put("commands.accruals-usage-check", "&7/gpx accruals check [player]");
+        DEFAULTS.put("commands.accruals-usage-group", "&7/gpx accruals group <group> set|add|remove <per-hour|max-blocks|max-claims|all> <amount>");
+        DEFAULTS.put("commands.accruals-usage-player", "&7/gpx accruals player <name> set|add|remove|reset <per-hour|max-blocks|max-claims|all> [amount]");
+        DEFAULTS.put("commands.accruals-usage-creategroup", "&7/gpx accruals creategroup <name> [blocks-per-hour] [max-blocks] [max-claims] [permission]");
+        DEFAULTS.put("commands.accruals-usage-deletegroup", "&7/gpx accruals deletegroup <name>");
+        DEFAULTS.put("commands.accruals-unknown-action", "&cUnknown accruals action. Use check, group, player, creategroup, or deletegroup.");
+        DEFAULTS.put("commands.accruals-check-online-required", "&cPlayer must be online to resolve effective accrual group: {player}");
+        DEFAULTS.put("commands.accruals-check-console-usage", "&cUsage from console: /gpx accruals check <player>");
+        DEFAULTS.put("commands.accruals-check-header", "&b{player} accruals:");
+        DEFAULTS.put("commands.accruals-check-group", "&7  group: &f{group} &8({source})");
+        DEFAULTS.put("commands.accruals-check-blocks", "&7  blocks/hour: &f{amount}");
+        DEFAULTS.put("commands.accruals-check-max-blocks", "&7  max blocks: &f{amount}");
+        DEFAULTS.put("commands.accruals-check-max-claims", "&7  max claims: &f{amount}");
+        DEFAULTS.put("commands.accruals-check-override", "&7  player override: &f{override}");
+        DEFAULTS.put("commands.accruals-disabled", "disabled");
+        DEFAULTS.put("commands.accruals-unlimited", "unlimited");
+        DEFAULTS.put("commands.accruals-none", "none");
+        DEFAULTS.put("commands.accruals-source-fallback", "fallback");
+        DEFAULTS.put("commands.accruals-source-player-override", "player override");
+        DEFAULTS.put("commands.accruals-source-group", "accrual group");
+        DEFAULTS.put("commands.accruals-group-usage", "&cUsage: /gpx accruals group <group> set|add|remove <per-hour|max-blocks|max-claims|all> <amount>");
+        DEFAULTS.put("commands.accruals-unknown-group", "&cUnknown accrual group: {group}");
+        DEFAULTS.put("commands.accruals-invalid-group-action", "&cInvalid action. Use set, add, or remove.");
+        DEFAULTS.put("commands.accruals-invalid-field", "&cInvalid field. Use per-hour, max-blocks, max-claims, or all.");
+        DEFAULTS.put("commands.accruals-amount-number", "&cAmount must be a number.");
+        DEFAULTS.put("commands.accruals-amount-nonnegative", "&cAmount cannot be negative.");
+        DEFAULTS.put("commands.accruals-group-updated", "&aUpdated accrual group {group}: {fields} {action} {amount}.");
+        DEFAULTS.put("commands.accruals-player-usage", "&cUsage: /gpx accruals player <name> set|add|remove|reset <per-hour|max-blocks|max-claims|all> [amount]");
+        DEFAULTS.put("commands.accruals-unknown-player", "&cUnknown player: {player}");
+        DEFAULTS.put("commands.accruals-player-reset", "&aReset {fields} accrual override for {player}.");
+        DEFAULTS.put("commands.accruals-player-reset-none", "&eNo matching accrual override was set for {player}.");
+        DEFAULTS.put("commands.accruals-invalid-player-action", "&cInvalid action. Use set, add, remove, or reset.");
+        DEFAULTS.put("commands.accruals-player-action-usage", "&cUsage: /gpx accruals player <name> {action} <per-hour|max-blocks|max-claims|all> <amount>");
+        DEFAULTS.put("commands.accruals-player-updated", "&aUpdated player {player} accrual override: {fields} {action} {amount}.");
+        DEFAULTS.put("commands.accruals-effective-now", "&7Effective now: {blocks}/hour, max {maxBlocks} blocks, {maxClaims} claims.");
+        DEFAULTS.put("commands.accruals-creategroup-usage", "&cUsage: /gpx accruals creategroup <name> [blocks-per-hour] [max-blocks] [max-claims] [permission]");
+        DEFAULTS.put("commands.accruals-group-exists", "&cAccrual group already exists: {group}");
+        DEFAULTS.put("commands.accruals-group-create-failed", "&cFailed to create accrual group {group}.");
+        DEFAULTS.put("commands.accruals-group-created", "&aCreated accrual group {group} with {blocks}/hour, max {maxBlocks} blocks, {maxClaims} claims.");
+        DEFAULTS.put("commands.accruals-luckperms-weight", "&7LuckPerms weight {weight} detected; accruals.groups was sorted with lower weights higher.");
+        DEFAULTS.put("commands.accruals-luckperms-no-weight", "&7LuckPerms group detected without a weight; existing list order was preserved for this group.");
+        DEFAULTS.put("commands.accruals-deletegroup-usage", "&cUsage: /gpx accruals deletegroup <name>");
+        DEFAULTS.put("commands.accruals-group-deleted", "&aDeleted accrual group {group}.");
+        DEFAULTS.put("commands.accruals-claim-limit", "&cYou have reached your claim limit ({max}) for accrual profile {profile}.");
+        DEFAULTS.put("commands.accruals-redundant-group-warning", "No 'permission:' section found for accrual group '{group}', and no matching Vault or LuckPerms group was found. This accrual config is redundant.");
+        DEFAULTS.put("commands.accruals-invalid-group-entry-warning", "Skipping accruals.groups entry {index} because it has no name.");
         
         // Claim flags
         DEFAULTS.put("flags.no-permission", "&cYou don't have permission to set claim flags.");
