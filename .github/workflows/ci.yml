@@ -24,6 +24,15 @@ jobs:
         run: |
           git clone https://github.com/castledking/GriefPrevention3D.git /tmp/GriefPrevention3D
           cd /tmp/GriefPrevention3D
-          mvn --batch-mode install -DskipTests
+          git checkout ${{ vars.GP3D_VERSION || '17.5.2' }}
+          chmod +x gradlew
+          ./gradlew jar
+          mvn install:install-file \
+            -Dfile=build/libs/GriefPrevention3D.jar \
+            -DgroupId=com.griefprevention \
+            -DartifactId=GriefPrevention3D \
+            -Dversion=${{ vars.GP3D_VERSION || '17.5.2' }} \
+            -Dpackaging=jar \
+            -DgeneratePom=true
       - name: "Test"
         run: mvn --batch-mode verify
