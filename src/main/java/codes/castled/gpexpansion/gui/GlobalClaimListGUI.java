@@ -12,7 +12,9 @@ import codes.castled.gpexpansion.storage.ClaimDataStore;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -106,6 +108,10 @@ public class GlobalClaimListGUI extends BaseGUI {
      * Open GUI with async claim loading and restore previous state (filter, page).
      */
     public static void openAsyncWithState(GUIManager manager, Player player, String searchQuery, String filterType, int page) {
+        if (!manager.getPlugin().getConfigManager().isGlobalClaimsEnabled()) {
+            manager.getPlugin().getMessages().send(player, "claim.global-disabled");
+            return;
+        }
         codes.castled.gpexpansion.scheduler.SchedulerAdapter.runAsyncNow(manager.getPlugin(), () -> {
             GlobalClaimListGUI gui = new GlobalClaimListGUI(manager, player, searchQuery);
             gui.currentPage = page;
@@ -146,6 +152,7 @@ public class GlobalClaimListGUI extends BaseGUI {
             
             // Get location
             info.location = getClaimLocation(claim);
+            info.worldName = gp.getClaimWorld(claim).orElse("Unknown");
             
             // Apply search filter if present
             if (searchQuery != null && !searchQuery.isEmpty()) {
@@ -159,6 +166,49 @@ public class GlobalClaimListGUI extends BaseGUI {
             }
             
             publicClaims.add(info);
+        }
+
+        sortPublicClaims();
+    }
+
+    private void sortPublicClaims() {
+        String sort = plugin.getConfigManager().getGlobalClaimsDefaultSort();
+        Comparator<ClaimInfo> comparator;
+        switch (sort) {
+            case "name":
+                comparator = Comparator.comparing(info -> safeLower(info.name));
+                break;
+            case "owner":
+                comparator = Comparator.comparing((ClaimInfo info) -> safeLower(info.ownerName))
+                    .thenComparing(info -> safeLower(info.name));
+                break;
+            case "world":
+                comparator = Comparator.comparing((ClaimInfo info) -> safeLower(info.worldName))
+                    .thenComparing(info -> safeLower(info.name));
+                break;
+            case "newest":
+            default:
+                comparator = (left, right) -> {
+                    int numeric = Long.compare(parseClaimId(right.claimId), parseClaimId(left.claimId));
+                    if (numeric != 0) return numeric;
+                    return safeLower(right.claimId).compareTo(safeLower(left.claimId));
+                };
+                break;
+        }
+
+        publicClaims.sort(comparator.thenComparing(info -> safeLower(info.claimId)));
+    }
+
+    private String safeLower(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT);
+    }
+
+    private long parseClaimId(String claimId) {
+        if (claimId == null) return Long.MIN_VALUE;
+        try {
+            return Long.parseLong(claimId);
+        } catch (NumberFormatException ignored) {
+            return Long.MIN_VALUE;
         }
     }
     
@@ -329,7 +379,7 @@ public class GlobalClaimListGUI extends BaseGUI {
     }
 
     private ItemStack createClaimItem(ClaimInfo info, String currentListedClaimId) {
-        Material material = info.icon != null ? info.icon : Material.GRASS_BLOCK;
+        Material material = info.icon != null ? info.icon : getDefaultGlobalClaimIcon();
         
         List<String> lore = new ArrayList<>();
         lore.add("&7Owner: &f" + info.ownerName);
@@ -338,7 +388,9 @@ public class GlobalClaimListGUI extends BaseGUI {
         lore.add("&7Location: &f" + info.location);
         lore.add("");
         
-        if (player.hasPermission("griefprevention.claim.teleport")) {
+        if (!plugin.getConfigManager().isGlobalClaimsTeleportAllowed()) {
+            lore.add("&e▸ Travel to the listed location");
+        } else if (player.hasPermission("griefprevention.claim.teleport")) {
             lore.add("&a▸ Click to teleport");
         }
 
@@ -349,6 +401,18 @@ public class GlobalClaimListGUI extends BaseGUI {
 
         boolean glow = info.claimId != null && info.claimId.equals(currentListedClaimId);
         return createItem(material, "&6" + info.name, lore, glow);
+    }
+
+    private Material getDefaultGlobalClaimIcon() {
+        String configured = plugin.getConfigManager().getGlobalClaimsDefaultIcon();
+        if (configured != null) {
+            try {
+                return Material.valueOf(configured.trim().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException ignored) {
+                // Fall through to stable default.
+            }
+        }
+        return Material.GRASS_BLOCK;
     }
     
     @Override
@@ -408,7 +472,11 @@ public class GlobalClaimListGUI extends BaseGUI {
             int claimIndex = currentPage * claimSlots.length + slotIndex;
             if (claimIndex < publicClaims.size()) {
                 ClaimInfo info = publicClaims.get(claimIndex);
-                if (player.hasPermission("griefprevention.claim.teleport")) {
+                if (!plugin.getConfigManager().isGlobalClaimsTeleportAllowed()) {
+                    plugin.getMessages().send(player, "claim.global-teleport-disabled",
+                        "{id}", info.claimId,
+                        "{location}", info.location != null ? info.location : "Unknown");
+                } else if (player.hasPermission("griefprevention.claim.teleport")) {
                     closeAndRunOnMainThread("claimtp " + info.claimId);
                 } else {
                     plugin.getMessages().send(player, "general.no-permission");
@@ -425,6 +493,7 @@ public class GlobalClaimListGUI extends BaseGUI {
         String description;
         Material icon;
         String location;
+        String worldName;
         
         ClaimInfo(Object claim, String claimId) {
             this.claim = claim;

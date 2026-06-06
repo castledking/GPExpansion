@@ -27,6 +27,15 @@ public class SignLimitManager {
     private int defaultMailboxLimit;
     private int defaultSelfMailboxLimit;
     private int defaultGlobalClaimLimit;
+    private String sellLimitBypassPermission;
+    private String rentLimitBypassPermission;
+    private String mailboxLimitBypassPermission;
+    private String globalClaimLimitBypassPermission;
+    private boolean countInactiveSellSigns;
+    private boolean countExpiredRentals;
+    private boolean countInactiveRentSigns;
+    private boolean countInactiveMailboxSigns;
+    private boolean countUnlistedGlobalClaims;
     
     public SignLimitManager(GPExpansionPlugin plugin) {
         this.plugin = plugin;
@@ -56,11 +65,27 @@ public class SignLimitManager {
      */
     private void loadConfig() {
         FileConfiguration config = plugin.getConfig();
-        defaultSellLimit = config.getInt("defaults.max-sell-signs", 5);
-        defaultRentLimit = config.getInt("defaults.max-rent-signs", 5);
-        defaultMailboxLimit = config.getInt("defaults.max-mailbox-signs", 5);
-        defaultSelfMailboxLimit = config.getInt("defaults.max-self-mailboxes-per-claim", 1);
-        defaultGlobalClaimLimit = config.getInt("defaults.max-global-claims", 1);
+        defaultSellLimit = config.getInt("signs.sell.limits.max-signs",
+            config.getInt("defaults.max-sell-signs", 5));
+        defaultRentLimit = config.getInt("signs.rent.limits.max-signs",
+            config.getInt("defaults.max-rent-signs", 5));
+        defaultMailboxLimit = config.getInt("signs.mailbox.limits.max-signs",
+            config.getInt("defaults.max-mailbox-signs", 5));
+        defaultSelfMailboxLimit = config.getInt("signs.mailbox.limits.max-self-mailboxes-per-claim",
+            config.getInt("defaults.max-self-mailboxes-per-claim", 1));
+        defaultGlobalClaimLimit = config.getInt("signs.global.limits.max-claims-per-player",
+            config.getInt("defaults.max-global-claims", 1));
+
+        sellLimitBypassPermission = config.getString("signs.sell.limits.bypass-permission", "griefprevention.sign.sell.limit.bypass");
+        rentLimitBypassPermission = config.getString("signs.rent.limits.bypass-permission", "griefprevention.sign.rent.limit.bypass");
+        mailboxLimitBypassPermission = config.getString("signs.mailbox.limits.bypass-permission", "griefprevention.sign.mailbox.limit.bypass");
+        globalClaimLimitBypassPermission = config.getString("signs.global.limits.bypass-permission", "griefprevention.claim.global.limit.bypass");
+
+        countInactiveSellSigns = config.getBoolean("signs.sell.limits.count-inactive-signs", true);
+        countExpiredRentals = config.getBoolean("signs.rent.limits.count-expired-rentals", true);
+        countInactiveRentSigns = config.getBoolean("signs.rent.limits.count-inactive-signs", true);
+        countInactiveMailboxSigns = config.getBoolean("signs.mailbox.limits.count-inactive-signs", true);
+        countUnlistedGlobalClaims = config.getBoolean("signs.global.limits.count-unlisted-claims", true);
     }
     
     /**
@@ -80,6 +105,9 @@ public class SignLimitManager {
      * Get the maximum number of sell signs a player can create
      */
     public int getSellLimit(Player player) {
+        if (hasConfiguredPermission(player, sellLimitBypassPermission)) {
+            return Integer.MAX_VALUE;
+        }
         UUID uuid = player.getUniqueId();
         
         // Check if we have a cached value and no permission override
@@ -122,6 +150,9 @@ public class SignLimitManager {
      * Get the maximum number of rent signs a player can create
      */
     public int getRentLimit(Player player) {
+        if (hasConfiguredPermission(player, rentLimitBypassPermission)) {
+            return Integer.MAX_VALUE;
+        }
         UUID uuid = player.getUniqueId();
         
         // Check if we have a cached value and no permission override
@@ -164,6 +195,9 @@ public class SignLimitManager {
      * Get the maximum number of mailbox signs a player can create
      */
     public int getMailboxLimit(Player player) {
+        if (hasConfiguredPermission(player, mailboxLimitBypassPermission)) {
+            return Integer.MAX_VALUE;
+        }
         UUID uuid = player.getUniqueId();
         
         // Check if we have a cached value and no permission override
@@ -303,6 +337,9 @@ public class SignLimitManager {
      * Get the maximum number of self mailboxes per claim a player can create
      */
     public int getSelfMailboxLimit(Player player) {
+        if (hasConfiguredPermission(player, mailboxLimitBypassPermission)) {
+            return Integer.MAX_VALUE;
+        }
         return selfMailboxLimits.getOrDefault(player.getUniqueId(), defaultSelfMailboxLimit);
     }
 
@@ -333,6 +370,10 @@ public class SignLimitManager {
      * Get the maximum number of global claims a player can have
      */
     public int getGlobalClaimLimit(Player player) {
+        if (hasConfiguredPermission(player, globalClaimLimitBypassPermission)
+                || player.hasPermission("griefprevention.claim.toggleglobal.*")) {
+            return Integer.MAX_VALUE;
+        }
         UUID uuid = player.getUniqueId();
         
         // Check if we have a cached value and no permission override
@@ -406,7 +447,7 @@ public class SignLimitManager {
      * Get the current number of global claims a player has
      */
     public int getCurrentGlobalClaims(Player player) {
-        return plugin.getClaimDataStore().countGlobalClaimsForPlayer(player.getUniqueId());
+        return plugin.getClaimDataStore().countGlobalClaimsForPlayer(player.getUniqueId(), countUnlistedGlobalClaims);
     }
     
     /**
@@ -499,21 +540,21 @@ public class SignLimitManager {
      * Get the current number of signs a player has created
      */
     public int getCurrentSellSigns(Player player) {
-        return plugin.getClaimDataStore().countSellSignsForPlayer(player.getUniqueId());
+        return plugin.getClaimDataStore().countSellSignsForPlayer(player.getUniqueId(), countInactiveSellSigns);
     }
 
     /**
      * Get the current number of rent signs a player has created
      */
     public int getCurrentRentSigns(Player player) {
-        return plugin.getClaimDataStore().countRentSignsForPlayer(player.getUniqueId());
+        return plugin.getClaimDataStore().countRentSignsForPlayer(player.getUniqueId(), countExpiredRentals, countInactiveRentSigns);
     }
 
     /**
      * Get the current number of mailbox signs a player has created
      */
     public int getCurrentMailboxSigns(Player player) {
-        return plugin.getClaimDataStore().countMailboxSignsForPlayer(player.getUniqueId());
+        return plugin.getClaimDataStore().countMailboxSignsForPlayer(player.getUniqueId(), countInactiveMailboxSigns);
     }
     
     /**
@@ -555,5 +596,9 @@ public class SignLimitManager {
      */
     public String getSupportedPermissionPlugin() {
         return permissionManager != null ? permissionManager.getSupportedPlugin() : "None";
+    }
+
+    private boolean hasConfiguredPermission(Player player, String permission) {
+        return permission != null && !permission.isBlank() && player.hasPermission(permission);
     }
 }

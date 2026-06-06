@@ -326,8 +326,18 @@ public class ClaimResizeGUI extends BaseGUI {
             case WEST -> Material.YELLOW_WOOL;
             case EAST -> Material.LIME_WOOL;
             case UP -> Material.SCAFFOLDING;
-            case DOWN -> Material.CHAIN;
+            case DOWN -> chainMaterial();
         };
+    }
+
+    private Material chainMaterial() {
+        Material material = Material.getMaterial("IRON_CHAIN");
+        if (material != null) {
+            return material;
+        }
+
+        material = Material.getMaterial("CHAIN");
+        return material != null ? material : Material.IRON_BARS;
     }
 
     private String titleFor(GPBridge.ResizeDirection direction) {

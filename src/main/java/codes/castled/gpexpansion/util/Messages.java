@@ -3,6 +3,7 @@ package codes.castled.gpexpansion.util;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
@@ -120,9 +121,16 @@ public class Messages {
         DEFAULTS.put("gui.color-not-allowed", "&cYou don't have permission to use the color code &e{code}&c.");
         DEFAULTS.put("gui.format-not-allowed", "&cYou don't have permission to use the format code &e{code}&c.");
         DEFAULTS.put("claim.global-usage", "&cUsage: /claim global <true|false> [claimId]");
+        DEFAULTS.put("claim.global-disabled", "&cGlobal claims are disabled on this server.");
+        DEFAULTS.put("claim.global-teleport-disabled", "&eGlobal claim teleport is disabled. Travel to &6{location}&e for claim &6{id}&e.");
+        DEFAULTS.put("claim.global-approval-required", "&eClaim &6{id}&e was submitted for global listing approval. A staff member must approve it first.");
         DEFAULTS.put("claim.global-not-in-claim", "&cYou must be standing in a claim or provide a claim ID.");
         DEFAULTS.put("claim.global-not-owner", "&cYou must own this claim to toggle its global listing.");
         DEFAULTS.put("claim.global-limit-reached", "&cYou have reached your global claim limit! &7({current}/{max})");
+        DEFAULTS.put("claim.approve-usage", "&eUsage: /approveclaim [claimId] or /aclaim approve [claimId]");
+        DEFAULTS.put("claim.approve-not-pending", "&eClaim &6{id}&e is not waiting for approval.");
+        DEFAULTS.put("claim.approve-already-listed", "&eClaim &6{id}&e is already publicly listed.");
+        DEFAULTS.put("claim.approve-success", "&aApproved global listing for claim &6{id}&a.");
         
         // Wizard - General
         DEFAULTS.put("wizard.cancelled", "&cSetup wizard cancelled.");
@@ -184,6 +192,10 @@ public class Messages {
         
         // Claim
         DEFAULTS.put("claim.list-header", "&eClaims ({count}):");
+        DEFAULTS.put("claim.list-page", "&7Page {page}/{pages}");
+        DEFAULTS.put("claim.list-player-header", "&eClaims for &6{player}&e:");
+        DEFAULTS.put("claim.list-player-not-found", "&cPlayer not found: &6{player}");
+        DEFAULTS.put("claim.list-usage-other", "&cUsage: /claimlist <player>");
         DEFAULTS.put("claim.list-trusted-header", "&eTrusted Claims ({count}):");
         DEFAULTS.put("claim.list-admin-header", "&eAdmin Claims ({count}):");
         DEFAULTS.put("claim.line-format", "&eID {id} &e({name}&e) {world}: x{x}, z{z} (-{area} blocks)");
@@ -195,6 +207,7 @@ public class Messages {
         DEFAULTS.put("claim.not-owner", "&cYou must own claim {id} to do that.");
         DEFAULTS.put("claim.owner-unknown", "&cUnable to determine the claim owner.");
         DEFAULTS.put("claim.name-set", "&aClaim name set to: {name}");
+        DEFAULTS.put("claim.name-truncated", "&eName truncated to {max} characters.");
         DEFAULTS.put("claim.name-no-permission", "&cYou lack permission: &egriefprevention.claim.name");
         DEFAULTS.put("claim.transfer-success", "&aClaim {id} transferred to {player}.");
         DEFAULTS.put("claim.transfer-received", "&aYou are now the owner of claim {id}.");
@@ -210,18 +223,26 @@ public class Messages {
         DEFAULTS.put("claim.name-usage", "&eUsage: /claim name <newName> [claimId]");
         DEFAULTS.put("claim.icon-no-permission", "&cYou lack permission: &egriefprevention.claim.icon");
         DEFAULTS.put("claim.icon-hold-item", "&cYou must hold an item to set as the claim icon.");
+        DEFAULTS.put("claim.icon-denied", "&cThe icon &e{icon}&c is not allowed for claim icons.");
         DEFAULTS.put("claim.icon-set", "&aClaim {id} icon set to {icon}.");
         DEFAULTS.put("claim.description-no-permission", "&cYou lack permission: &egriefprevention.claim.description");
         DEFAULTS.put("claim.description-usage", "&eUsage: /claim desc <description...> [claimId]");
+        DEFAULTS.put("claim.description-links-denied", "&cLinks are not allowed in claim descriptions.");
         DEFAULTS.put("claim.description-truncated", "&eDescription truncated to {max} characters.");
         DEFAULTS.put("claim.description-set", "&aClaim {id} description set to: {description}");
         DEFAULTS.put("claim.ban-usage", "&eUsage: /claim ban <player|public> [claimId]");
         DEFAULTS.put("claim.ban-no-permission", "&cYou lack permission: &egriefprevention.claim.ban");
+        DEFAULTS.put("claim.public-ban-no-permission", "&cYou lack permission: &e{permission}");
         DEFAULTS.put("claim.ban-self", "&cYou cannot ban yourself.");
         DEFAULTS.put("claim.unban-usage", "&eUsage: /claim unban <player|public> [claimId]");
         DEFAULTS.put("claim.unban-no-permission", "&cYou lack permission: &egriefprevention.claim.unban");
         DEFAULTS.put("claim.unban-public-missing", "&eClaim {id} is not public-banned.");
         DEFAULTS.put("claim.unban-not-banned", "&e{player} is not banned from claim {id}.");
+        DEFAULTS.put("claim.ban-blocked-enter", "&cYou are not allowed to enter this claim!");
+        DEFAULTS.put("claim.ban-blocked-inside", "&cYou are not allowed to be in this claim!");
+        DEFAULTS.put("claim.ban-blocked-teleport", "&cYou cannot teleport into this claim - you are banned!");
+        DEFAULTS.put("claim.ban-ignoreclaims-hint", "&7To override use &e/ignoreclaims&7.");
+        DEFAULTS.put("claim.banlist-no-permission", "&cYou lack permission: &egriefprevention.claim.banlist");
         DEFAULTS.put("claim.banlist-header", "&eBan list for claim {id}:");
         DEFAULTS.put("claim.banlist-public", "&6 - Public banned");
         DEFAULTS.put("claim.banlist-empty", "&7 - No players banned");
@@ -230,6 +251,11 @@ public class Messages {
         DEFAULTS.put("claim.evict-help", "&7Starts a {duration} eviction notice for the renter.");
         DEFAULTS.put("claim.evict-no-permission", "&cYou lack permission: &egriefprevention.evict");
         DEFAULTS.put("claim.not-rented", "&cThis claim is not currently rented.");
+        DEFAULTS.put("claim.cancelrent-not-rented", "&cClaim {id} is not actively rented.");
+        DEFAULTS.put("claim.cancelrent-not-renter", "&cYou are not the active renter for claim {id}.");
+        DEFAULTS.put("claim.cancelrent-success", "&aCancelled rental for claim &6{id}&a.");
+        DEFAULTS.put("claim.cancelrent-sign-not-found", "&eRental data was cleared, but the rental sign location is unknown. The sign may need manual cleanup.");
+        DEFAULTS.put("claim.cancelrent-cancelled-by-admin", "&eYour rental for claim &6{id}&e was cancelled by an admin.");
         DEFAULTS.put("claim.rental-sign-confirm-usage", "&eUsage: /claim rentalsignconfirm <world> <x> <y> <z>");
         DEFAULTS.put("claim.coords-must-be-int", "&cCoordinates must be integers.");
         DEFAULTS.put("claim.world-unknown", "&cUnknown world: {world}");
@@ -241,8 +267,13 @@ public class Messages {
         DEFAULTS.put("claim.pending-rent-claimblocks", "&aYou received {amount} claim blocks from rentals!");
         DEFAULTS.put("claim.pending-rent-collected", "&aSuccessfully collected all pending rental payments!");
         DEFAULTS.put("claim.teleport-safe-location-fail", "&cCould not compute a safe location in claim {id}.");
+        DEFAULTS.put("claim.teleport-cancelled-move", "&cTeleport cancelled because you moved.");
         DEFAULTS.put("claim.untrust-renter", "&cYou cannot untrust {renter} while they are renting your claim.");
         DEFAULTS.put("claim.untrust-renter-hint", "&eUse {command} instead.");
+
+        // Tax
+        DEFAULTS.put("tax.payee-notify", "&7Tax withheld: &e{tax}&7. Net received: &a{net}&7.");
+        DEFAULTS.put("tax.payer-notify", "&7Tax on this payment: &e{tax}&7.");
         
         // Admin
         DEFAULTS.put("admin.gpx-help-header", "&6=== GPExpansion Admin Commands ===");
@@ -329,6 +360,7 @@ public class Messages {
         DEFAULTS.put("commands.accruals-deletegroup-usage", "&cUsage: /gpx accruals deletegroup <name>");
         DEFAULTS.put("commands.accruals-group-deleted", "&aDeleted accrual group {group}.");
         DEFAULTS.put("commands.accruals-claim-limit", "&cYou have reached your claim limit ({max}) for accrual profile {profile}.");
+        DEFAULTS.put("commands.accruals-cap-reached", "&eYour accrued claim blocks were capped at {max} for accrual profile {profile}.");
         DEFAULTS.put("commands.accruals-redundant-group-warning", "No 'permission:' section found for accrual group '{group}', and no matching Vault or LuckPerms group was found. This accrual config is redundant.");
         DEFAULTS.put("commands.accruals-invalid-group-entry-warning", "Skipping accruals.groups entry {index} because it has no name.");
         
@@ -358,6 +390,8 @@ public class Messages {
         DEFAULTS.put("mailbox.not-enough-experience", "&cYou don't have enough experience.");
         DEFAULTS.put("mailbox.items-returned", "&eSome items were returned - the mailbox was updated since you opened it.");
         DEFAULTS.put("mailbox.must-own-or-rent", "&cYou must own or rent this claim to create an instant mailbox.");
+        DEFAULTS.put("mailbox.self-disabled", "&cSelf mailboxes are disabled on this server.");
+        DEFAULTS.put("mailbox.stacked-disabled", "&cA mailbox already uses that container.");
         DEFAULTS.put("mailbox.self-limit-reached", "&cYou have reached the self mailbox limit ({max}) for this claim.");
         DEFAULTS.put("mailbox.instant-creation-failed", "&cCould not create subdivision. GP3D with AllowNestedSubclaims may be required.");
         DEFAULTS.put("mailbox.self-created", "&aSelf mailbox created!");
@@ -370,8 +404,15 @@ public class Messages {
         
         // Sign creation / interaction extras
         DEFAULTS.put("sign-creation.sign-created", "&aSign created for claim &6{id}&a.");
+        DEFAULTS.put("sign-creation.type-disabled", "&c{signtype} signs are disabled on this server.");
+        DEFAULTS.put("sign-creation.sell-subclaim-not-allowed", "&cSell signs can only be created for top-level claims.");
+        DEFAULTS.put("sign-creation.economy-disabled", "&c{economy} payments are disabled for {signtype} signs.");
         DEFAULTS.put("sign-creation.item-setup-reminder", "&eHold the payment item in your offhand and right-click the sign to set it.");
         DEFAULTS.put("sign-interaction.rent-own-claim", "&cYou cannot rent your own claim.");
+        DEFAULTS.put("sign-interaction.sell-subclaim-not-allowed", "&cThis sell sign points to a subclaim. Only top-level claims can be sold.");
+        DEFAULTS.put("sign-interaction.economy-disabled", "&c{economy} payments are disabled for {signtype} signs.");
+        DEFAULTS.put("sign-interaction.renewals-disabled", "&cRental renewals are disabled on this server.");
+        DEFAULTS.put("sign-interaction.renewal-denied-eviction", "&cYou cannot renew while eviction is in progress.");
         DEFAULTS.put("sign-interaction.rent-already-rented", "&cThis claim is already rented.");
         DEFAULTS.put("sign-interaction.sign-missing-data", "&cThis sign is missing required data. Please break and recreate it.");
         DEFAULTS.put("sign-interaction.sign-missing-economy", "&cThis sign is missing economy data. Please break and recreate it.");
@@ -407,8 +448,10 @@ public class Messages {
         DEFAULTS.put("eviction.no-pending-info", "&7There is no pending eviction for this claim.");
         DEFAULTS.put("eviction.cancelled", "&aEviction cancelled for claim {id}.");
         DEFAULTS.put("eviction.cancelled-notify", "&aThe eviction notice for claim {id} has been cancelled.");
+        DEFAULTS.put("eviction.cancel-disabled", "&cCancelling eviction notices is disabled for your role.");
         DEFAULTS.put("eviction.effective", "&aEviction for {renter} is now effective.");
         DEFAULTS.put("eviction.effective-hint", "&7You can now remove them from the claim or break the rental sign.");
+        DEFAULTS.put("eviction.completed-owner-notify", "&aEviction completed for claim {id}.");
         DEFAULTS.put("eviction.pending", "&eEviction notice for {renter} is pending.");
         
         // Eviction messages
@@ -495,6 +538,9 @@ public class Messages {
         // Add any missing keys from DEFAULTS to the user's lang.yml
         addMissingKeys();
         
+        // Add any missing keys from the JAR resource defaults (covers keys not in DEFAULTS)
+        ensureDefaultsInFile();
+        
         // Check version and handle migrations
         checkAndMigrateVersion();
     }
@@ -508,7 +554,7 @@ public class Messages {
         
         for (Map.Entry<String, String> entry : DEFAULTS.entrySet()) {
             String key = entry.getKey();
-            if (!langConfig.contains(key)) {
+            if (!langConfig.isSet(key)) {
                 langConfig.set(key, entry.getValue());
                 modified = true;
                 plugin.getLogger().info("Added missing lang key: " + key);
@@ -518,6 +564,30 @@ public class Messages {
         if (modified) {
             saveLanguageFile();
             plugin.getLogger().info("Updated lang.yml with missing keys.");
+        }
+    }
+    
+    /**
+     * Add keys present in the JAR resource defaults but missing from the user's lang.yml.
+     * This ensures the user's file stays complete even when new keys are added to the resource.
+     */
+    private void ensureDefaultsInFile() {
+        ConfigurationSection defaults = langConfig.getDefaults();
+        if (defaults == null) return;
+        
+        boolean modified = false;
+        for (String key : defaults.getKeys(true)) {
+            Object val = defaults.get(key);
+            if (val instanceof String && !langConfig.isSet(key)) {
+                langConfig.set(key, val.toString());
+                modified = true;
+                plugin.getLogger().info("Added missing lang key from resource: " + key);
+            }
+        }
+        
+        if (modified) {
+            saveLanguageFile();
+            plugin.getLogger().info("Updated lang.yml with missing keys from resource defaults.");
         }
     }
     

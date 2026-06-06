@@ -161,6 +161,11 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Claim flight listener
         Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.ClaimFlyListener(this), this);
         getLogger().info("- Registered ClaimFlyListener for claim flight feature");
+        // Claim teleport movement listener (cancels teleport if player moves during delay)
+        if (configManager.isClaimTeleportCancelOnMove()) {
+            Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.ClaimTeleportListener(this, claimCommand), this);
+            getLogger().info("- Registered ClaimTeleportListener for teleport movement detection");
+        }
         registerAccrualListener();
         
         getLogger().info(() -> "GPExpansion enabled");
@@ -313,7 +318,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
                 this,
                 "claimslist",
                 "Show your claims list (with IDs and names)",
-                "/claimslist",
+                "/claimslist [player]",
                 java.util.Arrays.asList("claimlist"),
                 claimCommand,
                 claimCommand
@@ -324,6 +329,33 @@ public final class GPExpansionPlugin extends JavaPlugin {
                 "Toggle or set global listing for a claim",
                 "/globalclaim [true|false] [claimId]",
                 java.util.Arrays.asList("toggleglobal"),
+                claimCommand,
+                claimCommand
+        );
+        Command globalClaimListWrapper = new PaperCommandWrapper(
+                this,
+                "globalclaimlist",
+                "Open the global claim list",
+                "/globalclaimlist",
+                java.util.Arrays.asList("globalclaimslist"),
+                claimCommand,
+                claimCommand
+        );
+        Command approveClaimWrapper = new PaperCommandWrapper(
+                this,
+                "approveclaim",
+                "Approve a pending global claim listing",
+                "/approveclaim <claimId>",
+                java.util.Arrays.asList("aclaim"),
+                claimCommand,
+                claimCommand
+        );
+        Command cancelRentWrapper = new PaperCommandWrapper(
+                this,
+                "cancelrent",
+                "Cancel your active rental",
+                "/cancelrent [claimId]",
+                Collections.emptyList(),
                 claimCommand,
                 claimCommand
         );
@@ -348,6 +380,11 @@ public final class GPExpansionPlugin extends JavaPlugin {
                     "gpx",
                     "claiminfo",
                     "globalclaim",
+                    "globalclaimlist",
+                    "globalclaimslist",
+                    "approveclaim",
+                    "aclaim",
+                    "cancelrent",
                     "claimfly",
                     "claimtp",
                     "setclaimspawn",
@@ -364,11 +401,17 @@ public final class GPExpansionPlugin extends JavaPlugin {
             reg.invoke(this, adminClaimListWrapper);
             reg.invoke(this, claimsListWrapper);
             reg.invoke(this, globalClaimWrapper);
+            reg.invoke(this, globalClaimListWrapper);
+            reg.invoke(this, approveClaimWrapper);
+            reg.invoke(this, cancelRentWrapper);
         } catch (NoSuchMethodException missing) {
             if (!gp3dPresent) map.register("gpexpansion", wrapper);
             map.register("gpexpansion", adminClaimListWrapper);
             map.register("gpexpansion", claimsListWrapper);
             map.register("gpexpansion", globalClaimWrapper);
+            map.register("gpexpansion", globalClaimListWrapper);
+            map.register("gpexpansion", approveClaimWrapper);
+            map.register("gpexpansion", cancelRentWrapper);
         } catch (ReflectiveOperationException e) {
             getLogger().severe("Failed to register core commands: " + e.getMessage());
         }

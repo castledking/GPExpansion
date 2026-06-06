@@ -45,7 +45,7 @@ public class ClaimFlyManager {
                     UUID uuid = UUID.fromString(key);
                     long remaining = Math.max(0L, data.getLong("players." + key + ".remaining-millis", 0L));
                     boolean enabled = data.getBoolean("players." + key + ".enabled", true);
-                    if (remaining > 0L) {
+                    if (data.contains("players." + key + ".remaining-millis")) {
                         remainingMillis.put(uuid, remaining);
                     }
                     if (enabled) {
@@ -82,15 +82,19 @@ public class ClaimFlyManager {
     }
 
     public long getRemainingMillis(UUID uuid) {
-        return Math.max(0L, remainingMillis.getOrDefault(uuid, 0L));
+        return capMillis(Math.max(0L, remainingMillis.getOrDefault(uuid, 0L)));
     }
 
     public boolean hasTime(UUID uuid) {
-        return getRemainingMillis(uuid) > 0L;
+        return ensureDefaultTime(uuid) > 0L;
     }
 
     public boolean isPassiveClaimFlightEnabled() {
-        return plugin.getConfig().getBoolean("passive-claim-flight", false);
+        return plugin.getConfigManager().isPassiveClaimFlightEnabled();
+    }
+
+    public boolean isClaimFlightEnabled() {
+        return plugin.getConfigManager().isClaimFlightEnabled();
     }
 
     public boolean hasFlightAccess(UUID uuid) {
@@ -98,12 +102,15 @@ public class ClaimFlyManager {
     }
 
     public boolean isEnabled(UUID uuid) {
-        return enabledPlayers.contains(uuid);
+        return !plugin.getConfigManager().isClaimFlightToggleRequired() || enabledPlayers.contains(uuid);
     }
 
     public boolean canUseClaimFlight(Player player) {
         UUID uuid = player.getUniqueId();
-        return player.hasPermission("griefprevention.claimfly.use") && isEnabled(uuid) && hasFlightAccess(uuid);
+        return isClaimFlightEnabled()
+            && player.hasPermission("griefprevention.claimfly.use")
+            && isEnabled(uuid)
+            && hasFlightAccess(uuid);
     }
 
     public boolean toggle(UUID uuid) {
@@ -128,7 +135,7 @@ public class ClaimFlyManager {
 
     public void addTime(UUID uuid, long millis) {
         if (millis <= 0L) return;
-        remainingMillis.put(uuid, getRemainingMillis(uuid) + millis);
+        remainingMillis.put(uuid, capMillis(getRemainingMillis(uuid) + millis));
         enabledPlayers.add(uuid);
         save();
     }
@@ -139,12 +146,10 @@ public class ClaimFlyManager {
     }
 
     public void setTime(UUID uuid, long millis) {
-        long normalized = Math.max(0L, millis);
+        long normalized = capMillis(Math.max(0L, millis));
+        remainingMillis.put(uuid, normalized);
         if (normalized > 0L) {
-            remainingMillis.put(uuid, normalized);
             enabledPlayers.add(uuid);
-        } else {
-            remainingMillis.remove(uuid);
         }
         save();
     }
@@ -158,14 +163,42 @@ public class ClaimFlyManager {
     public long consume(UUID uuid, long millis) {
         if (isPassiveClaimFlightEnabled()) return getRemainingMillis(uuid);
         if (millis <= 0L) return getRemainingMillis(uuid);
-        long remaining = Math.max(0L, getRemainingMillis(uuid) - millis);
-        if (remaining > 0L) {
-            remainingMillis.put(uuid, remaining);
-        } else {
-            remainingMillis.remove(uuid);
-        }
+        long remaining = capMillis(Math.max(0L, ensureDefaultTime(uuid) - millis));
+        remainingMillis.put(uuid, remaining);
         save();
         return remaining;
+    }
+
+    public boolean shouldConsumeFlightTime(Player player) {
+        return !isPassiveClaimFlightEnabled()
+            && (plugin.getConfigManager().isClaimFlightTimeConsumedInCreative()
+                || isSurvivalLike(player))
+            && (plugin.getConfigManager().isClaimFlightTimeConsumedWhileHovering() || player.isFlying());
+    }
+
+    private long capMillis(long millis) {
+        long max = plugin.getConfigManager().getClaimFlightMaxMillis();
+        return max > 0L ? Math.min(millis, max) : millis;
+    }
+
+    private long ensureDefaultTime(UUID uuid) {
+        Long stored = remainingMillis.get(uuid);
+        if (stored != null) {
+            return capMillis(Math.max(0L, stored));
+        }
+        long defaultMillis = capMillis(plugin.getConfigManager().getClaimFlightDefaultMillis());
+        if (defaultMillis > 0L) {
+            remainingMillis.put(uuid, defaultMillis);
+            save();
+        }
+        return defaultMillis;
+    }
+
+    private boolean isSurvivalLike(Player player) {
+        return switch (player.getGameMode()) {
+            case SURVIVAL, ADVENTURE -> true;
+            default -> false;
+        };
     }
 
     public static String formatDuration(long millis) {

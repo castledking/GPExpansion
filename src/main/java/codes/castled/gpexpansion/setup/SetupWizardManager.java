@@ -55,29 +55,34 @@ public class SetupWizardManager {
             this.mailboxSelf = session.getType() == SetupType.MAILBOX && session.isMailboxSelf();
         }
 
-        /** Wall signs use [rent claim]; hanging signs use [rent] (short format). */
+        /** Use the configured input header; the sign body determines long vs short format. */
         public String[] getSignLines(boolean hanging) {
+            return getSignLines(null, hanging);
+        }
+
+        public String[] getSignLines(GPExpansionPlugin plugin, boolean hanging) {
             switch (type) {
                 case RENT:
                     return new String[] {
-                        hanging ? "[rent]" : "[rent claim]",
+                        configuredInput(plugin, "rent", hanging, hanging ? "[rent]" : "[rent claim]"),
                         claimId,
                         getEconomyToken(ecoKind),
                         price + ";" + renewalTime + ";" + maxTime
                     };
                 case SELL:
                     return new String[] {
-                        "[sell claim]",
+                        configuredInput(plugin, "sell", hanging, hanging ? "[sell]" : "[sell claim]"),
                         claimId,
                         getEconomyToken(ecoKind),
                         price
                     };
                 case MAILBOX:
+                    String mailboxHeader = configuredInput(plugin, "mailbox", hanging, "[Mailbox]");
                     if (mailboxSelf) {
-                        return new String[] { "[Mailbox]", "", "", "" };
+                        return new String[] { mailboxHeader, "", "", "" };
                     }
                     return new String[] {
-                        "[Mailbox]",
+                        mailboxHeader,
                         (ecoKind != null ? getEconomyToken(ecoKind) : "money") + ";" + (price != null ? price : "100"),
                         "",
                         ""
@@ -89,6 +94,20 @@ public class SetupWizardManager {
 
         public String[] getSignLines() {
             return getSignLines(false);
+        }
+
+        private String configuredInput(GPExpansionPlugin plugin, String type, boolean hanging, String fallback) {
+            if (plugin == null) return fallback;
+            String path = hanging
+                ? "signs." + type + "hanging-sign-formats.inputs"
+                : "signs." + type + ".sign-formats.inputs";
+            java.util.List<String> inputs = plugin.getConfig().getStringList(path);
+            for (String input : inputs) {
+                if (input != null && !input.isBlank()) {
+                    return input;
+                }
+            }
+            return fallback;
         }
     }
     
@@ -428,7 +447,9 @@ public class SetupWizardManager {
         }
         
         // Check if money requires Vault
-        if (kind == EcoKind.MONEY && !plugin.getEconomyManager().isEconomyAvailable()) {
+        if (kind == EcoKind.MONEY
+                && !plugin.getEconomyManager().isEconomyAvailable()
+                && !plugin.getConfigManager().isIgnoreVaultMissing()) {
             plugin.getMessages().send(player, "wizard.vault-required");
             return true;
         }
@@ -507,40 +528,8 @@ public class SetupWizardManager {
             return;
         }
         
-        // Build the sign format string for the player
-        StringBuilder signFormat = new StringBuilder();
-        String header;
-        
-        switch (session.getType()) {
-            case RENT:
-                header = "[rent claim]";
-                signFormat.append("&a").append(header).append("\n");
-                signFormat.append("&f").append(session.getClaimId()).append("\n");
-                signFormat.append("&f").append(getEconomyToken(session.getEcoKind())).append("\n");
-                signFormat.append("&f").append(session.getPrice()).append(";")
-                         .append(session.getRenewalTime()).append(";")
-                         .append(session.getMaxTime());
-                break;
-            case SELL:
-                header = "[sell claim]";
-                signFormat.append("&a").append(header).append("\n");
-                signFormat.append("&f").append(session.getClaimId()).append("\n");
-                signFormat.append("&f").append(getEconomyToken(session.getEcoKind())).append("\n");
-                signFormat.append("&f").append(session.getPrice());
-                break;
-            case MAILBOX:
-                header = "[Mailbox]";
-                if (session.isMailboxSelf()) {
-                    signFormat.append("&9").append(header).append("\n");
-                    signFormat.append("&7(empty or player names for shared access)\n\n");
-                } else {
-                    signFormat.append("&9").append(header).append("\n");
-                    signFormat.append("&f").append(getEconomyToken(session.getEcoKind())).append(";").append(session.getPrice()).append("\n\n");
-                }
-                break;
-            default:
-                return;
-        }
+        PendingSignData previewData = new PendingSignData(session);
+        String[] previewLines = previewData.getSignLines(plugin, false);
         
         sendMessage(player, "");
         sendMessage(player, "&a&l✓ Setup Complete!");
@@ -548,10 +537,8 @@ public class SetupWizardManager {
         sendMessage(player, "&7Create a sign with the following format:");
         sendMessage(player, "&8─────────────────────");
         
-        // Send each line of the sign format
-        String[] lines = signFormat.toString().split("\n");
-        for (String line : lines) {
-            sendMessage(player, "  " + line);
+        for (String line : previewLines) {
+            sendMessage(player, "  &f" + (line != null ? line : ""));
         }
         
         sendMessage(player, "&8─────────────────────");
@@ -559,7 +546,7 @@ public class SetupWizardManager {
         
         if (session.getType() == SetupType.MAILBOX && session.isMailboxSelf()) {
             sendMessage(player, "&7Place a &ewall sign&7 on a container (chest, barrel, etc.) in a claim you own or rent.");
-            sendMessage(player, "&7Line 0: &e[Mailbox]&7. Lines 1–3: empty, or player names for shared full access.");
+            sendMessage(player, "&7Line 0: &e" + previewLines[0] + "&7. Lines 1–3: empty, or player names for shared full access.");
         } else if (session.getType() == SetupType.MAILBOX) {
             sendMessage(player, "&7Place a &ewall sign&7 on a container in a claim you own. Others can click to buy.");
             sendMessage(player, "&8• &7Payment: &e" + formatPayment(session));

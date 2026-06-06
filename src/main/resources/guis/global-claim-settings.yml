@@ -31,7 +31,7 @@ items:
     material: PAPER
     name: "&e&lDescription"
     lore:
-      - "&7Set a short description (max 32 chars)"
+      - "&7Set a short description"
       - "&7shown in global claim list."
       - ""
       - "&7Current: {description}"

@@ -1,74 +1,72 @@
-# Default configuration for GPExpansion
+# GPExpansion configuration
+#
+# This file is being reorganized around the actual feature areas GPExpansion owns.
+# Sections marked "planned" are intentionally present as design targets for the
+# next implementation passes. They are safe to leave in the file, but the current
+# plugin may not read every planned option yet.
 
-# Debug settings
+# =============================================================================
+# Core
+# =============================================================================
+
 debug:
-  # Enable debug logging for GPBridge to troubleshoot claim/subclaim detection
+  # Enable verbose bridge/debug logging for claim detection and GP compatibility.
   enabled: false
 
-# Message settings
 messages:
-  # Show detailed permission info when player lacks permission (e.g., "Missing: griefprevention.sign.rent.exp")
+  # Show detailed permission info when a player lacks permission.
+  # Example: "Missing: griefprevention.sign.rent.money"
   show-permission-details: true
 
-# Claim flight settings
-# false = players need claim flight time from /claimfly admin commands
-# true = players with griefprevention.claimfly.use can fly in owned/trusted claims without time
-passive-claim-flight: false
 
-# Mailbox protocol (first-time default is set from GP: GP3D -> real, regular GP -> virtual; change below as desired):
-# real = create subdivision + container trust public (non-owner opens real chest with dynamic updates)
-# virtual = no subdivision, virtual view, non-updating (useful for non-GP3D users who want stackable mailboxes)
-mailbox-protocol: virtual
+# =============================================================================
+# Claim Blocks and Accruals
+# =============================================================================
 
 accruals:
-  # Amount of accrued claim blocks per hour and max cap, based on permissions.
-  # You can add/remove as many names here that you want.
-  # Permission nodes are in the format griefprevention.accruals.<groupname>.<type>
-  # Examples:
-  #   - default: 10 blocks/hour, max 1000 blocks |
-  #       * griefprevention.accruals.default.blocks
-  #       * griefprevention.accruals.default.max
-  #       * griefprevention.accruals.default.claims
-  #   - vip: 20 blocks/hour, max 2000 blocks |
-  #       * griefprevention.accruals.vip.blocks
-  #       * griefprevention.accruals.vip.max
-  #       * griefprevention.accruals.vip.claims
-  #   - elite: 50 blocks/hour, max 5000 blocks |
-  #       * griefprevention.accruals.elite.blocks
-  #       * griefprevention.accruals.elite.max
-  #       * griefprevention.accruals.elite.claims
-  # Or you can give the griefprevention.accruals.<groupname> for all types.
+  enabled: true
+  pause-while-afk: false
+  pause-while-vanished: true
+  require-survival-mode: false
+  notify-on-cap: true
+  # Claim block accrual profiles.
+  #
+  # Permission nodes:
+  # - griefprevention.accruals.<group>
+  # - griefprevention.accruals.<group>.blocks
+  # - griefprevention.accruals.<group>.max
+  # - griefprevention.accruals.<group>.claims
+  #
+  # The optional permission field below adds one extra permission requirement.
   groups:
-  - name: default
-    blocks-per-hour: 100
-    max-blocks: 80000
-    max-claims: 0 # disabled
-  - name: vip
-    blocks-per-hour: 20
-    max-blocks: 250000
-    max-claims: 10
-  - name: elite
-    blocks-per-hour: 50
-    max-blocks: 1000000
-    max-claims: 20
-    permission: elite-reward # optional additional permission for this type (griefprevention.accruals.elite-reward)
+    - name: default
+      blocks-per-hour: 100
+      max-blocks: 80000
+      max-claims: 0 # 0 = no max-claims override
 
-# Default limits for sign creation (can be overridden by permissions)
-defaults:
-  # Default maximum number of global claims a player can have
-  max-global-claims: 1
-  # Default maximum number of sell signs a player can create
-  max-sell-signs: 5
-  # Default maximum number of rent signs a player can create
-  max-rent-signs: 5
-  # Default maximum number of mailbox signs a player can create
-  max-mailbox-signs: 5
-  # Max self mailboxes per claim (for claims owned or rented by the player)
-  max-self-mailboxes-per-claim: 1
+    - name: vip
+      blocks-per-hour: 200
+      max-blocks: 250000
+      max-claims: 10
 
-# Player command permissions (dynamically assigned to gpx.player permission)
-# A list of permissions starting from griefprevention.<permission> that the gpx.player permission should have
-# Permissions are dynamically updated on /gpx reload
+    - name: elite
+      blocks-per-hour: 500
+      max-blocks: 1000000
+      max-claims: 20
+      permission: elite-reward # griefprevention.accruals.elite-reward
+  world-blacklist: []
+  world-multipliers:
+    world: 1.0
+    world_nether: 0.5
+    world_the_end: 0.5
+
+
+# =============================================================================
+# Commands and Dynamic Player Permissions
+# =============================================================================
+
+# Player command permissions dynamically assigned to the gpx.player permission.
+# Entries are relative to griefprevention.<permission>.
 player-commands:
   - claims
   - claim.name
@@ -82,6 +80,8 @@ player-commands:
   - claim.unban.anywhere
   - claim.banlist
   - claim.banlist.anywhere
+  - claim.cancelrent
+  - claim.cancelrent.anywhere
   - sign.create.rent
   - sign.use.rent
   - sign.rent.money
@@ -123,55 +123,428 @@ player-commands:
   - claim.format.italic
   - claim.format.reset
 
-# Permission tracking settings
 permission-tracking:
-  # Enable tracking of player permissions for sign/accrual limits
+  # Track player permission changes for sign limits and accrual profile changes.
   enabled: true
-  # How often to check for permission changes (in minutes)
+  # How often to check for permission changes, in minutes.
   check-interval: 5
 
-# GUI settings
+
+# =============================================================================
+# Signs
+# =============================================================================
+
+signs:
+  rent:
+    enabled: true
+    allow-renewals: true
+    allow-item-payments: true
+    allow-money-payments: true
+    allow-claimblock-payments: true
+    allow-experience-payments: true
+    require-container-for-item-payments: true
+    prevent-owner-breaking-active-rental: true
+    auto-remove-expired-signs: false
+    clear-on-abandon: true
+    max-rent-duration: 30d
+
+    sign-formats:
+      inputs:
+        - "[rent]"
+        - "[rent claim]"
+      outputs:
+        header: "&a&l[Rent Claim]"
+        display-claim-id: true
+    hanging-sign-formats:
+      inputs:
+        - "[rent]"
+      outputs:
+        header: "&a&l[Rent]"
+        display-claim-id: true
+
+    limits:
+      max-signs: 5
+      count-expired-rentals: true
+      count-inactive-signs: true
+      bypass-permission: griefprevention.sign.rent.limit.bypass
+
+    renewal:
+      max-click-renewals: 5
+      deny-renewal-when-eviction-pending: true
+      too-close-to-max-window: 1h
+
+    trust:
+      grant-container-trust: false
+      grant-access-trust: false
+      clear-renter-trust-on-expire: true
+      clear-renter-trust-on-evict: true
+
+    eviction:
+      # Time before a renter can be evicted after notice is given.
+      # Supports: 14d, 1d, 24h, 1h, 30m, 10s, 1w.
+      # Plain number is treated as days.
+      notice-period: 14d
+      allow-owner-cancel: true
+      allow-admin-cancel: true
+      require-standing-in-claim: true
+      block-sign-break-until-effective: true
+      notify-renter-on-start: true
+      notify-owner-on-complete: true
+      restore-snapshot-on-evict: false
+      remove-renter-trust-on-start: false
+      remove-renter-trust-on-complete: true
+
+    snapshots:
+      max-per-claim: 5
+      auto-create:
+        on-rent-sign-create: false
+        on-rental-start: false
+        before-eviction-complete: false
+      auto-restore:
+        on-rental-expire: false
+        on-eviction-complete: false
+
+  sell:
+    enabled: true
+    allow-item-payments: true
+    allow-money-payments: true
+    allow-claimblock-payments: true
+    allow-experience-payments: true
+    clear-trust-on-sale: true
+    transfer-global-listing: false
+    transfer-spawn-point: true
+    require-confirmation: true
+    remove-sign-after-sale: true
+
+    sign-formats:
+      inputs:
+        - "[sell]"
+        - "[sell claim]"
+        - "[buy]"
+        - "[buy claim]"
+      outputs:
+        header: "&a&l[Buy Claim]"
+        display-claim-id: true
+    hanging-sign-formats:
+      inputs:
+        - "[sell]"
+        - "[buy]"
+      outputs:
+        header: "&a&l[Buy]"
+        display-claim-id: true
+
+    limits:
+      max-signs: 5
+      count-inactive-signs: true
+      bypass-permission: griefprevention.sign.sell.limit.bypass
+
+  mailbox:
+    enabled: true
+    allow-self-mailboxes: true
+    require-container-attached: true
+    allow-stacked-mailboxes: true
+    allow-hoppers: false
+    allow-owner-quick-collect: true
+    # first-time default is set from GP: GP3D -> real, regular GP -> virtual.
+    # real = subdivision + public container trust.
+    # virtual = no subdivision, virtual inventory snapshot.
+    protocol: virtual
+    virtual:
+      update-mode: snapshot # snapshot, live-preview, live-commit
+      snapshot-update-interval: 0
+      allow-multiple-depositors: false
+      return-items-when-full: true
+      save-on-close-only: true
+    sign-formats:
+      inputs:
+        - "[mailbox]"
+        - "[mbox]"
+      outputs:
+        header: "&9&l[Mailbox]"
+        display-claim-id: false
+      hanging-sign-formats:
+        inputs:
+          - "[mailbox]"
+          - "[mbox]"
+        outputs:
+          header: "&9&l[Mailbox]"
+          display-claim-id: false
+
+    limits:
+      max-signs: 5
+      max-self-mailboxes-per-claim: 1
+      count-inactive-signs: true
+      bypass-permission: griefprevention.sign.mailbox.limit.bypass
+
+    storage-warnings:
+      enabled: true
+      thresholds:
+        - 75
+        - 90
+        - 100
+
+    sounds:
+      open: block.chest.open
+      close: block.chest.close
+      deposit: entity.item.pickup
+      full: block.note_block.bass
+
+  global:
+    enabled: true
+    allow-sign-toggle: true
+    require-claim-owner: true
+    set-spawn-on-create: true
+    default-listed: true
+    sign-formats:
+      inputs:
+        - "[global]"
+      outputs:
+        header: "&b&l[Global]"
+        display-claim-id: true
+      hanging-sign-formats:
+        inputs:
+          - "[global]"
+        outputs:
+          header: "&b&l[Global]"
+          display-claim-id: true
+
+    limits:
+      max-claims-per-player: 1
+      count-unlisted-claims: true
+      bypass-permission: griefprevention.claim.global.limit.bypass
+
+
+# =============================================================================
+# Claim Listing and Global Claims
+# =============================================================================
+
+claim-list:
+  show-owner-list-to-console: true
+  show-trusted-claims: true
+  show-subclaims: true
+  show-world: true
+  show-coordinates: true
+  show-area: true
+  show-name: true
+  show-claim-block-summary: true
+  page-size: 10
+
+global-claims:
+  enabled: true
+  allow-teleport: true
+  require-approval: false
+  default-icon: GRASS_BLOCK
+  default-sort: newest # newest, name, owner, world
+  max-name-length: 48
+  max-description-length: 256
+  teleport-requires-safe-spawn: true
+  public-signs-set-spawn: true
+
+
+# =============================================================================
+# Claim Teleport
+# =============================================================================
+
+teleport:
+  # Delay before a player is teleported to a claim. 0 = instant.
+  delay-seconds: 3
+  # Cooldown after teleporting to a claim. 0 = no cooldown.
+  cooldown-seconds: 10
+  # Cancel delayed teleport if the player moves.
+  cancel-on-move: true
+
+  safe-location:
+    enabled: true
+    search-radius: 8
+    allow-nearby-fallback: true
+    confirm-unsafe-teleport: true
+  effects:
+    start-sound: entity.enderman.teleport
+    complete-sound: entity.player.levelup
+    particles: portal
+  bypass:
+    cooldown-permission: griefprevention.claim.teleport.bypass.cooldown
+    delay-permission: griefprevention.claim.teleport.bypass.delay
+
+
+# =============================================================================
+# Claim Flight
+# =============================================================================
+
+claim-flight:
+  # Current compatibility toggle. When true, players with claimfly.use can fly
+  # in owned/trusted claims without needing time in their flight bank.
+  passive-mode: false
+
+  enabled: true
+  require-toggle-command: true
+  consume-time-while-hovering: true
+  consume-time-in-creative: false
+  default-time: 0
+  max-time: 0 # 0 = unlimited bank
+  disable-on-pvp: true
+  disable-on-damage: false
+  disable-on-leaving-claim: true
+  landing-grace-seconds: 5
+  allow-in-admin-claims: true
+  allow-in-public-global-claims: false
+  trust-levels:
+    owner: true
+    manager: true
+    builder: true
+    container: false
+    access: false
+
+
+# =============================================================================
+# Claim Names, Descriptions, Icons, and Moderation
+# =============================================================================
+
+claim-customization:
+  names:
+    max-length: 48
+    allow-colors: true
+    allow-formats: true
+    allow-minimessage: true
+    strip-obfuscated: true
+  descriptions:
+    max-length: 256
+    allow-colors: true
+    allow-formats: true
+    allow-minimessage: true
+    allow-links: false
+  icons:
+    allow-custom-items: true
+    allow-player-heads: true
+    deny-materials:
+      - BARRIER
+      - COMMAND_BLOCK
+  bans:
+    prevent-entry: true
+    prevent-teleport: true
+    eject-on-reload: true
+    public-ban-permission: griefprevention.claim.ban.public
+    admin-bypass-permission: griefprevention.admin
+
+
+# =============================================================================
+# GUI
+# =============================================================================
+
 gui:
-  # Enable GUI mode for /claim command
-  # When enabled, /claim opens an interactive menu instead of showing subcommand list
+  # Enable GUI mode for /claim.
   enabled: true
 
-# Claim teleport settings
-teleport:
-  # Delay before a player is teleported to a claim (0 to disable)
-  delay-seconds: 3
-  # Cooldown after teleporting to a claim before another claim teleport can be used (0 to disable)
-  cooldown-seconds: 10
 
-# Tax settings (requires Vault economy)
+# =============================================================================
+# Economy and Tax
+# =============================================================================
+
 tax:
-  # Percentage of rent/purchase payments taken as tax (0 to disable)
-  # The tax is deducted from the landlord's payment and deposited to the tax account
+  # Percentage of rent/purchase payments taken as tax. 0 disables tax.
   percent: 5
-  # The NPC account name to deposit tax into
-  # This account is automatically created if it doesn't exist
+  # NPC account name to deposit tax into.
   account-name: "Tax"
 
-# Eviction settings
+  enabled: true
+  exempt-permission: griefprevention.tax.exempt
+  apply-to:
+    rent: true
+    sell: true
+    mailbox: false
+    claim-block-purchases: false
+  deposit-mode: npc-account # npc-account, server-bank, void
+  round-mode: nearest # nearest, floor, ceil
+  minimum-tax: 0
+  notify-payer: true
+  notify-payee: true
+  ledger:
+    enabled: false
+    retain-days: 90
+
+
+# =============================================================================
+# Eviction
+# =============================================================================
+
 eviction:
   # Time before a renter can be evicted after notice is given.
-  # Supports: 14d, 1d, 24h, 1h, 30m, 10s, 1w (days/hours/minutes/seconds/weeks).
-  # Plain number (e.g. 14) is treated as days.
+  # Supports: 14d, 1d, 24h, 1h, 30m, 10s, 1w.
+  # Plain number is treated as days.
   notice-period: 14d
 
-# Version tracking and update checking
-version:
-  # Current configuration version (DO NOT MODIFY)
-  # Used to handle configuration migrations between versions
-  config-version: "1.1.1"
-  
-  # Update checking settings
-  update-checker:
-    # Enable checking for updates on SpigotMC
+  allow-owner-cancel: true
+  allow-admin-cancel: true
+  require-standing-in-claim: true
+  block-sign-break-until-effective: true
+  notify-renter-on-start: true
+  notify-owner-on-complete: true
+  restore-snapshot-on-evict: false
+  remove-renter-trust-on-start: false
+  remove-renter-trust-on-complete: true
+
+
+# =============================================================================
+# Snapshots and Rental Restoration
+# =============================================================================
+
+snapshots:
+  enabled: true
+  max-per-claim: 5
+  auto-create:
+    on-rent-sign-create: false
+    on-rental-start: false
+    before-eviction-complete: false
+  auto-restore:
+    on-rental-expire: false
+    on-eviction-complete: false
+    on-sale: false
+  cleanup:
     enabled: true
-    # How often to check for updates (in hours)
+    retain-days: 30
+    remove-when-claim-deleted: true
+  compression: true
+  async-restore: true
+  max-blocks-per-tick: 5000
+
+
+# =============================================================================
+# Integrations
+# =============================================================================
+
+integrations:
+  griefprevention:
+    detect-gp3d: true
+    prefer-gp3d-3d-claims: true
+    use-native-visualizations: true
+  vault:
+    fail-closed-when-missing: true
+    ignore-vault-missing: true
+  luckperms:
+    sync-dynamic-player-permission: true
+  placeholderapi:
+    enabled: true
+  discord:
+    # Planned: report high-value claim events to DiscordSRV or a webhook.
+    enabled: false
+    webhook-url: ""
+    events:
+      rental-start: true
+      rental-expire: true
+      eviction-start: true
+      eviction-complete: true
+      claim-sale: true
+
+# =============================================================================
+# Version Tracking and Update Checking
+# =============================================================================
+
+version:
+  # Current configuration version. Used for migrations.
+  config-version: "1.1.2"
+
+  update-checker:
+    enabled: true
     check-interval: 24
-    # Notify admins in-game when updates are available
     notify-admins: true
-    # Log update notifications to console
     log-to-console: true

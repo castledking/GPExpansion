@@ -41,6 +41,11 @@ public class RentClaimCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(plugin.getMessages().getRaw("general.player-only"));
             return true;
         }
+
+        if (!plugin.getConfigManager().areRentSignsEnabled()) {
+            plugin.getMessages().send(player, "sign-creation.type-disabled", "{signtype}", "rent");
+            return true;
+        }
         
         // Check permission
         if (!player.hasPermission("griefprevention.sign.create.rent")) {

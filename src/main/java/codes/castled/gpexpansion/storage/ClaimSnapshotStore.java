@@ -116,7 +116,17 @@ public class ClaimSnapshotStore {
             plugin.getLogger().warning("Failed to save snapshot index: " + e.getMessage());
             return null;
         }
+        pruneSnapshotsToMax(claimId, plugin.getConfigManager().getRentSnapshotMaxPerClaim());
         return new SnapshotEntry(id, created);
+    }
+
+    private void pruneSnapshotsToMax(String claimId, int max) {
+        if (max <= 0) return;
+        List<SnapshotEntry> snapshots = listSnapshots(claimId);
+        while (snapshots.size() > max) {
+            SnapshotEntry oldest = snapshots.remove(0);
+            removeSnapshot(claimId, oldest.id);
+        }
     }
 
     /**

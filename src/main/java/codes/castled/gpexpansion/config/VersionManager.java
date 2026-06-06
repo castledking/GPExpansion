@@ -5,6 +5,7 @@ import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.jetbrains.annotations.NotNull;
 
@@ -20,7 +21,7 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -146,12 +147,12 @@ public class VersionManager {
         // Migrate self-mailboxes section to defaults.max-self-mailboxes-per-claim
         migrateSelfMailboxesConfig();
 
-        // If version is older than 0.1.5a, set mailbox-protocol default from GP detection and bump version
+        // If version is older than 0.1.5a, set mailbox protocol default from GP detection and bump version
         if (isVersionOlder(currentConfigVersion, "0.1.5a")) {
             migrateToVersion015a();
         }
 
-        // Always ensure mailbox-protocol exists (some users may already be on 0.1.5a without this key).
+        // Always ensure signs.mailbox.protocol exists (some users may already be on 0.1.5a without this key).
         ensureMailboxProtocolPresent();
         
         // Migrate to 0.1.8a: add player-commands section
@@ -215,6 +216,16 @@ public class VersionManager {
 
         // Migrate to 0.1.10a: add sign-protection section to lang.yml
         migrateSignProtectionToLang();
+
+        // Migrate to 1.1.2: restructure config from flat defaults + nested signs to consolidated structure
+        if (isVersionOlder(currentConfigVersion, "1.1.2")) {
+            migrateToVersion112();
+            loadConfig();
+        }
+
+        // Always check for leftover old-structure indicators even if version matches (partial migration fixup)
+        ensureVersion112Structure();
+        loadConfig();
 
         // Auto-bump version if no migrations needed and version is older than project version
         // Only auto-bump if player-commands section exists (to avoid bumping before migration)
@@ -435,17 +446,18 @@ public class VersionManager {
     }
 
     /**
-     * Migrate to config version 0.1.5a: set mailbox-protocol default from GP detection (first time only).
+     * Migrate to config version 0.1.5a: set mailbox protocol default from GP detection (first time only).
      * If GP3D is detected default to "real", otherwise "virtual". Only sets when key is missing.
      */
     private void migrateToVersion015a() {
         FileConfiguration config = plugin.getConfig();
-        if (!config.contains("mailbox-protocol")) {
+        if (!config.contains("signs.mailbox.protocol")) {
+            String existing = config.getString("mailbox-protocol", null);
             GPBridge gp = new GPBridge();
             boolean gp3d = gp.isGP3D();
-            String defaultProtocol = gp3d ? "real" : "virtual";
-            config.set("mailbox-protocol", defaultProtocol);
-            plugin.getLogger().info("VersionManager: Set mailbox-protocol to " + defaultProtocol + " (detected " + (gp3d ? "GP3D" : "regular GP") + "). You can change this in config.yml.");
+            String defaultProtocol = existing != null && !existing.isBlank() ? existing.trim() : (gp3d ? "real" : "virtual");
+            config.set("signs.mailbox.protocol", defaultProtocol);
+            plugin.getLogger().info("VersionManager: Set signs.mailbox.protocol to " + defaultProtocol + " (detected " + (gp3d ? "GP3D" : "regular GP") + "). You can change this in config.yml.");
         }
         config.set("version.config-version", "0.1.5a");
         plugin.saveConfig();
@@ -454,18 +466,19 @@ public class VersionManager {
     }
 
     /**
-     * Ensure mailbox-protocol exists without overwriting user choice.
+     * Ensure mailbox protocol exists without overwriting user choice.
      * Used for cases where config-version is already 0.1.5a but the key is missing.
      */
     private void ensureMailboxProtocolPresent() {
         FileConfiguration config = plugin.getConfig();
-        if (config.contains("mailbox-protocol")) return;
+        if (config.contains("signs.mailbox.protocol")) return;
+        String existing = config.getString("mailbox-protocol", null);
         GPBridge gp = new GPBridge();
         boolean gp3d = gp.isGP3D();
-        String defaultProtocol = gp3d ? "real" : "virtual";
-        config.set("mailbox-protocol", defaultProtocol);
+        String defaultProtocol = existing != null && !existing.isBlank() ? existing.trim() : (gp3d ? "real" : "virtual");
+        config.set("signs.mailbox.protocol", defaultProtocol);
         plugin.saveConfig();
-        plugin.getLogger().info("VersionManager: Added missing mailbox-protocol=" + defaultProtocol + " (detected " + (gp3d ? "GP3D" : "regular GP") + ").");
+        plugin.getLogger().info("VersionManager: Added missing signs.mailbox.protocol=" + defaultProtocol + " (detected " + (gp3d ? "GP3D" : "regular GP") + ").");
     }
     
     /**
@@ -1278,5 +1291,264 @@ public class VersionManager {
         } catch (IOException e) {
             plugin.getLogger().warning("VersionManager: Failed to migrate sign-protection to lang.yml: " + e.getMessage());
         }
+    }
+
+    // =========================================================================
+    // 1.1.2 Migration
+    // =========================================================================
+
+    /** Old → new path mappings for values that moved between versions &lt 1.1.2 and 1.1.2 */
+    private static final Map<String, String> PATH_MIGRATIONS_112 = new LinkedHashMap<>();
+
+    /** Paths that must NOT be carried over from the old config (they were removed or replaced in 1.1.2) */
+    private static final Set<String> EXCLUDED_PATHS_112 = new HashSet<>();
+
+    static {
+        // defaults → signs.*.limits
+        PATH_MIGRATIONS_112.put("defaults.max-sell-signs",                "signs.sell.limits.max-signs");
+        PATH_MIGRATIONS_112.put("defaults.max-rent-signs",                "signs.rent.limits.max-signs");
+        PATH_MIGRATIONS_112.put("defaults.max-mailbox-signs",             "signs.mailbox.limits.max-signs");
+        PATH_MIGRATIONS_112.put("defaults.max-self-mailboxes-per-claim",  "signs.mailbox.limits.max-self-mailboxes-per-claim");
+        PATH_MIGRATIONS_112.put("defaults.max-global-claims",             "signs.global.limits.max-claims-per-player");
+
+        // passive-claim-flight → claim-flight.passive-mode
+        PATH_MIGRATIONS_112.put("passive-claim-flight", "claim-flight.passive-mode");
+
+        // signs.rent.eviction → eviction (top-level)
+        PATH_MIGRATIONS_112.put("signs.rent.eviction.notice-period",              "eviction.notice-period");
+        PATH_MIGRATIONS_112.put("signs.rent.eviction.allow-owner-cancel",         "eviction.allow-owner-cancel");
+        PATH_MIGRATIONS_112.put("signs.rent.eviction.allow-admin-cancel",         "eviction.allow-admin-cancel");
+        PATH_MIGRATIONS_112.put("signs.rent.eviction.require-standing-in-claim",  "eviction.require-standing-in-claim");
+        PATH_MIGRATIONS_112.put("signs.rent.eviction.block-sign-break-until-effective", "eviction.block-sign-break-until-effective");
+        PATH_MIGRATIONS_112.put("signs.rent.eviction.notify-renter-on-start",     "eviction.notify-renter-on-start");
+        PATH_MIGRATIONS_112.put("signs.rent.eviction.notify-owner-on-complete",   "eviction.notify-owner-on-complete");
+        PATH_MIGRATIONS_112.put("signs.rent.eviction.restore-snapshot-on-evict",  "eviction.restore-snapshot-on-evict");
+        PATH_MIGRATIONS_112.put("signs.rent.eviction.remove-renter-trust-on-start",   "eviction.remove-renter-trust-on-start");
+        PATH_MIGRATIONS_112.put("signs.rent.eviction.remove-renter-trust-on-complete", "eviction.remove-renter-trust-on-complete");
+
+        // signs.rent.snapshots → snapshots (top-level)
+        PATH_MIGRATIONS_112.put("signs.rent.snapshots.max-per-claim",           "snapshots.max-per-claim");
+        PATH_MIGRATIONS_112.put("signs.rent.snapshots.auto-create.on-rent-sign-create",     "snapshots.auto-create.on-rent-sign-create");
+        PATH_MIGRATIONS_112.put("signs.rent.snapshots.auto-create.on-rental-start",         "snapshots.auto-create.on-rental-start");
+        PATH_MIGRATIONS_112.put("signs.rent.snapshots.auto-create.before-eviction-complete", "snapshots.auto-create.before-eviction-complete");
+        PATH_MIGRATIONS_112.put("signs.rent.snapshots.auto-restore.on-rental-expire",       "snapshots.auto-restore.on-rental-expire");
+        PATH_MIGRATIONS_112.put("signs.rent.snapshots.auto-restore.on-eviction-complete",   "snapshots.auto-restore.on-eviction-complete");
+
+        // Excluded paths (removed or restructured beyond simple value carry-over)
+        EXCLUDED_PATHS_112.add("defaults");
+        EXCLUDED_PATHS_112.add("mailbox-protocol");
+        EXCLUDED_PATHS_112.add("version.update-checker.last-check");
+        // player-commands is handled specially (merge, not just copy)
+        EXCLUDED_PATHS_112.add("player-commands");
+    }
+
+    /**
+     * Migrate config.yml to 1.1.2 structure.
+     * Backs up the old file, replaces it with the resource default, then applies
+     * preserved values using the old→new path mapping.
+     */
+    private void migrateToVersion112() {
+        File configFile = new File(dataFolder, "config.yml");
+        if (!configFile.exists()) {
+            plugin.getLogger().info("VersionManager: config.yml does not exist, cannot migrate to 1.1.2");
+            return;
+        }
+
+        plugin.getLogger().info("VersionManager: Migrating config to 1.1.2...");
+
+        try {
+            // 1. Read old config values
+            FileConfiguration oldConfig = plugin.getConfig();
+
+            // Read old player-commands list for later merge
+            List<String> oldPlayerCommands = oldConfig.getStringList("player-commands");
+
+            // Read old version.update-checker subtree (except last-check)
+            boolean oldUpdateCheckerEnabled = oldConfig.getBoolean("version.update-checker.enabled", true);
+            long oldCheckInterval = oldConfig.getLong("version.update-checker.check-interval", 24);
+            boolean oldNotifyAdmins = oldConfig.getBoolean("version.update-checker.notify-admins", true);
+            boolean oldLogToConsole = oldConfig.getBoolean("version.update-checker.log-to-console", true);
+
+            // Collect all preserved values via path mapping + direct paths.
+            // Only leaf values are preserved (skip ConfigurationSection to avoid overwriting
+            // entire sections which would drop new keys added in the 1.1.2 resource).
+            Map<String, Object> preserved = new LinkedHashMap<>();
+            for (String oldPath : oldConfig.getKeys(true)) {
+                if (isExcludedOrChild(oldPath)) continue;
+                String newPath = PATH_MIGRATIONS_112.getOrDefault(oldPath, oldPath);
+                if (preserved.containsKey(newPath)) continue;
+                Object val = oldConfig.get(oldPath);
+                if (val != null && !(val instanceof ConfigurationSection)) {
+                    preserved.put(newPath, val);
+                }
+            }
+
+            // Apply overrides for mapped paths (may differ from direct copy).
+            // Values at these paths are guaranteed to be simple types (ints, strings, booleans).
+            for (Map.Entry<String, String> mapping : PATH_MIGRATIONS_112.entrySet()) {
+                if (oldConfig.contains(mapping.getKey())) {
+                    preserved.put(mapping.getValue(), oldConfig.get(mapping.getKey()));
+                }
+            }
+
+            // 2. Create backup
+            String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
+            File backupFile = new File(dataFolder, "config.yml.backup_" + timestamp + "_pre-1.1.2");
+            Files.copy(configFile.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            plugin.getLogger().info("VersionManager: Backup created: " + backupFile.getName());
+
+            // 3. Replace with resource default
+            configFile.delete();
+            plugin.saveDefaultConfig();
+            plugin.reloadConfig();
+            FileConfiguration newConfig = plugin.getConfig();
+
+            // 4. Apply preserved values to new config
+            for (Map.Entry<String, Object> entry : preserved.entrySet()) {
+                String path = entry.getKey();
+                // Skip paths that are sections whose children were individually mapped
+                if (isParentOfMappedPath(path)) continue;
+                // Skip excluded paths
+                if (isExcludedOrChild(path)) continue;
+                newConfig.set(path, entry.getValue());
+            }
+
+            // 5. Apply the explicitly mapped overrides
+            for (Map.Entry<String, String> mapping : PATH_MIGRATIONS_112.entrySet()) {
+                if (oldConfig.contains(mapping.getKey())) {
+                    newConfig.set(mapping.getValue(), oldConfig.get(mapping.getKey()));
+                }
+            }
+
+            // 6. Handle player-commands merge: start with new defaults, add old entries not already present
+            List<String> newPlayerCommands = newConfig.getStringList("player-commands");
+            if (!oldPlayerCommands.isEmpty()) {
+                Set<String> merged = new LinkedHashSet<>(newPlayerCommands);
+                merged.addAll(oldPlayerCommands);
+                newConfig.set("player-commands", new ArrayList<>(merged));
+                plugin.getLogger().info("VersionManager: Merged " + oldPlayerCommands.size()
+                    + " old player-commands with " + newPlayerCommands.size() + " new defaults");
+            }
+
+            // 7. Preserve version.update-checker subtree
+            newConfig.set("version.update-checker.enabled", oldUpdateCheckerEnabled);
+            newConfig.set("version.update-checker.check-interval", oldCheckInterval);
+            newConfig.set("version.update-checker.notify-admins", oldNotifyAdmins);
+            newConfig.set("version.update-checker.log-to-console", oldLogToConsole);
+
+            // 8. Set config version
+            newConfig.set("version.config-version", "1.1.2");
+
+            // 9. Save
+            plugin.saveConfig();
+
+            currentConfigVersion = "1.1.2";
+            plugin.getLogger().info("VersionManager: Migration to 1.1.2 complete. Backup: " + backupFile.getName());
+
+            // Notify admins
+            try {
+                notifyAdminsAboutMigration();
+            } catch (Exception ignored) {}
+
+        } catch (IOException e) {
+            plugin.getLogger().severe("VersionManager: Failed to migrate config to 1.1.2: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Check for and fix remaining old-structure indicators even when version already reads 1.1.2.
+     * This handles the case where a previous migration bumped the version but didn't fully
+     * restructure the file (partial migration).
+     */
+    private void ensureVersion112Structure() {
+        File configFile = new File(dataFolder, "config.yml");
+        if (!configFile.exists()) return;
+
+        try {
+            String content = Files.readString(configFile.toPath());
+
+            // Detect leftover old structure: defaults section still present
+            boolean hasDefaultsSection = content.matches("(?sm).*^defaults:\\s*$.*");
+            if (!hasDefaultsSection) return;
+
+            plugin.getLogger().info("VersionManager: Detected leftover defaults section - applying 1.1.2 structural fixup");
+
+            // Read old values
+            FileConfiguration oldConfig = plugin.getConfig();
+            List<String> oldPlayerCommands = oldConfig.getStringList("player-commands");
+
+            // Backup
+            String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
+            File backupFile = new File(dataFolder, "config.yml.backup_" + timestamp + "_fixup");
+            Files.copy(configFile.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+
+            // Collect preserved values but skip defaults-section direct children
+            Map<String, Object> preserved = new LinkedHashMap<>();
+            for (String oldPath : oldConfig.getKeys(true)) {
+                if (oldPath.startsWith("defaults.") || oldPath.equals("defaults")) continue;
+                if (oldPath.equals("mailbox-protocol")) continue;
+                if (oldPath.equals("player-commands")) continue;
+                if (oldPath.equals("passive-claim-flight")) {
+                    Object val = oldConfig.get(oldPath);
+                    if (val instanceof Boolean) {
+                        preserved.put("claim-flight.passive-mode", val);
+                    }
+                    continue;
+                }
+                Object val = oldConfig.get(oldPath);
+                if (val != null && !(val instanceof ConfigurationSection)) {
+                    preserved.put(oldPath, val);
+                }
+            }
+
+            // Read defaults values and map to new locations
+            for (Map.Entry<String, String> mapping : PATH_MIGRATIONS_112.entrySet()) {
+                if (mapping.getKey().startsWith("defaults.") && oldConfig.contains(mapping.getKey())) {
+                    preserved.put(mapping.getValue(), oldConfig.get(mapping.getKey()));
+                }
+            }
+
+            // Replace from resource
+            configFile.delete();
+            plugin.saveDefaultConfig();
+            plugin.reloadConfig();
+            FileConfiguration newConfig = plugin.getConfig();
+
+            // Apply preserved values
+            for (Map.Entry<String, Object> entry : preserved.entrySet()) {
+                newConfig.set(entry.getKey(), entry.getValue());
+            }
+
+            // Merge player-commands
+            List<String> newPlayerCommands = newConfig.getStringList("player-commands");
+            if (!oldPlayerCommands.isEmpty()) {
+                Set<String> merged = new LinkedHashSet<>(newPlayerCommands);
+                merged.addAll(oldPlayerCommands);
+                newConfig.set("player-commands", new ArrayList<>(merged));
+            }
+
+            newConfig.set("version.config-version", "1.1.2");
+            plugin.saveConfig();
+            plugin.getLogger().info("VersionManager: 1.1.2 structural fixup complete. Backup: " + backupFile.getName());
+
+        } catch (IOException e) {
+            plugin.getLogger().warning("VersionManager: Could not fix 1.1.2 structure: " + e.getMessage());
+        }
+    }
+
+    /** Check if a path should be excluded from value carry-over (itself or an ancestor) */
+    private boolean isExcludedOrChild(String path) {
+        for (String excluded : EXCLUDED_PATHS_112) {
+            if (path.equals(excluded) || path.startsWith(excluded + ".")) return true;
+        }
+        return false;
+    }
+
+    /** Check if a path is a parent of any explicitly mapped path (avoids setting both parent and children) */
+    private boolean isParentOfMappedPath(String path) {
+        for (String oldPath : PATH_MIGRATIONS_112.keySet()) {
+            if (oldPath.startsWith(path + ".")) return true;
+        }
+        return false;
     }
 }

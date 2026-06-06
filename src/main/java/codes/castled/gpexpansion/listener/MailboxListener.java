@@ -1,6 +1,7 @@
 package codes.castled.gpexpansion.listener;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.*;
 
 import java.nio.charset.StandardCharsets;
@@ -28,6 +29,7 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
+import codes.castled.gpexpansion.economy.TaxManager;
 import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.scheduler.TaskHandle;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
@@ -47,6 +49,43 @@ public class MailboxListener implements Listener {
     private NamespacedKey keyEcoAmt() { return new NamespacedKey(plugin, "sign.ecoAmt"); }
     private NamespacedKey keyItemB64() { return new NamespacedKey(plugin, "item-b64"); }
     private NamespacedKey keyEcoKind() { return new NamespacedKey(plugin, "sign.ecoKind"); }
+
+    private String stripColorCodes(String input) {
+        if (input == null || input.isEmpty()) return "";
+        return input.replaceAll("(?i)[§&][0-9A-FK-OR]", "");
+    }
+
+    private String cleanInputLine(String input) {
+        if (input == null) return "";
+        return input.trim();
+    }
+
+    private String normalizeHeader(String input) {
+        return cleanInputLine(stripColorCodes(input)).toLowerCase(Locale.ROOT);
+    }
+
+    private boolean matchesMailboxInput(String header, boolean hanging) {
+        Set<String> accepted = new HashSet<>();
+        accepted.add("[Mailbox]");
+        accepted.addAll(plugin.getConfig().getStringList("signs.mailbox.sign-formats.inputs"));
+        accepted.addAll(plugin.getConfig().getStringList("signs.mailbox.hanging-sign-formats.inputs"));
+        String normalized = normalizeHeader(header);
+        for (String candidate : accepted) {
+            if (normalized.equals(normalizeHeader(candidate))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Component mailboxOutputHeader(Block signBlock) {
+        boolean hanging = signBlock.getType().name().contains("HANGING_SIGN");
+        String path = hanging
+            ? "signs.mailbox.hanging-sign-formats.outputs.header"
+            : "signs.mailbox.sign-formats.outputs.header";
+        return LegacyComponentSerializer.legacyAmpersand().deserialize(
+            plugin.getConfig().getString(path, "&9&l[Mailbox]"));
+    }
     /** Comma-separated list of shared player names for self mailbox (display uses "N players"). */
     private NamespacedKey keyMailboxShared() { return new NamespacedKey(plugin, "sign.mailbox.shared"); }
     /** Parent claim ID for buyable mailboxes (subdivision is created immediately). */
@@ -65,22 +104,29 @@ public class MailboxListener implements Listener {
     public void onSignChange(SignChangeEvent event) {
         // Instant [Mailbox] creation: wall sign adjacent to container, no other args
         if (event.line(0) == null) return;
-        String line0 = net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().serialize(event.line(0)).trim().replaceAll("§.", "");
-        if (!line0.equalsIgnoreCase("[Mailbox]")) return;
-
-        String line1 = event.line(1) != null ? net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().serialize(event.line(1)).trim().replaceAll("§.", "") : "";
-        String line2 = event.line(2) != null ? net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().serialize(event.line(2)).trim().replaceAll("§.", "") : "";
-        String line3 = event.line(3) != null ? net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().serialize(event.line(3)).trim().replaceAll("§.", "") : "";
+        String line0 = cleanInputLine(stripColorCodes(LegacyComponentSerializer.legacySection().serialize(event.line(0))));
+        boolean hanging = event.getBlock().getType().name().contains("HANGING_SIGN");
+        if (!matchesMailboxInput(line0, hanging)) return;
 
         Player player = event.getPlayer();
+        if (!plugin.getConfigManager().areMailboxSignsEnabled()) {
+            plugin.getMessages().send(player, "sign-creation.type-disabled", "{signtype}", "mailbox");
+            return;
+        }
+
+        String line1 = event.line(1) != null ? cleanInputLine(stripColorCodes(LegacyComponentSerializer.legacySection().serialize(event.line(1)))) : "";
+        String line2 = event.line(2) != null ? cleanInputLine(stripColorCodes(LegacyComponentSerializer.legacySection().serialize(event.line(2)))) : "";
+        String line3 = event.line(3) != null ? cleanInputLine(stripColorCodes(LegacyComponentSerializer.legacySection().serialize(event.line(3)))) : "";
+
         Block signBlock = event.getBlock();
         Material signType = signBlock.getType();
-        if (!signType.name().contains("WALL_SIGN")) return;
+        if (plugin.getConfigManager().isMailboxContainerAttachmentRequired()
+                && !signType.name().contains("WALL_SIGN")) {
+            return;
+        }
 
-        BlockData data = signBlock.getBlockData();
-        if (!(data instanceof Directional dir)) return;
-        Block containerBlock = signBlock.getRelative(dir.getFacing().getOppositeFace());
-        if (!isContainerBlock(containerBlock.getType())) return;
+        Block containerBlock = resolveMailboxContainer(signBlock);
+        if (containerBlock == null) return;
 
         boolean debug = plugin.getConfigManager().isDebugEnabled();
         if (debug) plugin.getLogger().info("[mailbox-instant] " + player.getName() + " placing [Mailbox] on " + containerBlock.getType() + " at " + containerBlock.getLocation());
@@ -106,6 +152,11 @@ public class MailboxListener implements Listener {
             UUID playerId = player.getUniqueId();
             if (!gp.isOwner(parentClaim, playerId)) {
                 plugin.getMessages().send(player, "sign-creation.not-in-claim");
+                return;
+            }
+            if (!plugin.getConfigManager().areStackedMailboxesAllowed()
+                    && isMailboxContainerLocationTaken(containerBlock.getLocation())) {
+                plugin.getMessages().send(player, "mailbox.stacked-disabled");
                 return;
             }
 
@@ -163,7 +214,7 @@ public class MailboxListener implements Listener {
                     pdc.set(keyMailboxParentClaim(), PersistentDataType.STRING, parentClaimId); // For validation
                     pdc.set(keyEcoAmt(), PersistentDataType.STRING, ecoAmtStr);
                     pdc.set(keyEcoKind(), PersistentDataType.STRING, ecoKindStr);
-                    front.line(0, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§9§l[Mailbox]"));
+                    front.line(0, mailboxOutputHeader(signBlock));
                     front.line(1, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize(displayLine1));
                     front.line(2, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§0(Click to buy)"));
                     front.line(3, net.kyori.adventure.text.Component.empty());
@@ -175,6 +226,10 @@ public class MailboxListener implements Listener {
         }
 
         // Self mailbox: lines 1–3 empty or player names for shared full-access
+        if (!plugin.getConfigManager().areSelfMailboxesAllowed()) {
+            plugin.getMessages().send(player, "mailbox.self-disabled");
+            return;
+        }
         if (!player.hasPermission("griefprevention.sign.create.self-mailbox")) {
             plugin.getMessages().send(player, "permissions.create-sign-denied", "{signtype}", "self-mailbox");
             return;
@@ -220,6 +275,11 @@ public class MailboxListener implements Listener {
         int count = countSelfMailboxesInClaim(parentClaim, playerId);
         if (count >= maxSelf) {
             plugin.getMessages().send(player, "mailbox.self-limit-reached", "{max}", String.valueOf(maxSelf));
+            return;
+        }
+        if (!plugin.getConfigManager().areStackedMailboxesAllowed()
+                && isMailboxContainerLocationTaken(containerBlock.getLocation())) {
+            plugin.getMessages().send(player, "mailbox.stacked-disabled");
             return;
         }
 
@@ -274,7 +334,7 @@ public class MailboxListener implements Listener {
                 pdc.set(keyEcoAmt(), PersistentDataType.STRING, "0");
                 pdc.set(keyEcoKind(), PersistentDataType.STRING, "MONEY");
                 if (!sharedPdc.isEmpty()) pdc.set(keyMailboxShared(), PersistentDataType.STRING, sharedPdc);
-                front.line(0, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§9§l[Mailbox]"));
+                front.line(0, mailboxOutputHeader(signBlock));
                 front.line(1, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize(displayLine1));
                 front.line(2, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§0(Click to open)"));
                 front.line(3, net.kyori.adventure.text.Component.empty());
@@ -350,6 +410,10 @@ public class MailboxListener implements Listener {
 
             event.setCancelled(true);
             Player player = event.getPlayer();
+            if (!plugin.getConfigManager().areMailboxSignsEnabled()) {
+                plugin.getMessages().send(player, "sign-creation.type-disabled", "{signtype}", "mailbox");
+                return;
+            }
             player.setCooldown(event.getMaterial(), 5);
             
             String claimId = pdc.get(keyClaim(), PersistentDataType.STRING);
@@ -379,6 +443,9 @@ public class MailboxListener implements Listener {
         // Check if clicking on a container block that might be part of a mailbox (harden: always route through our view)
         if (isContainerBlock(block.getType())) {
             Player player = event.getPlayer();
+            if (!plugin.getConfigManager().areMailboxSignsEnabled()) {
+                return;
+            }
 
             // Sneak + right-click should behave like vanilla (placing blocks, etc.) and should NOT open mailboxes.
             if (player.isSneaking()) {
@@ -604,7 +671,64 @@ public class MailboxListener implements Listener {
                material == Material.BARREL || material == Material.SHULKER_BOX ||
                material.name().endsWith("_SHULKER_BOX") ||
                material == Material.DISPENSER || material == Material.DROPPER ||
-               material == Material.HOPPER;
+               (plugin.getConfigManager().areMailboxHoppersAllowed() && material == Material.HOPPER);
+    }
+
+    private Block resolveMailboxContainer(Block signBlock) {
+        if (signBlock == null) return null;
+        if (signBlock.getBlockData() instanceof Directional dir) {
+            Block attached = signBlock.getRelative(dir.getFacing().getOppositeFace());
+            if (isContainerBlock(attached.getType())) {
+                return attached;
+            }
+            if (plugin.getConfigManager().isMailboxContainerAttachmentRequired()) {
+                return null;
+            }
+        } else if (plugin.getConfigManager().isMailboxContainerAttachmentRequired()) {
+            return null;
+        }
+
+        BlockFace[] faces = {
+            BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP, BlockFace.DOWN
+        };
+        for (BlockFace face : faces) {
+            Block adjacent = signBlock.getRelative(face);
+            if (isContainerBlock(adjacent.getType())) {
+                return adjacent;
+            }
+        }
+        return null;
+    }
+
+    private boolean isMailboxContainerLocationTaken(Location location) {
+        if (location == null || location.getWorld() == null) return false;
+        for (String claimId : claimDataStore.getAllMailboxes().keySet()) {
+            Location existing = claimDataStore.getMailboxContainerLocation(claimId).orElse(null);
+            if (existing != null && sameBlock(existing, location)) {
+                return true;
+            }
+            if (claimId != null && !claimId.startsWith("v:")) {
+                Object claim = gp.findClaimById(claimId).orElse(null);
+                if (claim == null) continue;
+                GPBridge.ClaimCorners corners = gp.getClaimCorners(claim).orElse(null);
+                World world = gp.getClaimWorld(claim).map(Bukkit::getWorld).orElse(null);
+                if (corners == null || world == null || !world.equals(location.getWorld())) continue;
+                if (location.getBlockX() >= corners.x1 && location.getBlockX() <= corners.x2
+                        && location.getBlockY() >= corners.y1 && location.getBlockY() <= corners.y2
+                        && location.getBlockZ() >= corners.z1 && location.getBlockZ() <= corners.z2) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean sameBlock(Location a, Location b) {
+        return a != null && b != null
+            && a.getWorld() != null && a.getWorld().equals(b.getWorld())
+            && a.getBlockX() == b.getBlockX()
+            && a.getBlockY() == b.getBlockY()
+            && a.getBlockZ() == b.getBlockZ();
     }
 
     @SuppressWarnings("all")
@@ -791,6 +915,7 @@ public class MailboxListener implements Listener {
             viewingChests.put(player.getUniqueId(), containerBlock.getLocation());
             isOwnerViewing.put(player.getUniqueId(), true);
             if (!realProtocol) containersOpenByOwner.add(key);
+            playConfiguredMailboxSound(player, plugin.getConfigManager().getMailboxOpenSound());
             player.openInventory(containerInv);
             return;
         }
@@ -798,6 +923,12 @@ public class MailboxListener implements Listener {
         // Non-owner: real = old implementation (open real container, deposit-only via slot restrictions). Virtual = snapshot, apply on close.
         if (!realProtocol) {
             if (containersOpenByOwner.contains(key)) {
+                plugin.getMessages().send(player, "mailbox.in-use-by-other");
+                return;
+            }
+            Set<UUID> viewers = containerViewersByKey.get(key);
+            if (!plugin.getConfigManager().areMailboxVirtualMultipleDepositorsAllowed()
+                    && viewers != null && !viewers.isEmpty()) {
                 plugin.getMessages().send(player, "mailbox.in-use-by-other");
                 return;
             }
@@ -816,7 +947,7 @@ public class MailboxListener implements Listener {
             viewingChests.put(player.getUniqueId(), containerLoc);
             isOwnerViewing.put(player.getUniqueId(), false);
             depositSessions.put(player.getUniqueId(), session);
-            playMailboxOpenSound(player, containerBlock.getType());
+            playConfiguredMailboxSound(player, plugin.getConfigManager().getMailboxOpenSound());
             player.openInventory(containerInv);
             return;
         }
@@ -844,7 +975,7 @@ public class MailboxListener implements Listener {
         session.autoKickTask = codes.castled.gpexpansion.scheduler.SchedulerAdapter.runLaterEntity(
             plugin, player, () -> autoKickFromMailbox(player), AUTO_KICK_TICKS);
 
-        playMailboxOpenSound(player, containerBlock.getType());
+        playConfiguredMailboxSound(player, plugin.getConfigManager().getMailboxOpenSound());
         if (virtualInv != null) {
             player.openInventory(virtualInv);
         }
@@ -852,13 +983,18 @@ public class MailboxListener implements Listener {
 
     @SuppressWarnings("all")
     private void playMailboxOpenSound(Player player, Material containerType) {
-        if (containerType == null) return;
-        if (containerType == Material.CHEST || containerType == Material.TRAPPED_CHEST) {
-            player.playSound(player.getLocation(), Sound.BLOCK_CHEST_OPEN, 1.0f, 1.0f);
-        } else if (containerType == Material.BARREL) {
-            player.playSound(player.getLocation(), Sound.BLOCK_BARREL_OPEN, 1.0f, 1.0f);
-        } else if (containerType == Material.SHULKER_BOX || containerType.name().endsWith("_SHULKER_BOX")) {
-            player.playSound(player.getLocation(), Sound.BLOCK_SHULKER_BOX_OPEN, 1.0f, 1.0f);
+        playConfiguredMailboxSound(player, plugin.getConfigManager().getMailboxOpenSound());
+    }
+
+    private void playConfiguredMailboxSound(Player player, String configured) {
+        if (player == null || configured == null || configured.isBlank() || configured.equalsIgnoreCase("none")) return;
+        String key = configured.trim().toUpperCase(Locale.ROOT).replace('.', '_').replace('-', '_');
+        try {
+            player.playSound(player.getLocation(), Sound.valueOf(key), 1.0f, 1.0f);
+        } catch (IllegalArgumentException ignored) {
+            if (plugin.getConfigManager().isDebugEnabled()) {
+                plugin.getLogger().warning("Unknown mailbox sound in config: " + configured);
+            }
         }
     }
 
@@ -931,6 +1067,10 @@ public class MailboxListener implements Listener {
                 plugin.getMessages().send(player, "mailbox.deposit-only");
             }
         }
+
+        if (!event.isCancelled()) {
+            scheduleLiveVirtualMailboxCommit(player, session);
+        }
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
@@ -945,7 +1085,10 @@ public class MailboxListener implements Listener {
 
         // Virtual protocol non-owner: allow drag. Real protocol (old): block all drags for non-owners.
         DepositSession session = depositSessions.get(player.getUniqueId());
-        if (session != null && session.virtualInv != null) return;
+        if (session != null && session.virtualInv != null) {
+            scheduleLiveVirtualMailboxCommit(player, session);
+            return;
+        }
 
         event.setCancelled(true);
     }
@@ -968,6 +1111,7 @@ public class MailboxListener implements Listener {
             containersOpenByOwner.remove(containerKey(chestLoc));
             container.update();
             checkStorageWarnings(player, container.getInventory(), chestLoc);
+            playConfiguredMailboxSound(player, plugin.getConfigManager().getMailboxCloseSound());
             return;
         }
 
@@ -981,25 +1125,17 @@ public class MailboxListener implements Listener {
         if (session.virtualInv == null) {
             // Real protocol (old implementation): items already in chest, just ensure persistence
             container.update();
+            playConfiguredMailboxSound(player, plugin.getConfigManager().getMailboxDepositSound());
+            playConfiguredMailboxSound(player, plugin.getConfigManager().getMailboxCloseSound());
             return;
         }
 
-        Set<UUID> viewers = containerViewersByKey.get(session.containerKey);
-        if (viewers != null) {
-            viewers.remove(player.getUniqueId());
-            if (viewers.isEmpty()) containerViewersByKey.remove(session.containerKey);
-        }
+        removeVirtualMailboxViewer(session, player.getUniqueId());
 
         Inventory virtualInv = session.virtualInv;
 
-        // Snapshot contents from our virtual inventory
-        List<ItemStack> toSave = new ArrayList<>();
-        for (int i = 0; i < virtualInv.getSize(); i++) {
-            ItemStack item = virtualInv.getItem(i);
-            if (item != null && item.getType() != Material.AIR) {
-                toSave.add(item.clone());
-            }
-        }
+        // Snapshot contents from our virtual inventory.
+        List<ItemStack> toSave = snapshotVirtualMailboxContents(virtualInv);
 
         // Session has virtualInv => we're applying a virtual snapshot. If owner currently has the real chest open, don't overwrite (would dupe/conflict) - return items to non-owner. Use session state, not current config, so reload during session doesn't allow overwriting while owner is viewing.
         if (containersOpenByOwner.contains(session.containerKey)) {
@@ -1012,10 +1148,49 @@ public class MailboxListener implements Listener {
             if (!toSave.isEmpty()) {
                 plugin.getMessages().send(player, "mailbox.items-returned");
             }
+            playConfiguredMailboxSound(player, plugin.getConfigManager().getMailboxCloseSound());
             return;
         }
 
         // Apply to real chest using snapshot inventory (required for persistence)
+        applyVirtualMailboxSnapshot(player, session, toSave, true);
+    }
+
+    private void removeVirtualMailboxViewer(DepositSession session, UUID playerId) {
+        if (session == null || session.containerKey == null) return;
+        Set<UUID> viewers = containerViewersByKey.get(session.containerKey);
+        if (viewers == null) return;
+        viewers.remove(playerId);
+        if (viewers.isEmpty()) containerViewersByKey.remove(session.containerKey);
+    }
+
+    private List<ItemStack> snapshotVirtualMailboxContents(Inventory virtualInv) {
+        List<ItemStack> toSave = new ArrayList<>();
+        if (virtualInv == null) return toSave;
+        for (int i = 0; i < virtualInv.getSize(); i++) {
+            ItemStack item = virtualInv.getItem(i);
+            if (item != null && item.getType() != Material.AIR) {
+                toSave.add(item.clone());
+            }
+        }
+        return toSave;
+    }
+
+    private void scheduleLiveVirtualMailboxCommit(Player player, DepositSession session) {
+        if (session == null || session.virtualInv == null) return;
+        if (plugin.getConfigManager().isMailboxVirtualSaveOnCloseOnly()) return;
+        codes.castled.gpexpansion.scheduler.SchedulerAdapter.runAtLocationLater(
+            plugin,
+            session.containerLoc,
+            () -> {
+                if (depositSessions.get(player.getUniqueId()) != session) return;
+                applyVirtualMailboxSnapshot(player, session, snapshotVirtualMailboxContents(session.virtualInv), false);
+            },
+            1L
+        );
+    }
+
+    private void applyVirtualMailboxSnapshot(Player player, DepositSession session, List<ItemStack> toSave, boolean playCloseSound) {
         Block block = session.containerLoc.getBlock();
         if (block.getState() instanceof Container realContainer) {
             Inventory snapshotInv;
@@ -1041,16 +1216,30 @@ public class MailboxListener implements Listener {
             if (!overflow.isEmpty()) {
                 for (ItemStack item : overflow) {
                     if (item != null && item.getType() != Material.AIR) {
-                        player.getInventory().addItem(item).values().forEach(drop ->
-                            player.getWorld().dropItemNaturally(player.getLocation(), drop));
+                        if (plugin.getConfigManager().areMailboxVirtualItemsReturnedWhenFull()) {
+                            player.getInventory().addItem(item).values().forEach(drop ->
+                                player.getWorld().dropItemNaturally(player.getLocation(), drop));
+                        } else {
+                            Location dropLoc = session.containerLoc.clone().add(0.5, 1.0, 0.5);
+                            dropLoc.getWorld().dropItemNaturally(dropLoc, item);
+                        }
                     }
                 }
-                plugin.getMessages().send(player, "mailbox.items-returned");
+                if (plugin.getConfigManager().areMailboxVirtualItemsReturnedWhenFull()) {
+                    plugin.getMessages().send(player, "mailbox.items-returned");
+                }
+            }
+            if (!toSave.isEmpty()) {
+                playConfiguredMailboxSound(player, plugin.getConfigManager().getMailboxDepositSound());
+            }
+            if (playCloseSound) {
+                playConfiguredMailboxSound(player, plugin.getConfigManager().getMailboxCloseSound());
             }
         }
     }
 
     private void checkStorageWarnings(Player player, Inventory chestInv, Location chestLoc) {
+        if (!plugin.getConfigManager().areMailboxStorageWarningsEnabled()) return;
         int emptySlots = 0;
         for (ItemStack item : chestInv.getContents()) {
             if (item == null || item.getType() == Material.AIR) {
@@ -1058,11 +1247,14 @@ public class MailboxListener implements Listener {
             }
         }
         
-        if (emptySlots == 0) {
+        int usedPercent = getUsedPercent(chestInv, emptySlots);
+        if (usedPercent >= 100 || emptySlots == 0) {
             plugin.getMessages().send(player, "mailbox.full-warning");
-        } else if (emptySlots <= 2) {
+            playConfiguredMailboxSound(player, plugin.getConfigManager().getMailboxFullSound());
+        } else if (isMailboxWarningThresholdReached(usedPercent)) {
             plugin.getMessages().send(player, "mailbox.almost-full-warning",
                 "{slots}", String.valueOf(emptySlots));
+            playConfiguredMailboxSound(player, plugin.getConfigManager().getMailboxFullSound());
         }
     }
 
@@ -1075,6 +1267,7 @@ public class MailboxListener implements Listener {
     }
 
     private void checkAllMailboxStorage(Player player) {
+        if (!plugin.getConfigManager().areMailboxStorageWarningsEnabled()) return;
         for (Map.Entry<String, UUID> entry : claimDataStore.getAllMailboxes().entrySet()) {
             if (!entry.getValue().equals(player.getUniqueId())) continue;
             String claimId = entry.getKey();
@@ -1121,6 +1314,7 @@ public class MailboxListener implements Listener {
     }
 
     private void checkMailboxStorageAtLocation(Player player, Location containerLoc, Inventory chestInv) {
+        if (!plugin.getConfigManager().areMailboxStorageWarningsEnabled()) return;
         int emptySlots = 0;
         for (ItemStack item : chestInv.getContents()) {
             if (item == null || item.getType() == Material.AIR) {
@@ -1130,14 +1324,34 @@ public class MailboxListener implements Listener {
         int x = containerLoc.getBlockX();
         int y = containerLoc.getBlockY();
         int z = containerLoc.getBlockZ();
-        if (emptySlots == 0) {
+        int usedPercent = getUsedPercent(chestInv, emptySlots);
+        if (usedPercent >= 100 || emptySlots == 0) {
             plugin.getMessages().send(player, "mailbox.storage-full-warning",
                 "{x}", String.valueOf(x), "{y}", String.valueOf(y), "{z}", String.valueOf(z));
-        } else if (emptySlots <= 9) {
+            playConfiguredMailboxSound(player, plugin.getConfigManager().getMailboxFullSound());
+        } else if (isMailboxWarningThresholdReached(usedPercent)) {
             plugin.getMessages().send(player, "mailbox.storage-almost-full-warning",
                 "{x}", String.valueOf(x), "{y}", String.valueOf(y), "{z}", String.valueOf(z),
                 "{slots}", String.valueOf(emptySlots));
+            playConfiguredMailboxSound(player, plugin.getConfigManager().getMailboxFullSound());
         }
+    }
+
+    private int getUsedPercent(Inventory inventory, int emptySlots) {
+        int size = inventory == null ? 0 : inventory.getSize();
+        if (size <= 0) return 0;
+        int usedSlots = Math.max(0, size - emptySlots);
+        return (int) Math.ceil((usedSlots * 100.0) / size);
+    }
+
+    private boolean isMailboxWarningThresholdReached(int usedPercent) {
+        for (Integer threshold : plugin.getConfigManager().getMailboxStorageWarningThresholds()) {
+            if (threshold == null || threshold >= 100) continue;
+            if (usedPercent >= threshold) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @SuppressWarnings("null")
@@ -1173,10 +1387,7 @@ public class MailboxListener implements Listener {
         }
 
         // Validate container, claim, and (for virtual) world before charging
-        Block containerBlock = null;
-        if (signBlock != null && signBlock.getBlockData() instanceof Directional dir) {
-            containerBlock = signBlock.getRelative(dir.getFacing().getOppositeFace());
-        }
+        Block containerBlock = resolveMailboxContainer(signBlock);
         if (containerBlock == null || !isContainerBlock(containerBlock.getType())) {
             plugin.getMessages().send(player, "mailbox.no-container");
             return true;
@@ -1243,6 +1454,20 @@ public class MailboxListener implements Listener {
             }
         });
 
+        if (kind == EcoKind.MONEY) {
+            try {
+                double paid = Double.parseDouble(ecoAmt);
+                TaxManager.TaxResult tax = plugin.getTaxManager().calculateTax(paid, TaxManager.Context.MAILBOX, player);
+                if (tax.tax > 0) {
+                    plugin.getTaxManager().depositTax(tax.tax);
+                    if (plugin.getConfigManager().shouldNotifyTaxPayer()) {
+                        plugin.getMessages().send(player, "tax.payer-notify",
+                            "{tax}", plugin.getEconomyManager().formatMoney(tax.tax));
+                    }
+                }
+            } catch (NumberFormatException ignored) {}
+        }
+
         plugin.getMessages().send(player, "mailbox.purchased");
         return true;
     }
@@ -1258,6 +1483,9 @@ public class MailboxListener implements Listener {
                         plugin.getEconomyManager().refreshEconomy();
                     }
                     if (!plugin.getEconomyManager().isEconomyAvailable()) {
+                        if (plugin.getConfigManager().isIgnoreVaultMissing()) {
+                            return true;
+                        }
                         plugin.getMessages().send(player, "mailbox.economy-not-available");
                         return false;
                     }
@@ -1361,7 +1589,7 @@ public class MailboxListener implements Listener {
                 PersistentDataContainer signPdc = sign.getPersistentDataContainer();
                 String signType = signPdc.get(keyKind(), PersistentDataType.STRING);
                 if ("MAILBOX".equals(signType)) {
-                    front.line(0, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§9§l[Mailbox]"));
+                    front.line(0, mailboxOutputHeader(signBlock));
                     front.line(1, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§a" + ownerName));
                     front.line(2, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize("§0(Click to open)"));
                     front.line(3, net.kyori.adventure.text.Component.empty());
@@ -1395,7 +1623,7 @@ public class MailboxListener implements Listener {
                         String signClaimId = signPdc.get(keyClaim(), PersistentDataType.STRING);
                         if ("MAILBOX".equals(signType) && claimId.equals(signClaimId)) {
                             var front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
-                            front.line(0, Component.text("[Mailbox]", net.kyori.adventure.text.format.NamedTextColor.BLUE, net.kyori.adventure.text.format.TextDecoration.BOLD));
+                            front.line(0, mailboxOutputHeader(block));
                             front.line(1, Component.text(ownerName, net.kyori.adventure.text.format.NamedTextColor.GREEN));
                             front.line(2, Component.text("(Click to open)", net.kyori.adventure.text.format.NamedTextColor.BLACK));
                             front.line(3, Component.text(""));

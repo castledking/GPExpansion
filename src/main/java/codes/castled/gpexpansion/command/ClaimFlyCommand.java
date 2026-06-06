@@ -23,10 +23,12 @@ import java.util.stream.Collectors;
 
 public class ClaimFlyCommand implements CommandExecutor, TabCompleter {
     private static final List<String> ADMIN_ACTIONS = Arrays.asList("add", "check", "reset", "take", "set");
+    private final GPExpansionPlugin plugin;
     private final ClaimFlyManager manager;
     private final GPBridge gpBridge;
 
     public ClaimFlyCommand(GPExpansionPlugin plugin) {
+        this.plugin = plugin;
         this.manager = plugin.getClaimFlyManager();
         this.gpBridge = new GPBridge();
     }
@@ -44,6 +46,11 @@ public class ClaimFlyCommand implements CommandExecutor, TabCompleter {
 
         if (!player.hasPermission("griefprevention.claimfly.use")) {
             player.sendMessage("§cYou do not have permission to use claim flight.");
+            return true;
+        }
+
+        if (!manager.isClaimFlightEnabled()) {
+            player.sendMessage("§cClaim flight is currently disabled.");
             return true;
         }
 
@@ -85,7 +92,7 @@ public class ClaimFlyCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        if (!gpBridge.hasBuildOrInventoryTrust(claim, player.getUniqueId())) {
+        if (!hasClaimFlightAccess(claim, player.getUniqueId())) {
             player.sendMessage("§eClaim flight is enabled, but you do not have access to this claim.");
             return;
         }
@@ -222,5 +229,30 @@ public class ClaimFlyCommand implements CommandExecutor, TabCompleter {
     private List<String> filter(List<String> values, String prefix) {
         String lowered = prefix.toLowerCase(Locale.ROOT);
         return values.stream().filter(v -> v.toLowerCase(Locale.ROOT).startsWith(lowered)).collect(Collectors.toList());
+    }
+
+    private boolean hasClaimFlightAccess(Object claim, UUID playerId) {
+        if (claim == null || playerId == null) return false;
+
+        if (gpBridge.isAdminClaim(claim) && !plugin.getConfigManager().isClaimFlightAllowedInAdminClaims()) {
+            return false;
+        }
+
+        String claimId = gpBridge.getClaimId(claim).orElse(null);
+        if (claimId != null
+                && plugin.getConfigManager().isClaimFlightAllowedInPublicGlobalClaims()
+                && plugin.getClaimDataStore().isPublicListed(claimId)) {
+            return true;
+        }
+
+        if (plugin.getConfigManager().isClaimFlightOwnerTrustAllowed() && gpBridge.isOwner(claim, playerId)) {
+            return true;
+        }
+
+        java.util.EnumSet<GPBridge.TrustLevel> levels = gpBridge.getTrustLevels(claim, playerId);
+        return (plugin.getConfigManager().isClaimFlightManagerTrustAllowed() && levels.contains(GPBridge.TrustLevel.MANAGE))
+                || (plugin.getConfigManager().isClaimFlightBuilderTrustAllowed() && levels.contains(GPBridge.TrustLevel.BUILD))
+                || (plugin.getConfigManager().isClaimFlightContainerTrustAllowed() && levels.contains(GPBridge.TrustLevel.CONTAINERS))
+                || (plugin.getConfigManager().isClaimFlightAccessTrustAllowed() && levels.contains(GPBridge.TrustLevel.ACCESS));
     }
 }

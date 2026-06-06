@@ -103,7 +103,7 @@ public class SignAutoPasteListener implements Listener {
         }
         
         boolean hanging = block.getType().name().contains("HANGING");
-        String[] lines = data.getSignLines(hanging);
+        String[] lines = data.getSignLines(plugin, hanging);
         
         if (plugin.getConfigManager().isDebugEnabled()) {
             plugin.getLogger().info("[AutoPaste] Intercepting sign placement for " + player.getName() + " at " + block.getLocation());
@@ -184,7 +184,8 @@ public class SignAutoPasteListener implements Listener {
                         return;
                     }
                     wizardManager.consumePendingAutoPaste(playerId);
-                    String[] lines = data.getSignLines();
+                    boolean hanging = event.getBlock().getType().name().contains("HANGING");
+                    String[] lines = data.getSignLines(plugin, hanging);
                     for (int i = 0; i < 4 && i < lines.length; i++) {
                         event.line(i, LegacyComponentSerializer.legacyAmpersand().deserialize(lines[i] != null ? lines[i] : ""));
                     }

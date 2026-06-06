@@ -44,6 +44,11 @@ public class SellClaimCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(plugin.getMessages().getRaw("general.player-only"));
             return true;
         }
+
+        if (!plugin.getConfigManager().areSellSignsEnabled()) {
+            plugin.getMessages().send(player, "sign-creation.type-disabled", "{signtype}", "sell");
+            return true;
+        }
         
         // Check permission
         if (!hasSellPermission(player)) {

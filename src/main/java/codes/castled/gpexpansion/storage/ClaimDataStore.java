@@ -33,6 +33,7 @@ public class ClaimDataStore {
     public static class ClaimData {
         // Basic claim info
         public boolean publicListed = false;
+        public boolean globalApprovalPending = false;
         public Material icon = null;
         public final List<Material> iconHistory = new ArrayList<>();
         public String description = null;
@@ -73,6 +74,7 @@ public class ClaimDataStore {
         public UUID renter;
         public long expiry;
         public long start;
+        public Location signLocation;
         public final Set<Long> reminders = new HashSet<>();
         public boolean pendingPayment = false;
         public boolean paymentFailed = false;
@@ -182,11 +184,13 @@ public class ClaimDataStore {
         
         // Basic data
         data.publicListed = config.getBoolean(path + "public", false);
+        data.globalApprovalPending = config.getBoolean(path + "globalApprovalPending", false);
         loadIconHistory(path, data);
         data.description = config.getString(path + "description");
-        data.customName = config.getString(path + "name");
-        if (data.description != null && data.description.length() > 32) {
-            data.description = data.description.substring(0, 32);
+        data.customName = truncateCustomName(config.getString(path + "name"));
+        int maxDescriptionLength = plugin.getConfigManager().getClaimDescriptionMaxLength();
+        if (data.description != null && data.description.length() > maxDescriptionLength) {
+            data.description = data.description.substring(0, maxDescriptionLength);
         }
         
         // Ban data
@@ -239,6 +243,16 @@ public class ClaimDataStore {
                     long expiry = config.getLong(rentalPath + "expiry", 0L);
                     long start = config.getLong(rentalPath + "start", 0L);
                     data.rental = new RentalData(renter, expiry, start);
+                    String signWorldName = config.getString(rentalPath + "signWorld");
+                    if (signWorldName != null) {
+                        World signWorld = Bukkit.getWorld(signWorldName);
+                        if (signWorld != null) {
+                            int x = config.getInt(rentalPath + "signX");
+                            int y = config.getInt(rentalPath + "signY");
+                            int z = config.getInt(rentalPath + "signZ");
+                            data.rental.signLocation = new Location(signWorld, x, y, z);
+                        }
+                    }
                     
                     List<Long> reminders = config.getLongList(rentalPath + "reminders");
                     data.rental.reminders.addAll(reminders);
@@ -335,6 +349,9 @@ public class ClaimDataStore {
             
             // Basic data
             config.set(path + "public", data.publicListed);
+            if (data.globalApprovalPending) {
+                config.set(path + "globalApprovalPending", true);
+            }
             syncCurrentIcon(data);
             if (!data.iconHistory.isEmpty()) {
                 config.set(path + "icons", data.iconHistory.stream().map(Material::name).collect(Collectors.toList()));
@@ -385,6 +402,12 @@ public class ClaimDataStore {
                 config.set(rentalPath + "renter", data.rental.renter.toString());
                 config.set(rentalPath + "expiry", data.rental.expiry);
                 config.set(rentalPath + "start", data.rental.start);
+                if (data.rental.signLocation != null && data.rental.signLocation.getWorld() != null) {
+                    config.set(rentalPath + "signWorld", data.rental.signLocation.getWorld().getName());
+                    config.set(rentalPath + "signX", data.rental.signLocation.getBlockX());
+                    config.set(rentalPath + "signY", data.rental.signLocation.getBlockY());
+                    config.set(rentalPath + "signZ", data.rental.signLocation.getBlockZ());
+                }
                 config.set(rentalPath + "reminders", new ArrayList<>(data.rental.reminders));
                 config.set(rentalPath + "pendingPayment", data.rental.pendingPayment);
                 config.set(rentalPath + "paymentFailed", data.rental.paymentFailed);
@@ -790,7 +813,24 @@ public class ClaimDataStore {
     }
     
     public void setPublicListed(String claimId, boolean listed) {
-        get(claimId).publicListed = listed;
+        ClaimData data = get(claimId);
+        data.publicListed = listed;
+        if (listed) {
+            data.globalApprovalPending = false;
+        }
+    }
+
+    public boolean isGlobalApprovalPending(String claimId) {
+        ClaimData data = claimData.get(claimId);
+        return data != null && data.globalApprovalPending;
+    }
+
+    public void setGlobalApprovalPending(String claimId, boolean pending) {
+        ClaimData data = get(claimId);
+        data.globalApprovalPending = pending;
+        if (pending) {
+            data.publicListed = false;
+        }
     }
     
     public Optional<Material> getIcon(String claimId) {
@@ -903,8 +943,9 @@ public class ClaimDataStore {
     }
     
     public void setDescription(String claimId, String description) {
-        if (description != null && description.length() > 32) {
-            description = description.substring(0, 32);
+        int maxDescriptionLength = plugin.getConfigManager().getClaimDescriptionMaxLength();
+        if (description != null && description.length() > maxDescriptionLength) {
+            description = description.substring(0, maxDescriptionLength);
         }
         get(claimId).description = description;
     }
@@ -915,7 +956,15 @@ public class ClaimDataStore {
     }
     
     public void setCustomName(String claimId, String name) {
-        get(claimId).customName = name;
+        get(claimId).customName = truncateCustomName(name);
+    }
+
+    private String truncateCustomName(String name) {
+        int maxNameLength = plugin.getConfigManager().getClaimNameMaxLength();
+        if (name != null && name.length() > maxNameLength) {
+            return name.substring(0, maxNameLength);
+        }
+        return name;
     }
 
     private void loadIconHistory(String path, ClaimData data) {
@@ -1036,6 +1085,12 @@ public class ClaimDataStore {
     
     public void setRental(String claimId, UUID renter, long expiry, long start) {
         get(claimId).rental = new RentalData(renter, expiry, start);
+    }
+
+    public void setRental(String claimId, UUID renter, long expiry, long start, Location signLocation) {
+        RentalData rental = new RentalData(renter, expiry, start);
+        rental.signLocation = signLocation;
+        get(claimId).rental = rental;
     }
     
     public void clearRental(String claimId) {
@@ -1158,6 +1213,16 @@ public class ClaimDataStore {
         }
         return result;
     }
+
+    public Set<String> getPendingGlobalApprovalClaims() {
+        Set<String> result = new HashSet<>();
+        for (Map.Entry<String, ClaimData> entry : claimData.entrySet()) {
+            if (entry.getValue().globalApprovalPending) {
+                result.add(entry.getKey());
+            }
+        }
+        return result;
+    }
     
     public Map<String, UUID> getAllMailboxes() {
         Map<String, UUID> result = new HashMap<>();
@@ -1190,13 +1255,17 @@ public class ClaimDataStore {
     }
     
     public int countGlobalClaimsForPlayer(UUID playerId) {
+        return countGlobalClaimsForPlayer(playerId, false);
+    }
+
+    public int countGlobalClaimsForPlayer(UUID playerId, boolean countUnlistedClaims) {
         if (playerId == null) return 0;
         
         codes.castled.gpexpansion.gp.GPBridge gp = new codes.castled.gpexpansion.gp.GPBridge();
         int count = 0;
         
         for (Map.Entry<String, ClaimData> entry : claimData.entrySet()) {
-            if (entry.getValue().publicListed) {
+            if (countUnlistedClaims || entry.getValue().publicListed || entry.getValue().globalApprovalPending) {
                 String claimId = entry.getKey();
                 java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
                 if (claimOpt.isPresent()) {
@@ -1215,6 +1284,10 @@ public class ClaimDataStore {
      * Count the number of sell signs a player has created (claims for sale)
      */
     public int countSellSignsForPlayer(UUID playerId) {
+        return countSellSignsForPlayer(playerId, true);
+    }
+
+    public int countSellSignsForPlayer(UUID playerId, boolean countInactiveSigns) {
         if (playerId == null) return 0;
         
         codes.castled.gpexpansion.gp.GPBridge gp = new codes.castled.gpexpansion.gp.GPBridge();
@@ -1224,6 +1297,9 @@ public class ClaimDataStore {
             ClaimData data = entry.getValue();
             // Check if claim has rental data (for sale/rent) and is owned by the player
             if (data.rental != null) {
+                if (!countInactiveSigns && !isSignLocationActive(data.rental.signLocation)) {
+                    continue;
+                }
                 String claimId = entry.getKey();
                 java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
                 if (claimOpt.isPresent()) {
@@ -1244,15 +1320,26 @@ public class ClaimDataStore {
      * Count the number of rent signs a player has created (claims for rent)
      */
     public int countRentSignsForPlayer(UUID playerId) {
+        return countRentSignsForPlayer(playerId, true, true);
+    }
+
+    public int countRentSignsForPlayer(UUID playerId, boolean countExpiredRentals, boolean countInactiveSigns) {
         if (playerId == null) return 0;
         
         codes.castled.gpexpansion.gp.GPBridge gp = new codes.castled.gpexpansion.gp.GPBridge();
+        long now = System.currentTimeMillis();
         int count = 0;
         
         for (Map.Entry<String, ClaimData> entry : claimData.entrySet()) {
             ClaimData data = entry.getValue();
             // Check if claim has rental data and is owned by the player
             if (data.rental != null) {
+                if (!countExpiredRentals && data.rental.expiry <= now) {
+                    continue;
+                }
+                if (!countInactiveSigns && !isSignLocationActive(data.rental.signLocation)) {
+                    continue;
+                }
                 String claimId = entry.getKey();
                 java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
                 if (claimOpt.isPresent()) {
@@ -1271,6 +1358,10 @@ public class ClaimDataStore {
      * Count the number of mailbox signs a player has created
      */
     public int countMailboxSignsForPlayer(UUID playerId) {
+        return countMailboxSignsForPlayer(playerId, true);
+    }
+
+    public int countMailboxSignsForPlayer(UUID playerId, boolean countInactiveSigns) {
         if (playerId == null) return 0;
         
         int count = 0;
@@ -1279,10 +1370,22 @@ public class ClaimDataStore {
             ClaimData data = entry.getValue();
             // Check if claim has mailbox data and is owned by the player
             if (data.mailbox != null && playerId.equals(data.mailbox.owner)) {
+                if (!countInactiveSigns && !isSignLocationActive(data.mailbox.signLocation)) {
+                    continue;
+                }
                 count++;
             }
         }
         
         return count;
+    }
+
+    private boolean isSignLocationActive(Location location) {
+        if (location == null || location.getWorld() == null) return false;
+        try {
+            return location.getBlock().getState() instanceof org.bukkit.block.Sign;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 }

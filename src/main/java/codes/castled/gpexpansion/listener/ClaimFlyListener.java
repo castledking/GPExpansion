@@ -6,17 +6,23 @@ import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
 import codes.castled.gpexpansion.scheduler.TaskHandle;
 import org.bukkit.GameMode;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+import org.bukkit.projectiles.ProjectileSource;
 
+import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -154,22 +160,40 @@ public class ClaimFlyListener implements Listener {
         }
     }
 
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEntityDamage(EntityDamageEvent event) {
+        if (!(event.getEntity() instanceof Player player)) return;
+        if (!claimFlightGranted.contains(player.getUniqueId())) return;
+
+        boolean pvp = event instanceof EntityDamageByEntityEvent byEntity && isPvpDamage(player, byEntity);
+        if (pvp && (plugin.getConfigManager().isClaimFlightDisabledOnPvp()
+                || plugin.getConfigManager().isClaimFlightDisabledOnDamage())) {
+            revokeClaimFlight(player);
+            return;
+        }
+        if (!pvp && plugin.getConfigManager().isClaimFlightDisabledOnDamage()) {
+            revokeClaimFlight(player);
+        }
+    }
+
     private void applyClaimFlightTransition(Player player, Object fromClaim, Object toClaim) {
         if (fromClaim == toClaim) return;
         reconcileFlightForClaim(player, toClaim);
     }
 
     private void reconcileFlightForClaim(Player player, Object claim) {
-        // Creative and Spectator manage their own flight; never touch them.
+        // Creative and Spectator manage their own flight; never grant/revoke there.
         GameMode mode = player.getGameMode();
         if (mode != GameMode.SURVIVAL && mode != GameMode.ADVENTURE) return;
 
         UUID playerID = player.getUniqueId();
 
-        boolean shouldGrantClaimFlight = claimFlyManager != null
-                && claimFlyManager.canUseClaimFlight(player)
-                && claim != null
-                && gpBridge.hasBuildOrInventoryTrust(claim, playerID);
+        boolean canUseClaimFlight = claimFlyManager != null && claimFlyManager.canUseClaimFlight(player);
+        boolean hasClaimAccess = claim != null && hasClaimFlightAccess(claim, playerID);
+        boolean mayContinueAfterLeaving = claim == null
+                && claimFlightGranted.contains(playerID)
+                && !plugin.getConfigManager().isClaimFlightDisabledOnLeavingClaim();
+        boolean shouldGrantClaimFlight = canUseClaimFlight && (hasClaimAccess || mayContinueAfterLeaving);
 
         if (shouldGrantClaimFlight) {
             // Check if player already has flight from external sources (Essentials /fly, etc.)
@@ -185,18 +209,7 @@ public class ClaimFlyListener implements Listener {
             return;
         }
 
-        if (claimFlightGranted.remove(playerID) && player.getAllowFlight()) {
-            // Only disable flight if it wasn't from external sources
-            if (!externalFlightEnabled.remove(playerID)) {
-                boolean wasFlying = player.isFlying();
-                player.setAllowFlight(false);
-                player.setFlying(false);
-                if (wasFlying) {
-                    SchedulerAdapter.runLaterEntity(plugin, player, () -> player.addPotionEffect(
-                            new PotionEffect(PotionEffectType.SLOW_FALLING, 5 * 20, 0)), 1L);
-                }
-            }
-        }
+        revokeClaimFlight(player);
     }
 
     private void startFlightReconciler(Player player) {
@@ -230,7 +243,9 @@ public class ClaimFlyListener implements Listener {
             } else {
                 playerLastClaim.remove(playerID);
             }
-            if (claimFlightGranted.contains(playerID) && claimFlyManager != null) {
+            if (claimFlightGranted.contains(playerID)
+                    && claimFlyManager != null
+                    && claimFlyManager.shouldConsumeFlightTime(p)) {
                 claimFlyManager.consume(playerID, 40L * 50L);
             }
             reconcileFlightForClaim(p, currentClaim);
@@ -240,5 +255,60 @@ public class ClaimFlyListener implements Listener {
         }, 40L);
 
         flightReconcilerTasks.put(playerID, handle);
+    }
+
+    private boolean hasClaimFlightAccess(Object claim, UUID playerID) {
+        if (claim == null || playerID == null) return false;
+
+        if (gpBridge.isAdminClaim(claim) && !plugin.getConfigManager().isClaimFlightAllowedInAdminClaims()) {
+            return false;
+        }
+
+        String claimId = gpBridge.getClaimId(claim).orElse(null);
+        if (claimId != null
+                && plugin.getConfigManager().isClaimFlightAllowedInPublicGlobalClaims()
+                && plugin.getClaimDataStore().isPublicListed(claimId)) {
+            return true;
+        }
+
+        if (plugin.getConfigManager().isClaimFlightOwnerTrustAllowed() && gpBridge.isOwner(claim, playerID)) {
+            return true;
+        }
+
+        EnumSet<GPBridge.TrustLevel> levels = gpBridge.getTrustLevels(claim, playerID);
+        return (plugin.getConfigManager().isClaimFlightManagerTrustAllowed() && levels.contains(GPBridge.TrustLevel.MANAGE))
+                || (plugin.getConfigManager().isClaimFlightBuilderTrustAllowed() && levels.contains(GPBridge.TrustLevel.BUILD))
+                || (plugin.getConfigManager().isClaimFlightContainerTrustAllowed() && levels.contains(GPBridge.TrustLevel.CONTAINERS))
+                || (plugin.getConfigManager().isClaimFlightAccessTrustAllowed() && levels.contains(GPBridge.TrustLevel.ACCESS));
+    }
+
+    private void revokeClaimFlight(Player player) {
+        UUID playerID = player.getUniqueId();
+        if (!claimFlightGranted.remove(playerID) || !player.getAllowFlight()) return;
+
+        if (externalFlightEnabled.remove(playerID)) {
+            return;
+        }
+
+        boolean wasFlying = player.isFlying();
+        player.setAllowFlight(false);
+        player.setFlying(false);
+        int graceSeconds = plugin.getConfigManager().getClaimFlightLandingGraceSeconds();
+        if (wasFlying && graceSeconds > 0) {
+            SchedulerAdapter.runLaterEntity(plugin, player, () -> player.addPotionEffect(
+                    new PotionEffect(PotionEffectType.SLOW_FALLING, graceSeconds * 20, 0)), 1L);
+        }
+    }
+
+    private boolean isPvpDamage(Player victim, EntityDamageByEntityEvent event) {
+        Entity damager = event.getDamager();
+        if (damager instanceof Player player) {
+            return !player.getUniqueId().equals(victim.getUniqueId());
+        }
+        if (damager instanceof Projectile projectile) {
+            ProjectileSource shooter = projectile.getShooter();
+            return shooter instanceof Player player && !player.getUniqueId().equals(victim.getUniqueId());
+        }
+        return false;
     }
 }

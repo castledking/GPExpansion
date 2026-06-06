@@ -47,6 +47,11 @@ public class MailboxCommand implements CommandExecutor, TabCompleter {
             showHelp(sender);
             return true;
         }
+
+        if (!plugin.getConfigManager().areMailboxSignsEnabled()) {
+            plugin.getMessages().send(player, "sign-creation.type-disabled", "{signtype}", "mailbox");
+            return true;
+        }
         
         // Check permission (wizard supports both buyable and self mailbox)
         if (!player.hasPermission("griefprevention.sign.create.mailbox") && !player.hasPermission("griefprevention.sign.create.self-mailbox")) {

@@ -7,6 +7,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
+import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
 
 /**
@@ -72,8 +73,32 @@ public class ClaimAbandonListener implements Listener {
                         }
                     }
                 }
+                scheduleRentalCleanupAfterAbandon(player, claimId);
             }
         }
+    }
+
+    private void scheduleRentalCleanupAfterAbandon(Player player, String claimId) {
+        if (!plugin.getConfigManager().isRentClearedOnAbandon()) return;
+        if (claimId == null || claimId.isBlank()) return;
+
+        SchedulerAdapter.runLaterEntity(plugin, player, () -> {
+            var gp = new codes.castled.gpexpansion.gp.GPBridge();
+            if (gp.findClaimById(claimId).isPresent()) {
+                return;
+            }
+            ClaimDataStore dataStore = plugin.getClaimDataStore();
+            boolean hadRental = dataStore.getRental(claimId).isPresent();
+            boolean hadPendingRent = dataStore.getPendingRent(claimId).isPresent();
+            boolean hadEviction = dataStore.getEviction(claimId).isPresent();
+            if (!hadRental && !hadPendingRent && !hadEviction) {
+                return;
+            }
+            dataStore.clearRental(claimId);
+            dataStore.clearPendingRent(claimId);
+            dataStore.clearEviction(claimId);
+            dataStore.save();
+        }, 1L);
     }
     
     /**

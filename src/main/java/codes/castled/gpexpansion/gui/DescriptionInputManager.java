@@ -5,6 +5,7 @@ import org.bukkit.entity.Player;
 import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
+import codes.castled.gpexpansion.util.ClaimCustomizationUtil;
 
 import java.util.Map;
 import java.util.Optional;
@@ -54,9 +55,21 @@ public class DescriptionInputManager {
             return true;
         }
         
-        String description = trimmed;
-        if (description.length() > 32) {
-            description = description.substring(0, 32);
+        ClaimCustomizationUtil.TextResult normalized = ClaimCustomizationUtil.normalizeDescription(plugin, player, trimmed);
+        if (normalized.rejected()) {
+            plugin.getMessages().send(player, "claim.description-links-denied");
+            reopenGlobalSettings(player, entry.claimId, entry.fromSign);
+            return true;
+        }
+        String description = normalized.value();
+        if (description.isEmpty()) {
+            plugin.getMessages().send(player, "claim.description-usage");
+            reopenGlobalSettings(player, entry.claimId, entry.fromSign);
+            return true;
+        }
+        if (normalized.truncated()) {
+            plugin.getMessages().send(player, "claim.description-truncated",
+                "{max}", String.valueOf(plugin.getConfigManager().getClaimDescriptionMaxLength()));
         }
         
         ClaimDataStore dataStore = plugin.getClaimDataStore();

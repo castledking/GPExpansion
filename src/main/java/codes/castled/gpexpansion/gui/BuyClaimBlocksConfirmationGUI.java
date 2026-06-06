@@ -10,6 +10,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
 import codes.castled.gpexpansion.gp.GPBridge;
+import codes.castled.gpexpansion.economy.TaxManager;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -160,6 +161,15 @@ public class BuyClaimBlocksConfirmationGUI extends BaseGUI {
             plugin.getEconomyManager().depositMoney(player, totalCost);
             sendLegacy("&cFailed to credit claim blocks. Your money has been refunded.");
             return;
+        }
+
+        TaxManager.TaxResult tax = plugin.getTaxManager().calculateTax(totalCost, TaxManager.Context.CLAIM_BLOCK_PURCHASE, player);
+        if (tax.tax > 0) {
+            plugin.getTaxManager().depositTax(tax.tax);
+            if (plugin.getConfigManager().shouldNotifyTaxPayer()) {
+                player.sendMessage(plugin.getMessages().get("tax.payer-notify",
+                    "{tax}", plugin.getEconomyManager().formatMoney(tax.tax)));
+            }
         }
 
         int newRemaining = gp.getRemainingClaimBlocks(player);

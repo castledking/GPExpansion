@@ -46,6 +46,7 @@ PLAN-*.md
 .modrinth/
 wiki/
 .release/old/
+.release/plans
 
 # SpigotMC release automation
 .release/node_modules/
