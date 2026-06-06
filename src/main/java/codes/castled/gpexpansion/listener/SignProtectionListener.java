@@ -27,6 +27,7 @@ import org.bukkit.persistence.PersistentDataType;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.gp.GPBridge;
+import codes.castled.gpexpansion.sign.RentalSignManager;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
 
 import java.util.HashMap;
@@ -62,15 +63,10 @@ public class SignProtectionListener implements Listener {
             return false;
         }
 
-        // Check if this is a [Sell] sign (permanent transfer)
-        // [Sell] signs are labeled as "[Buy Claim]" or "[Sell]" (hanging) while [Rent] signs are "[Rent Claim]" or "[Rent]" (hanging)
-        Component signTextComponent = sign.getSide(org.bukkit.block.sign.Side.FRONT).line(0);
-        if (signTextComponent != null) {
-            String plainText = net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().serialize(signTextComponent);
-            if (plainText.contains("[Buy Claim]") || plainText.contains("[Sell]")) {
-                // [Sell] signs represent permanent transfers and should not be protected
-                return false;
-            }
+        String signKind = sign.getPersistentDataContainer().get(keyKind, PersistentDataType.STRING);
+        if ("SELL".equals(signKind)) {
+            // Sell signs represent permanent transfers and should not be protected.
+            return false;
         }
 
         // Protect [Rent] signs and other managed signs
@@ -191,7 +187,9 @@ public class SignProtectionListener implements Listener {
                 
                 // Check eviction status before allowing deletion (unless player has bypass permission)
                 boolean evictionBypass = player.hasPermission("griefprevention.eviction.bypass");
-                if (!evictionBypass && renterStr != null && !renterStr.isEmpty() && claimId != null && !claimId.isEmpty()) {
+                if (!evictionBypass
+                        && plugin.getConfigManager().isOwnerBreakingActiveRentalPrevented()
+                        && renterStr != null && !renterStr.isEmpty() && claimId != null && !claimId.isEmpty()) {
                     ClaimDataStore dataStore = plugin.getClaimDataStore();
                     ClaimDataStore.RentalData rental = dataStore.getRental(claimId).orElse(null);
                     boolean hasActiveRental = (rental != null && rental.expiry > System.currentTimeMillis()) || (rental == null);
@@ -207,7 +205,9 @@ public class SignProtectionListener implements Listener {
                             return;
                         }
                         
-                        if (System.currentTimeMillis() < eviction.effectiveAt && !adminBypass) {
+                        if (System.currentTimeMillis() < eviction.effectiveAt
+                                && plugin.getConfigManager().isRentEvictionSignBreakBlockedUntilEffective()
+                                && !adminBypass) {
                             long remaining = eviction.effectiveAt - System.currentTimeMillis();
                             String timeRemaining = formatDuration(remaining);
                             plugin.getMessages().send(player, "eviction.notice-pending");
@@ -292,7 +292,10 @@ public class SignProtectionListener implements Listener {
         // Check if this rental sign has an active renter - require eviction process (unless player has bypass permission)
         boolean evictionBypass = p.hasPermission("griefprevention.eviction.bypass");
         
-        if (!isSelfMailbox && !evictionBypass && renterStr != null && !renterStr.isEmpty() && !claimId.isEmpty()) {
+        if (!isSelfMailbox
+                && !evictionBypass
+                && plugin.getConfigManager().isOwnerBreakingActiveRentalPrevented()
+                && renterStr != null && !renterStr.isEmpty() && !claimId.isEmpty()) {
             // Sign has a renter in PDC - always require eviction to protect the renter
             // This applies regardless of RentalStore state (could be expired, missing, or data mismatch)
             {
@@ -308,7 +311,9 @@ public class SignProtectionListener implements Listener {
                     return false;
                 }
                 
-                if (System.currentTimeMillis() < eviction.effectiveAt && !adminBypass) {
+                if (System.currentTimeMillis() < eviction.effectiveAt
+                        && plugin.getConfigManager().isRentEvictionSignBreakBlockedUntilEffective()
+                        && !adminBypass) {
                     // Eviction started but 14 days haven't passed yet
                     long remaining = eviction.effectiveAt - System.currentTimeMillis();
                     String timeRemaining = formatDuration(remaining);
@@ -428,11 +433,21 @@ public class SignProtectionListener implements Listener {
                     return true; // allow break - sign is destroyed
                 }
                 // Has renter (or was just evicted) - reset to [Rent] available and keep sign block
-                plugin.getRentalSignManager().resetRentalSign(signBlock);
+                ClaimDataStore.EvictionData eviction = claimId != null
+                    ? dataStore.getEviction(claimId).orElse(null)
+                    : null;
+                RentalSignManager.ResetCause resetCause = eviction != null
+                    && System.currentTimeMillis() >= eviction.effectiveAt
+                    ? RentalSignManager.ResetCause.EVICT
+                    : RentalSignManager.ResetCause.GENERAL;
+                plugin.getRentalSignManager().resetRentalSign(signBlock, resetCause);
                 if (player != null) {
                     plugin.getMessages().send(player, "eviction.rental-sign-removed");
                 }
-                return false; // cancel break - sign stays
+                boolean evictionPendingBreakAllowed = eviction != null
+                    && System.currentTimeMillis() < eviction.effectiveAt
+                    && !plugin.getConfigManager().isRentEvictionSignBreakBlockedUntilEffective();
+                return !plugin.getConfigManager().isOwnerBreakingActiveRentalPrevented() || evictionPendingBreakAllowed;
             }
         } catch (Throwable ignored) {}
         return true;

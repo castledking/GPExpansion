@@ -8,6 +8,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
 import codes.castled.gpexpansion.gp.GPBridge;
+import codes.castled.gpexpansion.util.ClaimCustomizationUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -434,9 +435,19 @@ public class OwnedClaimsGUI extends BaseGUI {
                     ? info.name : "Unnamed";
                 SignInputGUI.openRename(plugin, player, displayName,
                     newName -> {
-                        plugin.getClaimDataStore().setCustomName(info.claimId, newName);
+                        ClaimCustomizationUtil.TextResult normalized = ClaimCustomizationUtil.normalizeName(plugin, player, newName);
+                        if (normalized.value().isEmpty()) {
+                            plugin.getMessages().send(player, "claim.name-usage");
+                            manager.openOwnedClaims(player);
+                            return;
+                        }
+                        if (normalized.truncated()) {
+                            plugin.getMessages().send(player, "claim.name-truncated",
+                                "{max}", String.valueOf(plugin.getConfigManager().getClaimNameMaxLength()));
+                        }
+                        plugin.getClaimDataStore().setCustomName(info.claimId, normalized.value());
                         plugin.getClaimDataStore().save();
-                        plugin.getMessages().send(player, "gui.claim-renamed", "{id}", info.claimId, "{name}", newName);
+                        plugin.getMessages().send(player, "gui.claim-renamed", "{id}", info.claimId, "{name}", normalized.value());
                         manager.openOwnedClaims(player);
                     },
                     () -> manager.openOwnedClaims(player));

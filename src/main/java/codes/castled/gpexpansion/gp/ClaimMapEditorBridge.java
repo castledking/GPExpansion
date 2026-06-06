@@ -163,6 +163,9 @@ public final class ClaimMapEditorBridge {
             boolean apply
     ) {
         EditMode resolvedMode = editMode == null ? EditMode.SHAPED : editMode;
+        if (!gp.isShapedClaimsAllowed()) {
+            resolvedMode = EditMode.BASIC;
+        }
         if (!gp.isAvailable()) {
             return fail(operation, FailureReason.NOT_AVAILABLE, "&cGriefPrevention is not available.", selectedClaim, null);
         }
@@ -271,6 +274,20 @@ public final class ClaimMapEditorBridge {
         if (selectedClaimPartiallyCoversCell) {
             if (!gp.isOwner(selectedClaim, player.getUniqueId()) && !player.hasPermission("griefprevention.admin")) {
                 return fail(operation, FailureReason.NOT_OWNER, "&cYou can only edit claims you own.", selectedClaim, null);
+            }
+
+            if (resolvedMode == EditMode.BASIC) {
+                MapEditResult basicFill = tryApplyBasicRectangleMerge(operation, player, selectedClaim, selection, apply);
+                if (basicFill != null) {
+                    return basicFill;
+                }
+                return fail(
+                        operation,
+                        FailureReason.UNSUPPORTED_GEOMETRY,
+                        "&cThat tile would make the selected claim shaped. Switch to shaped claims or claim a detached tile instead.",
+                        selectedClaim,
+                        null
+                );
             }
 
             GPBridge.CreateClaimResult mergeResult = gp.mergeMapCellIntoClaim(
@@ -412,8 +429,115 @@ public final class ClaimMapEditorBridge {
             return applyDetachedSquareClaim(operation, player, selection, selectedClaim, apply, true);
         }
 
-        // Basic mode always creates detached square claims from map cells.
+        if (selectedClaim != null) {
+            if (!gp.isOwner(selectedClaim, player.getUniqueId()) && !player.hasPermission("griefprevention.admin")) {
+                return fail(operation, FailureReason.NOT_OWNER, "&cYou can only edit claims you own.", selectedClaim, null);
+            }
+            MapEditResult basicMerge = tryApplyBasicRectangleMerge(operation, player, selectedClaim, selection, apply);
+            if (basicMerge != null) {
+                return basicMerge;
+            }
+        }
+
+        // Basic mode creates detached square claims unless a one-sided rectangle resize
+        // can merge the selected tile without producing shaped geometry.
         return applyDetachedSquareClaim(operation, player, selection, selectedClaim, apply, false);
+    }
+
+    private MapEditResult tryApplyBasicRectangleMerge(
+            OperationType operation,
+            Player player,
+            Object selectedClaim,
+            CellSelection selection,
+            boolean apply
+    ) {
+        if (selectedClaim == null || gp.isSubdivision(selectedClaim) || gp.is3DClaim(selectedClaim) || gp.isShapedClaim(selectedClaim)) {
+            return null;
+        }
+
+        GPBridge.ClaimCorners corners = gp.getClaimCorners(selectedClaim).orElse(null);
+        OperationPlan plan = buildBasicRectangleMergePlan(corners, selection);
+        if (plan == null) {
+            return null;
+        }
+
+        return applyResizePlan(operation, player, selectedClaim, plan, selection.centerLocation(), apply);
+    }
+
+    private OperationPlan buildBasicRectangleMergePlan(GPBridge.ClaimCorners corners, CellSelection cell) {
+        if (corners == null || cell == null) {
+            return null;
+        }
+
+        int claimMinX = Math.min(corners.x1, corners.x2);
+        int claimMaxX = Math.max(corners.x1, corners.x2);
+        int claimMinZ = Math.min(corners.z1, corners.z2);
+        int claimMaxZ = Math.max(corners.z1, corners.z2);
+        int patchMinX = Math.min(cell.minX(), cell.maxX());
+        int patchMaxX = Math.max(cell.minX(), cell.maxX());
+        int patchMinZ = Math.min(cell.minZ(), cell.maxZ());
+        int patchMaxZ = Math.max(cell.minZ(), cell.maxZ());
+
+        int nextMinX = Math.min(claimMinX, patchMinX);
+        int nextMaxX = Math.max(claimMaxX, patchMaxX);
+        int nextMinZ = Math.min(claimMinZ, patchMinZ);
+        int nextMaxZ = Math.max(claimMaxZ, patchMaxZ);
+
+        int changedSides = 0;
+        if (nextMinX != claimMinX) changedSides++;
+        if (nextMaxX != claimMaxX) changedSides++;
+        if (nextMinZ != claimMinZ) changedSides++;
+        if (nextMaxZ != claimMaxZ) changedSides++;
+        if (changedSides != 1) {
+            return null;
+        }
+
+        long claimArea = rectangleArea(claimMinX, claimMaxX, claimMinZ, claimMaxZ);
+        long patchArea = rectangleArea(patchMinX, patchMaxX, patchMinZ, patchMaxZ);
+        long overlapArea = overlapArea(claimMinX, claimMaxX, claimMinZ, claimMaxZ, patchMinX, patchMaxX, patchMinZ, patchMaxZ);
+        long unionArea = claimArea + patchArea - overlapArea;
+        long boundingArea = rectangleArea(nextMinX, nextMaxX, nextMinZ, nextMaxZ);
+        if (unionArea != boundingArea || overlapArea == patchArea) {
+            return null;
+        }
+
+        if (nextMinX != claimMinX) {
+            return new OperationPlan(GPBridge.ResizeDirection.WEST, claimMinX - nextMinX);
+        }
+        if (nextMaxX != claimMaxX) {
+            return new OperationPlan(GPBridge.ResizeDirection.EAST, nextMaxX - claimMaxX);
+        }
+        if (nextMinZ != claimMinZ) {
+            return new OperationPlan(GPBridge.ResizeDirection.NORTH, claimMinZ - nextMinZ);
+        }
+        if (nextMaxZ != claimMaxZ) {
+            return new OperationPlan(GPBridge.ResizeDirection.SOUTH, nextMaxZ - claimMaxZ);
+        }
+        return null;
+    }
+
+    private long rectangleArea(int minX, int maxX, int minZ, int maxZ) {
+        return (long) (maxX - minX + 1) * (long) (maxZ - minZ + 1);
+    }
+
+    private long overlapArea(
+            int aMinX,
+            int aMaxX,
+            int aMinZ,
+            int aMaxZ,
+            int bMinX,
+            int bMaxX,
+            int bMinZ,
+            int bMaxZ
+    ) {
+        int x1 = Math.max(aMinX, bMinX);
+        int x2 = Math.min(aMaxX, bMaxX);
+        int z1 = Math.max(aMinZ, bMinZ);
+        int z2 = Math.min(aMaxZ, bMaxZ);
+        if (x1 > x2 || z1 > z2) {
+            return 0L;
+        }
+        return rectangleArea(x1, x2, z1, z2);
     }
 
     private MapEditResult applyDetachedSquareClaim(

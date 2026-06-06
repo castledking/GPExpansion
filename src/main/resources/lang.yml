@@ -1,7 +1,7 @@
 # GPExpansion Language File
 # Use & for color codes, supports MiniMessage format
 # Placeholders are shown in {brackets}
-version: "1.1.1"
+version: "1.1.2"
 
 # =============================================================================
 # GENERAL MESSAGES
@@ -79,6 +79,9 @@ sign-creation:
   sell-sign-created: "&aSell sign created successfully!"
   mailbox-sign-created: "&aMailbox sign created successfully!"
   sign-created: "&aSign created for claim &6{id}&a."
+  type-disabled: "&c{signtype} signs are disabled on this server."
+  sell-subclaim-not-allowed: "&cSell signs can only be created for top-level claims."
+  economy-disabled: "&c{economy} payments are disabled for {signtype} signs."
   item-setup-reminder: "&eHold the payment item in your offhand and right-click the sign to set it."
   
   # Limit messages
@@ -97,7 +100,6 @@ sign-creation:
   
   # Claim validation
   not-in-claim: "&cThis sign must be placed inside a claim."
-  not-claim-owner: "&cYou must be the owner of this claim to create a global claim sign."
   unsafe-location: "&cThis location is not safe for a spawn point. Please place the sign in a safer area."
   not-claim-owner: "&cYou must be the owner of this claim to create this sign."
   claim-already-rented: "&cThis claim is already being rented."
@@ -145,11 +147,16 @@ sign-destruction:
 # SIGN INTERACTION MESSAGES
 # =============================================================================
 sign-interaction:
+  sell-subclaim-not-allowed: "&cThis sell sign points to a subclaim. Only top-level claims can be sold."
+  economy-disabled: "&c{economy} payments are disabled for {signtype} signs."
+
   # Rent sign messages
   rent-success: "&aYou have rented claim {id} for {duration}. Cost: {cost}"
   rent-extended: "&aRental extended by {duration}. Total: {total}"
   rent-max-reached: "&eYou have reached the maximum rental duration."
   rent-too-close-to-max: "&cYou cannot renew yet - Next available renewal: &7{time}"
+  renewals-disabled: "&cRental renewals are disabled on this server."
+  renewal-denied-eviction: "&cYou cannot renew while eviction is in progress."
   rent-cannot-afford: "&cYou cannot afford this rental. Cost: {cost}"
   rent-already-renting: "&cYou are already renting this claim."
   rent-claim-unavailable: "&cThis claim is not available for rent."
@@ -232,6 +239,8 @@ mailbox:
   not-enough-experience: "&cYou don't have enough experience."
   items-returned: "&eSome items were returned - the mailbox was updated since you opened it."
   must-own-or-rent: "&cYou must own or rent this claim to create a self mailbox."
+  self-disabled: "&cSelf mailboxes are disabled on this server."
+  stacked-disabled: "&cA mailbox already uses that container."
   self-limit-reached: "&cYou have reached the self mailbox limit ({max}) for this claim."
   instant-creation-failed: "&cCould not create subdivision. GP3D with AllowNestedSubclaims may be required."
   self-created: "&aSelf mailbox created!"
@@ -398,6 +407,7 @@ commands:
   accruals-deletegroup-usage: "&cUsage: /gpx accruals deletegroup <name>"
   accruals-group-deleted: "&aDeleted accrual group {group}."
   accruals-claim-limit: "&cYou have reached your claim limit ({max}) for accrual profile {profile}."
+  accruals-cap-reached: "&eYour accrued claim blocks were capped at {max} for accrual profile {profile}."
   accruals-redundant-group-warning: "No 'permission:' section found for accrual group '{group}', and no matching Vault or LuckPerms group was found. This accrual config is redundant."
   accruals-invalid-group-entry-warning: "Skipping accruals.groups entry {index} because it has no name."
 
@@ -489,6 +499,10 @@ wizard:
 claim:
   # Claim list headers
   list-header: "&eClaims ({count}):"
+  list-page: "&7Page {page}/{pages}"
+  list-player-header: "&eClaims for &6{player}&e:"
+  list-player-not-found: "&cPlayer not found: &6{player}"
+  list-usage-other: "&cUsage: /claimlist <player>"
   list-trusted-header: "&eTrusted Claims ({count}):"
   list-admin-header: "&eAdmin Claims ({count}):"
   list-empty: "&7You don't own any claims."
@@ -518,6 +532,7 @@ claim:
   
   # Claim naming
   name-set: "&aClaim name set to: {name}"
+  name-truncated: "&eName truncated to {max} characters."
   name-cleared: "&aClaim name cleared."
   name-too-long: "&cClaim name is too long (max {max} characters)."
   name-invalid-chars: "&cClaim name contains invalid characters."
@@ -527,13 +542,27 @@ claim:
   # Icon
   icon-no-permission: "&cYou lack permission: &egriefprevention.claim.icon"
   icon-hold-item: "&cYou must hold an item to set as the claim icon."
+  icon-denied: "&cThe icon &e{icon}&c is not allowed for claim icons."
   icon-set: "&aClaim {id} icon set to {icon}."
   
   # Description
   description-no-permission: "&cYou lack permission: &egriefprevention.claim.description"
   description-usage: "&eUsage: /claim desc <description...> [claimId]"
+  description-links-denied: "&cLinks are not allowed in claim descriptions."
   description-truncated: "&eDescription truncated to {max} characters."
   description-set: "&aClaim {id} description set to: {description}"
+
+  # Global claims
+  global-usage: "&cUsage: /claim global <true|false> [claimId]"
+  global-disabled: "&cGlobal claims are disabled on this server."
+  global-teleport-disabled: "&eGlobal claim teleport is disabled. Travel to &6{location}&e for claim &6{id}&e."
+  global-approval-required: "&eClaim &6{id}&e was submitted for global listing approval. A staff member must approve it first."
+  global-not-in-claim: "&cYou must be standing in a claim or provide a claim ID."
+  global-not-owner: "&cYou must own this claim to toggle its global listing."
+  approve-usage: "&eUsage: /approveclaim [claimId] or /aclaim approve [claimId]"
+  approve-not-pending: "&eClaim &6{id}&e is not waiting for approval."
+  approve-already-listed: "&eClaim &6{id}&e is already publicly listed."
+  approve-success: "&aApproved global listing for claim &6{id}&a."
   
   # Trust list
   trustlist-header: "&6=== Trust List for Claim {id} ==="
@@ -567,6 +596,7 @@ claim:
   # Ban/Unban
   ban-usage: "&eUsage: /claim ban <player|public> [claimId]"
   ban-no-permission: "&cYou lack permission: &egriefprevention.claim.ban"
+  public-ban-no-permission: "&cYou lack permission: &e{permission}"
   ban-success: "&aBanned {player} from claim {id}."
   ban-public: "&aClaim {id} is now public-banned."
   ban-already: "&eClaim {id} already has a public ban."
@@ -577,8 +607,13 @@ claim:
   unban-public: "&aClaim {id} is no longer public-banned."
   unban-public-missing: "&eClaim {id} is not public-banned."
   unban-not-banned: "&e{player} is not banned from claim {id}."
+  ban-blocked-enter: "&cYou are not allowed to enter this claim!"
+  ban-blocked-inside: "&cYou are not allowed to be in this claim!"
+  ban-blocked-teleport: "&cYou cannot teleport into this claim - you are banned!"
+  ban-ignoreclaims-hint: "&7To override use &e/ignoreclaims&7."
   
   # Ban list
+  banlist-no-permission: "&cYou lack permission: &egriefprevention.claim.banlist"
   banlist-header: "&eBan list for claim {id}:"
   banlist-public: "&6 - Public banned"
   banlist-empty: "&7 - No players banned"
@@ -589,6 +624,11 @@ claim:
   evict-help: "&7Starts a {duration} eviction notice for the renter."
   evict-no-permission: "&cYou lack permission: &egriefprevention.evict"
   not-rented: "&cThis claim is not currently rented."
+  cancelrent-not-rented: "&cClaim {id} is not actively rented."
+  cancelrent-not-renter: "&cYou are not the active renter for claim {id}."
+  cancelrent-success: "&aCancelled rental for claim &6{id}&a."
+  cancelrent-sign-not-found: "&eRental data was cleared, but the rental sign location is unknown. The sign may need manual cleanup."
+  cancelrent-cancelled-by-admin: "&eYour rental for claim &6{id}&e was cancelled by an admin."
   
   # Sign confirmation and payments
   rental-sign-confirm-usage: "&eUsage: /claim rentalsignconfirm <world> <x> <y> <z>"
@@ -608,6 +648,10 @@ claim:
   teleport-safe-location-fail: "&cCould not compute a safe location in claim {id}."
   untrust-renter: "&cYou cannot untrust {renter} while they are renting your claim."
   untrust-renter-hint: "&eUse {command} instead."
+
+tax:
+  payee-notify: "&7Tax withheld: &e{tax}&7. Net received: &a{net}&7."
+  payer-notify: "&7Tax on this payment: &e{tax}&7."
 
 # =============================================================================
 # CLAIM SNAPSHOT MESSAGES
@@ -657,8 +701,10 @@ eviction:
   no-pending-info: "&7There is no pending eviction for this claim."
   cancelled: "&aEviction cancelled for claim {id}."
   cancelled-notify: "&aThe eviction notice for claim {id} has been cancelled."
+  cancel-disabled: "&cCancelling eviction notices is disabled for your role."
   effective: "&aEviction for {renter} is now effective."
   effective-hint: "&7You can now remove them from the claim or break the rental sign."
+  completed-owner-notify: "&aEviction completed for claim {id}."
   pending: "&eEviction notice for {renter} is pending."
   
   # Rental expiry

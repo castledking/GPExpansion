@@ -307,6 +307,34 @@ public class EconomyManager {
         return false;
     }
 
+    public boolean depositToBank(String bankName, double amount) {
+        if (!isEconomyAvailable() || amount <= 0 || bankName == null || bankName.isBlank()) return false;
+        try {
+            if (economy != null) {
+                net.milkbowl.vault.economy.EconomyResponse resp = economy.bankDeposit(bankName, amount);
+                return resp != null && resp.transactionSuccess();
+            }
+            if (economyV2 != null && economyV2Class != null) {
+                BigDecimal bd = BigDecimal.valueOf(amount);
+                for (String methodName : new String[]{"bankDeposit", "depositBank", "depositToBank"}) {
+                    try {
+                        java.lang.reflect.Method m = economyV2Class.getMethod(methodName, String.class, BigDecimal.class);
+                        Object out = m.invoke(economyV2, bankName, bd);
+                        return interpretEconomyResponse(out);
+                    } catch (NoSuchMethodException ignored) {}
+                    try {
+                        java.lang.reflect.Method m = economyV2Class.getMethod(methodName, String.class, double.class);
+                        Object out = m.invoke(economyV2, bankName, amount);
+                        return interpretEconomyResponse(out);
+                    } catch (NoSuchMethodException ignored) {}
+                }
+            }
+        } catch (Throwable e) {
+            plugin.getLogger().warning("Failed to deposit " + amount + " to bank '" + bankName + "': " + e.getMessage());
+        }
+        return false;
+    }
+
     private boolean interpretEconomyResponse(Object out) {
         if (out == null) return true;
         if (out instanceof Boolean) return (Boolean) out;

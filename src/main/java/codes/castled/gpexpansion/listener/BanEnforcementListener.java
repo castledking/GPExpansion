@@ -1,7 +1,6 @@
 package codes.castled.gpexpansion.listener;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -9,16 +8,21 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.util.Vector;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.gp.GPBridge;
+import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
+import codes.castled.gpexpansion.scheduler.TaskHandle;
 
 import java.lang.reflect.Method;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class BanEnforcementListener implements Listener {
     private final GPExpansionPlugin plugin;
@@ -30,9 +34,26 @@ public class BanEnforcementListener implements Listener {
     // Knockback strength for boundary rebound effect
     private static final double KNOCKBACK_STRENGTH = 0.8;
     private static final double KNOCKBACK_Y = 0.3;
+    private static final long BAN_VISUALIZATION_TICKS = 200L;
+    private static final long BAN_ENTER_MESSAGE_COOLDOWN_MS = 10_000L;
+
+    private final Map<UUID, TaskHandle> visualizationClearTasks = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastEnterMessageAt = new ConcurrentHashMap<>();
 
     public BanEnforcementListener(GPExpansionPlugin plugin) {
         this.plugin = plugin;
+        scheduleInitialEjectionCheck();
+    }
+
+    private void scheduleInitialEjectionCheck() {
+        if (!plugin.getConfigManager().isClaimBanEjectOnReloadEnabled()) {
+            return;
+        }
+        SchedulerAdapter.runLaterGlobal(plugin, () -> {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                SchedulerAdapter.runLaterEntity(plugin, player, () -> ejectIfBannedInside(player), 1L);
+            }
+        }, 40L);
     }
 
     private boolean isWithinVerticalBounds(Object claim, Location location) {
@@ -56,6 +77,9 @@ public class BanEnforcementListener implements Listener {
             e.setCancelled(true);
             return;
         }
+        if (!plugin.getConfigManager().isClaimBanEntryPreventionEnabled()) {
+            return;
+        }
         
         // Only act when changing block coordinates to reduce spam
         Location from = e.getFrom();
@@ -73,11 +97,11 @@ public class BanEnforcementListener implements Listener {
             // BOUNDARY CROSSING - apply immediate knockback/rebound effect
             e.setCancelled(true);
             applyKnockback(player, from, to, result.claim);
-            player.sendMessage(Component.text("You are not allowed to enter this claim!", NamedTextColor.RED));
+            notifyEnterBlocked(player, result.claim);
         } else {
             // ALREADY INSIDE - teleport them out safely (banned while inside, or teleported in)
             handleDeepEjection(player, result.claim);
-            player.sendMessage(Component.text("You are not allowed to be in this claim!", NamedTextColor.RED));
+            notifyBanned(player, "claim.ban-blocked-inside", result.claim);
         }
     }
 
@@ -85,13 +109,16 @@ public class BanEnforcementListener implements Listener {
     public void onTeleport(PlayerTeleportEvent e) {
         Player player = e.getPlayer();
         Location to = e.getTo();
+        if (!plugin.getConfigManager().isClaimBanTeleportPreventionEnabled()) {
+            return;
+        }
         
         BanCheckResult result = checkBanned(player, to);
         if (result == null) return;
         
         // Cancel teleport into banned claim and eject
         e.setCancelled(true);
-        player.sendMessage(Component.text("You cannot teleport into this claim - you are banned!", NamedTextColor.RED));
+        notifyBanned(player, "claim.ban-blocked-teleport", result.claim);
         
         // If they're currently in the claim, eject them
         if (isInsideClaim(player.getLocation(), result.claim)) {
@@ -102,10 +129,81 @@ public class BanEnforcementListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInteract(PlayerInteractEvent e) {
         Player p = e.getPlayer();
+        if (!plugin.getConfigManager().isClaimBanEntryPreventionEnabled()) {
+            return;
+        }
         BanCheckResult result = checkBanned(p, p.getLocation());
         if (result != null) {
             e.setCancelled(true);
+            showBanVisualization(p, result.claim);
         }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onJoin(PlayerJoinEvent event) {
+        if (!plugin.getConfigManager().isClaimBanEjectOnReloadEnabled()) {
+            return;
+        }
+        Player player = event.getPlayer();
+        SchedulerAdapter.runLaterEntity(plugin, player, () -> ejectIfBannedInside(player), 20L);
+    }
+
+    private void ejectIfBannedInside(Player player) {
+        if (player == null || !player.isOnline() || !player.isValid()) return;
+        BanCheckResult result = checkBanned(player, player.getLocation());
+        if (result == null) return;
+        handleDeepEjection(player, result.claim);
+        notifyBanned(player, "claim.ban-blocked-inside", result.claim);
+    }
+
+    private void notifyEnterBlocked(Player player, Object claim) {
+        if (shouldSendEnterMessage(player)) {
+            sendBanMessage(player, "claim.ban-blocked-enter");
+        }
+        showBanVisualization(player, claim);
+    }
+
+    private boolean shouldSendEnterMessage(Player player) {
+        UUID playerId = player.getUniqueId();
+        long now = System.currentTimeMillis();
+        Long lastSent = lastEnterMessageAt.get(playerId);
+        if (lastSent != null && now - lastSent < BAN_ENTER_MESSAGE_COOLDOWN_MS) {
+            return false;
+        }
+        lastEnterMessageAt.put(playerId, now);
+        return true;
+    }
+
+    private void notifyBanned(Player player, String messageKey, Object claim) {
+        sendBanMessage(player, messageKey);
+        showBanVisualization(player, claim);
+    }
+
+    private void sendBanMessage(Player player, String messageKey) {
+        String message = plugin.getMessages().getRaw(messageKey);
+        if (player.hasPermission("griefprevention.ignoreclaims")) {
+            message += "  " + plugin.getMessages().getRaw("claim.ban-ignoreclaims-hint");
+        }
+        player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(message));
+    }
+
+    private void showBanVisualization(Player player, Object claim) {
+        Object visualizeClaim = toMainClaim(claim);
+        if (!gp.showConflictVisualization(player, visualizeClaim)) {
+            return;
+        }
+
+        UUID playerId = player.getUniqueId();
+        TaskHandle previous = visualizationClearTasks.remove(playerId);
+        if (previous != null) {
+            previous.cancel();
+        }
+
+        TaskHandle clearTask = SchedulerAdapter.runLaterEntity(plugin, player, () -> {
+            gp.clearBoundaryVisualization(player);
+            visualizationClearTasks.remove(playerId);
+        }, BAN_VISUALIZATION_TICKS);
+        visualizationClearTasks.put(playerId, clearTask);
     }
     
     private static class BanCheckResult {
@@ -121,6 +219,10 @@ public class BanEnforcementListener implements Listener {
      */
     private BanCheckResult checkBanned(Player player, Location loc) {
         if (loc == null) return null;
+        String bypassPermission = plugin.getConfigManager().getClaimBanAdminBypassPermission();
+        if (!bypassPermission.isEmpty() && player.hasPermission(bypassPermission)) {
+            return null;
+        }
         Optional<Object> oc = gp.getClaimAt(loc, player);
         if (!oc.isPresent()) return null;
         

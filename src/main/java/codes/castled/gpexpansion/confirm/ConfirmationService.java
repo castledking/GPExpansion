@@ -7,6 +7,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.block.Sign;
 import org.bukkit.block.sign.Side;
 import org.bukkit.entity.Player;
@@ -17,7 +18,9 @@ import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.listener.SignListener;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
+import codes.castled.gpexpansion.economy.TaxManager;
 import codes.castled.gpexpansion.util.EcoKind;
+import codes.castled.gpexpansion.util.RentalSnapshotUtil;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -146,10 +149,10 @@ public class ConfirmationService {
         } else if (p.action == Action.RENT) {
             if (p.signLoc == null || p.signLoc.getWorld() == null) return false;
             
-            // Check if there's a pending eviction - if so, the renter cannot extend
+            // Check if there's a pending eviction - if so, the renter cannot extend when configured.
             ClaimDataStore.EvictionData eviction = plugin.getClaimDataStore().getEviction(p.claimId).orElse(null);
-            if (eviction != null) {
-                plugin.getMessages().send(player, "eviction.eviction-in-progress");
+            if (eviction != null && plugin.getConfigManager().areRentRenewalsDeniedDuringEviction()) {
+                plugin.getMessages().send(player, "sign-interaction.renewal-denied-eviction");
                 return true;
             }
             
@@ -170,9 +173,10 @@ public class ConfirmationService {
         plugin.getSchedulerFacade().runAtEntity(player, () -> {
             // Check if this is a mailbox purchase by checking the sign's PDC directly
             boolean isMailbox = false;
+            PersistentDataContainer signPdc = null;
             if (signLoc != null && signLoc.getBlock().getState() instanceof Sign sign) {
-                String signType = sign.getPersistentDataContainer().get(
-                    new org.bukkit.NamespacedKey(plugin, "sign.kind"), PersistentDataType.STRING);
+                signPdc = sign.getPersistentDataContainer();
+                String signType = signPdc.get(new org.bukkit.NamespacedKey(plugin, "sign.kind"), PersistentDataType.STRING);
                 isMailbox = "MAILBOX".equals(signType);
             }
             
@@ -184,9 +188,6 @@ public class ConfirmationService {
                 return;
             }
             
-            // Regular buy sign processing
-            if (!signListener.charge(player, EcoKind.valueOf(kind), ecoAmtRaw, null)) return;
-
             GPBridge gpBridge = new GPBridge();
             java.util.Optional<Object> claimOpt = gpBridge.findClaimById(claimId);
             if (!claimOpt.isPresent()) {
@@ -195,6 +196,13 @@ public class ConfirmationService {
             }
             
             Object claim = claimOpt.get();
+            if (gpBridge.isSubdivision(claim)) {
+                plugin.getMessages().send(player, "sign-interaction.sell-subclaim-not-allowed");
+                return;
+            }
+
+            // Regular buy sign processing
+            if (!signListener.charge(player, EcoKind.valueOf(kind), ecoAmtRaw, signPdc)) return;
             
             // Handle payment to owner BEFORE transfer (so we know the original owner)
             handleOwnerPayment(claim, player.getName(), claimId, kind, ecoAmtRaw, true);
@@ -209,11 +217,31 @@ public class ConfirmationService {
                 plugin.getLogger().info("Claim " + claimId + " ownership transferred to " + player.getName() + " via direct API");
             }
 
-            // Update the sign to show ownership instead of removing it
+            if (plugin.getConfigManager().isSellTrustClearedOnSale()) {
+                gpBridge.clearTrust(claim);
+            }
+
+            ClaimDataStore dataStore = plugin.getClaimDataStore();
+            dataStore.clearRental(claimId);
+            if (!plugin.getConfigManager().isSellGlobalListingTransferred()) {
+                dataStore.setPublicListed(claimId, false);
+                dataStore.setGlobalApprovalPending(claimId, false);
+            }
+            if (!plugin.getConfigManager().isSellSpawnPointTransferred()) {
+                dataStore.clearSpawn(claimId);
+            }
+            dataStore.save();
+
+            // Update or remove the sign after ownership transfer.
             if (signLoc != null && signLoc.getWorld() != null) {
                 plugin.getSchedulerFacade().runAtLocation(signLoc, () -> {
                     org.bukkit.block.Block signBlock = signLoc.getBlock();
                     if (signBlock.getState() instanceof Sign sign) {
+                        if (plugin.getConfigManager().isSellSignRemovedAfterSale()) {
+                            signBlock.setType(Material.AIR);
+                            plugin.getLogger().info("Removed buy sign at " + signLoc + " after claim purchase by " + player.getName());
+                            return;
+                        }
                         // Update sign to show owned status
                         sign.getSide(Side.FRONT).line(0, LegacyComponentSerializer.legacyAmpersand().deserialize("&2&l[Owned]"));
                         sign.getSide(Side.FRONT).line(1, LegacyComponentSerializer.legacyAmpersand().deserialize("&0" + player.getName()));
@@ -225,11 +253,12 @@ public class ConfirmationService {
                 });
             }
 
-            ClaimDataStore dataStore = plugin.getClaimDataStore();
-            dataStore.clearRental(claimId);
-            dataStore.save();
             plugin.getMessages().send(player, "sign-interaction.buy-success-claim", "{id}", claimId);
         });
+    }
+
+    public void executeBuy(Player player, String claimId, String kind, String ecoAmtRaw, Location signLoc) {
+        performBuy(player, claimId, kind, ecoAmtRaw, signLoc);
     }
 
     // Must be called on the sign's region thread. Charging is expected to be done beforehand.
@@ -246,6 +275,7 @@ public class ConfirmationService {
         ClaimDataStore dataStore = plugin.getClaimDataStore();
         Long currentExpiry = pdc.get(new org.bukkit.NamespacedKey(plugin, "rent.expiry"), PersistentDataType.LONG);
         ClaimDataStore.RentalData existingEntry = dataStore.getRental(claimId).orElse(null);
+        boolean newRental = existingEntry == null || existingEntry.expiry <= now;
         if (existingEntry != null) {
             long persisted = existingEntry.expiry;
             if (persisted > (currentExpiry == null ? 0L : currentExpiry)) currentExpiry = persisted;
@@ -263,11 +293,27 @@ public class ConfirmationService {
             
             // Grant build trust to the player for this claim using GPBridge direct method
             boolean trusted = gpBridge.trust(player, player.getName(), claim);
-            if (trusted) {
+            boolean containerTrustEnabled = plugin.getConfigManager().isRentContainerTrustGranted();
+            boolean accessTrustEnabled = plugin.getConfigManager().isRentAccessTrustGranted();
+            boolean containerTrusted = containerTrustEnabled && gpBridge.grantInventoryTrust(player, player.getName(), claim);
+            boolean accessTrusted = accessTrustEnabled && gpBridge.grantAccessTrust(player, player.getName(), claim);
+            if (trusted || containerTrusted || accessTrusted) {
                 gpBridge.saveClaim(claim); // Persist so trust survives server restarts
+            }
+            if (trusted) {
                 plugin.getLogger().info("Granted trust permissions to " + player.getName() + " for claim " + claimId);
             } else {
                 plugin.getLogger().warning("Failed to grant trust permissions to " + player.getName() + " for claim " + claimId);
+            }
+            if (containerTrustEnabled && !containerTrusted) {
+                plugin.getLogger().warning("Failed to grant container trust to " + player.getName() + " for claim " + claimId);
+            }
+            if (accessTrustEnabled && !accessTrusted) {
+                plugin.getLogger().warning("Failed to grant access trust to " + player.getName() + " for claim " + claimId);
+            }
+
+            if (newRental && plugin.getConfigManager().isRentSnapshotAutoCreateOnRentalStart()) {
+                RentalSnapshotUtil.createSnapshot(plugin, claimId, claim, "rental start");
             }
         }
 
@@ -298,7 +344,7 @@ public class ConfirmationService {
         }
 
         long start = existingEntry != null ? existingEntry.start : now;
-        dataStore.setRental(claimId, player.getUniqueId(), newExpiry, start);
+        dataStore.setRental(claimId, player.getUniqueId(), newExpiry, start, signLoc);
         ClaimDataStore.RentalData updated = dataStore.getRental(claimId).orElse(null);
         if (updated != null) {
             updated.reminders.clear();
@@ -346,25 +392,24 @@ public class ConfirmationService {
                 case "MONEY":
                     if (plugin.getEconomyManager().isEconomyAvailable()) {
                         // Apply tax if enabled
-                        double taxAmount = 0;
-                        double netAmount = amt;
-                        if (plugin.getTaxManager().isTaxEnabled()) {
-                            taxAmount = plugin.getTaxManager().calculateTax(amt);
-                            netAmount = amt - taxAmount;
-                            // Deposit tax to tax account
-                            if (taxAmount > 0) {
-                                plugin.getEconomyManager().depositToAccount(plugin.getTaxManager().getTaxAccountName(), taxAmount);
-                            }
+                        TaxManager.Context taxContext = isPurchase ? TaxManager.Context.SELL : TaxManager.Context.RENT;
+                        TaxManager.TaxResult tax = plugin.getTaxManager().calculateTax(amt, taxContext, player);
+                        boolean paid = plugin.getEconomyManager().depositMoney(player, tax.net);
+                        if (paid && tax.tax > 0) {
+                            plugin.getTaxManager().depositTax(tax.tax);
                         }
-                        plugin.getEconomyManager().depositMoney(player, netAmount);
+                        if (paid && tax.tax > 0 && plugin.getConfigManager().shouldNotifyTaxPayee()) {
+                            plugin.getMessages().send(player, "tax.payee-notify",
+                                "{tax}", plugin.getEconomyManager().formatMoney(tax.tax),
+                                "{net}", plugin.getEconomyManager().formatMoney(tax.net));
+                        }
                     }
                     break;
                 case "EXPERIENCE":
                     player.giveExp((int) amt);
                     break;
                 case "CLAIMBLOCKS":
-                    // Add claim blocks to player (this would need GP integration)
-                    // For now, just send a message
+                    new GPBridge().changeClaimBlocks(player, (int) amt);
                     plugin.getMessages().send(player, "sign-interaction.owner-claimblocks",
                         "{amount}", String.valueOf((int) amt));
                     break;

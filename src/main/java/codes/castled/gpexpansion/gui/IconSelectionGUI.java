@@ -16,6 +16,7 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
+import codes.castled.gpexpansion.util.ClaimCustomizationUtil;
 
 import java.util.Arrays;
 import java.util.List;
@@ -188,7 +189,7 @@ public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listen
                 }
             }
             if (offered != null && offered.getType() != Material.AIR) {
-                selectIcon(offered.getType());
+                selectIcon(offered);
             }
             return;
         }
@@ -232,8 +233,13 @@ public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listen
         }
     }
 
-    private void selectIcon(Material material) {
+    private void selectIcon(ItemStack item) {
+        Material material = item != null ? item.getType() : null;
         if (material == null || material == Material.AIR) return;
+        if (!ClaimCustomizationUtil.isIconAllowed(plugin, item)) {
+            plugin.getMessages().send(player, "claim.icon-denied", "{icon}", material.name());
+            return;
+        }
         selectionHandled = true;
         if (inventory != null) {
             inventory.setItem(centerSlot, new ItemStack(material));
@@ -255,7 +261,7 @@ public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listen
         if (selectionHandled || inventory == null) return;
         ItemStack inCenter = inventory.getItem(centerSlot);
         if (inCenter != null && inCenter.getType() != Material.AIR) {
-            selectIcon(inCenter.getType());
+            selectIcon(inCenter);
         }
     }
     

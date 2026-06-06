@@ -7,6 +7,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
 import codes.castled.gpexpansion.storage.ClaimDataStore;
+import codes.castled.gpexpansion.util.ClaimCustomizationUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -164,7 +165,7 @@ public class GlobalClaimSettingsGUI extends BaseGUI {
         } else {
             // Fallback hardcoded lore
             lore = new ArrayList<>();
-            lore.add("&7Set a short description (max 32 chars)");
+            lore.add("&7Set a short description (max " + plugin.getConfigManager().getClaimDescriptionMaxLength() + " chars)");
             lore.add("&7shown in global claim list.");
             lore.add("");
             lore.add("&7Current: " + (desc != null ? "&f" + desc : "&7No description set."));
@@ -178,6 +179,7 @@ public class GlobalClaimSettingsGUI extends BaseGUI {
     private ItemStack createGlobalToggleItem() {
         ClaimDataStore dataStore = plugin.getClaimDataStore();
         boolean isPublic = dataStore.isPublicListed(claimId);
+        boolean isPending = dataStore.isGlobalApprovalPending(claimId);
         
         Material material;
         if (config != null && config.contains("items.global-toggle.material")) {
@@ -196,9 +198,11 @@ public class GlobalClaimSettingsGUI extends BaseGUI {
         List<String> lore;
         if (!loreTemplate.isEmpty()) {
             lore = new ArrayList<>();
+            String listingStatus = isPending ? "&ePending Approval" : (isPublic ? "&aPublicly Listed" : "&7Not Listed");
+            String listingAction = isPublic ? "unlist" : (isPending ? "cancel approval request" : "list publicly");
             for (String line : loreTemplate) {
-                line = line.replace("{listing_status}", isPublic ? "&aPublicly Listed" : "&7Not Listed")
-                          .replace("{listing_action}", isPublic ? "unlist" : "list publicly");
+                line = line.replace("{listing_status}", listingStatus)
+                          .replace("{listing_action}", listingAction);
                 lore.add(line);
             }
         } else {
@@ -207,9 +211,9 @@ public class GlobalClaimSettingsGUI extends BaseGUI {
             lore.add("&7Toggle this claim's global listing");
             lore.add("&7so other players can see and visit it.");
             lore.add("");
-            lore.add("&7Status: " + (isPublic ? "&aPublicly Listed" : "&7Not Listed"));
+            lore.add("&7Status: " + (isPending ? "&ePending Approval" : (isPublic ? "&aPublicly Listed" : "&7Not Listed")));
             lore.add("");
-            lore.add("&eClick to " + (isPublic ? "unlist" : "list publicly"));
+            lore.add("&eClick to " + (isPublic ? "unlist" : (isPending ? "cancel approval request" : "list publicly")));
         }
         
         return createItem(material, name, lore);
@@ -319,9 +323,19 @@ public class GlobalClaimSettingsGUI extends BaseGUI {
                 player.closeInventory();
                 SignInputGUI.openRename(plugin, player, displayName,
                     newName -> {
-                        plugin.getClaimDataStore().setCustomName(claimId, newName);
+                        ClaimCustomizationUtil.TextResult normalized = ClaimCustomizationUtil.normalizeName(plugin, player, newName);
+                        if (normalized.value().isEmpty()) {
+                            plugin.getMessages().send(player, "claim.name-usage");
+                            manager.openGlobalClaimSettings(player, claim, claimId, fromSign);
+                            return;
+                        }
+                        if (normalized.truncated()) {
+                            plugin.getMessages().send(player, "claim.name-truncated",
+                                "{max}", String.valueOf(plugin.getConfigManager().getClaimNameMaxLength()));
+                        }
+                        plugin.getClaimDataStore().setCustomName(claimId, normalized.value());
                         plugin.getClaimDataStore().save();
-                        plugin.getMessages().send(player, "gui.claim-renamed", "{id}", claimId, "{name}", newName);
+                        plugin.getMessages().send(player, "gui.claim-renamed", "{id}", claimId, "{name}", normalized.value());
                         manager.openGlobalClaimSettings(player, claim, claimId, fromSign);
                     },
                     () -> manager.openGlobalClaimSettings(player, claim, claimId, fromSign));
@@ -333,6 +347,11 @@ public class GlobalClaimSettingsGUI extends BaseGUI {
             player.closeInventory();
             new IconSelectionGUI(plugin, player,
                 icon -> {
+                    if (!ClaimCustomizationUtil.isIconMaterialAllowed(plugin, icon)) {
+                        plugin.getMessages().send(player, "claim.icon-denied", "{icon}", icon.name());
+                        manager.openGlobalClaimSettings(player, claim, claimId, fromSign);
+                        return;
+                    }
                     plugin.getClaimDataStore().setIcon(claimId, icon);
                     plugin.getClaimDataStore().save();
                     plugin.getMessages().send(player, "gui.icon-set", "{id}", claimId);
@@ -344,11 +363,29 @@ public class GlobalClaimSettingsGUI extends BaseGUI {
             player.closeInventory();
             plugin.getDescriptionInputManager().begin(player, claimId, fromSign);
         } else if (slot == globalToggleSlot) {
+            if (!plugin.getConfigManager().isGlobalClaimsEnabled()) {
+                plugin.getMessages().send(player, "claim.global-disabled");
+                return;
+            }
             ClaimDataStore dataStore = plugin.getClaimDataStore();
             boolean isPublic = dataStore.isPublicListed(claimId);
-            dataStore.setPublicListed(claimId, !isPublic);
+            boolean isPending = dataStore.isGlobalApprovalPending(claimId);
+            boolean requestedPublic = !isPublic && !isPending;
+            if (requestedPublic
+                    && plugin.getConfigManager().isGlobalClaimsApprovalRequired()
+                    && !player.hasPermission("griefprevention.approveclaim")) {
+                dataStore.setGlobalApprovalPending(claimId, true);
+                dataStore.save();
+                plugin.getMessages().send(player, "claim.global-approval-required", "{id}", claimId);
+                inventory.setItem(globalToggleSlot, createGlobalToggleItem());
+                return;
+            }
+            if (!requestedPublic) {
+                dataStore.setGlobalApprovalPending(claimId, false);
+            }
+            dataStore.setPublicListed(claimId, requestedPublic);
             dataStore.save();
-            plugin.getMessages().send(player, isPublic ? "gui.claim-unlisted" : "gui.claim-listed", "{id}", claimId);
+            plugin.getMessages().send(player, requestedPublic ? "gui.claim-listed" : "gui.claim-unlisted", "{id}", claimId);
             // Refresh the GUI
             inventory.setItem(globalToggleSlot, createGlobalToggleItem());
         } else if (slot == spawnPointSlot) {

@@ -3,6 +3,7 @@ package codes.castled.gpexpansion.sign;
 import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
 import codes.castled.gpexpansion.util.EcoKind;
+import codes.castled.gpexpansion.util.RentalSnapshotUtil;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
@@ -26,8 +27,19 @@ public class RentalSignManager {
         this.plugin = plugin;
     }
 
+    public enum ResetCause {
+        GENERAL,
+        EXPIRE,
+        EVICT
+    }
+
     @SuppressWarnings("all")
     public void resetRentalSign(Block signBlock) {
+        resetRentalSign(signBlock, ResetCause.GENERAL);
+    }
+
+    @SuppressWarnings("all")
+    public void resetRentalSign(Block signBlock, ResetCause cause) {
         if (!(signBlock.getState() instanceof Sign sign)) return;
         PersistentDataContainer pdc = sign.getPersistentDataContainer();
         NamespacedKey keyKind = new NamespacedKey(plugin, "sign.kind");
@@ -46,47 +58,40 @@ public class RentalSignManager {
         boolean hasActiveRentalOrEviction = claimId != null && (
             dataStore.getRental(claimId).isPresent() || dataStore.getEviction(claimId).isPresent());
 
-        if (claimId != null && hasActiveRentalOrEviction) {
-            Optional<Object> claimOpt = new codes.castled.gpexpansion.gp.GPBridge().findClaimById(claimId);
+        if (claimId != null && hasActiveRentalOrEviction && plugin.getSnapshotStore() != null) {
+            codes.castled.gpexpansion.gp.GPBridge gpBridge = new codes.castled.gpexpansion.gp.GPBridge();
+            Optional<Object> claimOpt = gpBridge.findClaimById(claimId);
             if (claimOpt.isPresent()) {
-                try {
-                    Object ownerId = claimOpt.get().getClass().getMethod("getOwnerID").invoke(claimOpt.get());
-                    if (ownerId instanceof UUID ownerUuid) {
-                        OfflinePlayer owner = Bukkit.getOfflinePlayer(ownerUuid);
-                        if (plugin.getPermissionService().hasRestoreSnapshotPermission(owner)) {
-                            Optional<codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry> latest =
-                                plugin.getSnapshotStore().getLatestSnapshot(claimId);
-                            if (latest.isPresent()) {
-                                org.bukkit.World world = signBlock.getWorld();
-                                String snapId = latest.get().id;
-                                final String fid = claimId;
-                                final String fsid = snapId;
-                                plugin.getLogger().info("Restoring claim " + claimId + " from snapshot " + snapId + " in world " + world.getName() + " (Folia=" + SchedulerAdapter.isFolia() + ")");
-                                if (SchedulerAdapter.isFolia()) {
-                                    Optional<org.bukkit.Location> originOpt = plugin.getSnapshotStore().getSnapshotOrigin(claimId, snapId, world);
-                                    org.bukkit.Location runAt = originOpt.orElse(signBlock.getLocation());
-                                    SchedulerAdapter.runAtLocationLater(plugin, runAt, () -> {
-                                        boolean ok = plugin.getSnapshotStore().restoreSnapshot(claimId, snapId, world, null);
-                                        if (ok) plugin.getLogger().info("Claim " + claimId + " restored from snapshot on eviction.");
-                                        else plugin.getLogger().warning("Failed to restore snapshot for claim " + claimId + " (snapshot " + snapId + ")");
-                                    }, 1L);
-                                } else {
-                                    Runnable doRestore = () -> {
-                                        boolean ok = plugin.getSnapshotStore().restoreSnapshot(fid, fsid, world);
-                                        if (ok) plugin.getLogger().info("Claim " + fid + " restored from snapshot on eviction.");
-                                        else plugin.getLogger().warning("Failed to restore snapshot for claim " + fid + " (snapshot " + fsid + ")");
-                                    };
-                                    if (Bukkit.isPrimaryThread()) {
-                                        doRestore.run();
-                                    } else {
-                                        SchedulerAdapter.runLaterGlobal(plugin, doRestore, 1L);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } catch (ReflectiveOperationException ignored) {}
+                org.bukkit.World world = signBlock.getWorld();
+                Optional<codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry> snapshotToRestore =
+                    switch (cause) {
+                        case EXPIRE -> plugin.getConfigManager().isRentSnapshotAutoRestoreOnRentalExpire()
+                            ? plugin.getSnapshotStore().getLatestSnapshot(claimId)
+                            : Optional.empty();
+                        case EVICT -> plugin.getConfigManager().isRentSnapshotAutoRestoreOnEvictionComplete()
+                            ? plugin.getSnapshotStore().getLatestSnapshot(claimId)
+                            : Optional.empty();
+                        case GENERAL -> Optional.empty();
+                    };
+
+                if (cause == ResetCause.EVICT && plugin.getConfigManager().isRentSnapshotAutoCreateBeforeEvictionComplete()) {
+                    RentalSnapshotUtil.createSnapshot(plugin, claimId, claimOpt.get(), "before eviction complete", ignored -> {
+                        snapshotToRestore.ifPresent(snapshot ->
+                            RentalSnapshotUtil.restoreSnapshot(plugin, claimId, snapshot.id, world, signBlock.getLocation()));
+                    });
+                } else {
+                    snapshotToRestore.ifPresent(snapshot ->
+                        RentalSnapshotUtil.restoreSnapshot(plugin, claimId, snapshot.id, world, signBlock.getLocation()));
+                }
             }
+        }
+
+        if (cause == ResetCause.EVICT && claimId != null && plugin.getConfigManager().isOwnerNotifiedOnEvictionComplete()) {
+            codes.castled.gpexpansion.gp.GPBridge gpBridge = new codes.castled.gpexpansion.gp.GPBridge();
+            Optional<Object> claimOpt = gpBridge.findClaimById(claimId);
+            claimOpt.map(gpBridge::getClaimOwner)
+                .map(Bukkit::getPlayer)
+                .ifPresent(owner -> owner.sendMessage(plugin.getMessages().get("eviction.completed-owner-notify", "{id}", claimId)));
         }
 
         if (claimId != null) {
@@ -94,7 +99,12 @@ public class RentalSignManager {
             dataStore.clearEviction(claimId);
             dataStore.save();
         }
-        if (claimId != null && renterStr != null) {
+        boolean clearRenterTrust = switch (cause) {
+            case EXPIRE -> plugin.getConfigManager().isRenterTrustClearedOnExpire();
+            case EVICT -> plugin.getConfigManager().isRenterTrustClearedOnEvict();
+            case GENERAL -> true;
+        };
+        if (clearRenterTrust && claimId != null && renterStr != null) {
             codes.castled.gpexpansion.gp.GPBridge gpBridge = new codes.castled.gpexpansion.gp.GPBridge();
             Optional<Object> claimOpt = gpBridge.findClaimById(claimId);
             if (claimOpt.isPresent()) {
@@ -162,7 +172,7 @@ public class RentalSignManager {
     }
 
     public long getEvictionNoticePeriodMs() {
-        Object val = plugin.getConfig().get("eviction.notice-period");
+        Object val = plugin.getConfigManager().getRentEvictionNoticePeriod();
         if (val != null) {
             if (val instanceof Number n) {
                 return n.longValue() * 24L * 60L * 60L * 1000L;

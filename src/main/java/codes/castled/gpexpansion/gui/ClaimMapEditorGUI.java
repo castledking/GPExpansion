@@ -11,6 +11,7 @@ import org.bukkit.inventory.ItemStack;
 
 import codes.castled.gpexpansion.gp.ClaimMapEditorBridge;
 import codes.castled.gpexpansion.gp.GPBridge;
+import codes.castled.gpexpansion.util.ClaimCustomizationUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -461,6 +462,10 @@ public final class ClaimMapEditorGUI extends BaseGUI {
 
         Material offered = offeredMaterial(event);
         if (offered != null && offered != Material.AIR) {
+            if (!ClaimCustomizationUtil.isIconMaterialAllowed(plugin, offered)) {
+                plugin.getMessages().send(player, "claim.icon-denied", "{icon}", offered.name());
+                return;
+            }
             plugin.getClaimDataStore().setIcon(selectedClaimId, offered);
             plugin.getClaimDataStore().save();
             player.sendMessage(colorize("&aClaim icon set to &f" + offered.name() + "&a."));

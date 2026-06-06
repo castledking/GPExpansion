@@ -33,6 +33,10 @@ public class MainMenuGUI extends BaseGUI {
     private int adminTrustedClaimsSlot = 12;
     private int adminGlobalListSlot = 14;
     private int adminMenuSlot = 16;
+
+    private boolean globalClaimsEnabled() {
+        return plugin.getConfigManager().isGlobalClaimsEnabled();
+    }
     
     public MainMenuGUI(GUIManager manager, Player player) {
         super(manager, player, "main-menu");
@@ -64,7 +68,7 @@ public class MainMenuGUI extends BaseGUI {
             // Admin view - show all options: owned claims, trusted claims, global list, admin menu
             inventory.setItem(adminOwnedClaimsSlot, createOwnedClaimsItem());
             inventory.setItem(adminTrustedClaimsSlot, createTrustedClaimsItem());
-            if (player.hasPermission(GLOBALLIST_PERMISSION)) {
+            if (globalClaimsEnabled() && player.hasPermission(GLOBALLIST_PERMISSION)) {
                 inventory.setItem(adminGlobalListSlot, createGlobalListItem());
             }
             inventory.setItem(adminMenuSlot, createAdminMenuItem());
@@ -72,7 +76,7 @@ public class MainMenuGUI extends BaseGUI {
             // Player view - show owned claims, trusted claims, global list (centered for 3 items)
             inventory.setItem(ownedClaimsSlot, createOwnedClaimsItem());
             inventory.setItem(trustedClaimsSlot, createTrustedClaimsItem());
-            if (player.hasPermission(GLOBALLIST_PERMISSION)) {
+            if (globalClaimsEnabled() && player.hasPermission(GLOBALLIST_PERMISSION)) {
                 inventory.setItem(globalListSlot, createGlobalListItem());
             }
         }
@@ -156,7 +160,7 @@ public class MainMenuGUI extends BaseGUI {
                 manager.openOwnedClaims(player);
             } else if (slot == adminTrustedClaimsSlot) {
                 manager.openTrustedClaims(player);
-            } else if (slot == adminGlobalListSlot && player.hasPermission(GLOBALLIST_PERMISSION)) {
+            } else if (slot == adminGlobalListSlot && globalClaimsEnabled() && player.hasPermission(GLOBALLIST_PERMISSION)) {
                 manager.openGlobalClaimList(player);
             } else if (slot == adminMenuSlot) {
                 manager.openAdminMenu(player);
@@ -167,7 +171,7 @@ public class MainMenuGUI extends BaseGUI {
                 manager.openOwnedClaims(player);
             } else if (slot == trustedClaimsSlot) {
                 manager.openTrustedClaims(player);
-            } else if (slot == globalListSlot && player.hasPermission(GLOBALLIST_PERMISSION)) {
+            } else if (slot == globalListSlot && globalClaimsEnabled() && player.hasPermission(GLOBALLIST_PERMISSION)) {
                 manager.openGlobalClaimList(player);
             }
         }

@@ -89,6 +89,20 @@ commands:
     description: Toggle or set global listing for a claim (standalone for /claim global)
     usage: /<command> [true|false] [claimId]
     permission: griefprevention.claim.toggleglobal
+  globalclaimlist:
+    description: Open the global claim list
+    usage: /<command>
+    aliases: [globalclaimslist]
+    permission: griefprevention.claim.gui.globallist
+  approveclaim:
+    description: Approve a pending global claim listing
+    usage: /<command> <claimId>
+    aliases: [aclaim]
+    permission: griefprevention.approveclaim
+  cancelrent:
+    description: Cancel your active rental
+    usage: /<command> [claimId]
+    permission: griefprevention.claim.cancelrent
   claimtp:
     description: Teleport to a claim
     usage: /<command> <claimId> [player]
@@ -162,6 +176,18 @@ permissions:
     description: Allows using /claim icon on other claims
     default: op
 
+  griefprevention.claim.cancelrent:
+    description: Allows renters to cancel their active rental
+    default: true
+
+  griefprevention.claim.cancelrent.anywhere:
+    description: Allows cancelling your active rental by claim ID
+    default: true
+
+  griefprevention.claim.cancelrent.other:
+    description: Allows cancelling another player's active rental
+    default: op
+
   # === CLAIM BAN PERMISSIONS ===
   griefprevention.claim.ban:
     description: Allows using /claim ban
@@ -173,6 +199,10 @@ permissions:
 
   griefprevention.claim.ban.other:
     description: Allows using /claim ban on other claims
+    default: op
+
+  griefprevention.claim.ban.public:
+    description: Allows using /claim ban public and /claim unban public
     default: op
 
   griefprevention.claim.unban:
@@ -232,6 +262,10 @@ permissions:
     description: Allows using item economy for rent signs
     default: op
 
+  griefprevention.sign.rent.limit.bypass:
+    description: Bypasses rent sign limits
+    default: op
+
   # === SELL/BUY SIGN PERMISSIONS ===
   griefprevention.sign.create.sell:
     description: Allows creating sell/buy signs
@@ -259,6 +293,10 @@ permissions:
 
   griefprevention.sign.sell.item:
     description: Allows using item economy for sell signs
+    default: op
+
+  griefprevention.sign.sell.limit.bypass:
+    description: Bypasses sell sign limits
     default: op
 
   griefprevention.sign.create.buy:
@@ -342,6 +380,10 @@ permissions:
     description: Allows using item economy for mailbox signs
     default: op
 
+  griefprevention.sign.mailbox.limit.bypass:
+    description: Bypasses mailbox sign limits
+    default: op
+
   griefprevention.sign.create.mailbox.1:
     description: Allows creating 1 mailbox sign
     default: false
@@ -418,23 +460,6 @@ permissions:
     description: Allows viewing info for claims you don't own
     default: op
 
-  # Claim ban/unban permissions
-  griefprevention.claim.ban:
-    description: Allows banning players from your claims
-    default: op
-
-  griefprevention.claim.ban.other:
-    description: Allows banning players from claims you don't own
-    default: op
-
-  griefprevention.claim.unban:
-    description: Allows unbanning players from your claims
-    default: op
-
-  griefprevention.claim.unban.other:
-    description: Allows unbanning players from claims you don't own
-    default: op
-
   # === CLAIM TELEPORT PERMISSIONS ===
   griefprevention.claim.teleport:
     description: Allows teleporting to claims
@@ -442,6 +467,14 @@ permissions:
 
   griefprevention.claim.teleport.other:
     description: Allows teleporting other players to claims
+    default: op
+
+  griefprevention.claim.teleport.bypass.cooldown:
+    description: Bypasses the claim teleport cooldown
+    default: op
+
+  griefprevention.claim.teleport.bypass.delay:
+    description: Bypasses the claim teleport delay
     default: op
 
   griefprevention.claim.setspawn:
@@ -510,6 +543,14 @@ permissions:
 
   griefprevention.claim.toggleglobal.other:
     description: Allows toggling public listing for claims you don't own
+    default: op
+
+  griefprevention.approveclaim:
+    description: Allows approving pending global claim listings by ID
+    default: op
+
+  griefprevention.claim.global.limit.bypass:
+    description: Bypasses global claim listing limits
     default: op
 
   griefprevention.evict:

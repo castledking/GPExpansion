@@ -157,6 +157,18 @@ public class ClaimCommandAddonImpl {
                     }
                 }
                 break;
+            case "cancelrent":
+                if (sender.hasPermission("griefprevention.claim.cancelrent")
+                        && (sender.hasPermission("griefprevention.claim.cancelrent.anywhere")
+                        || sender.hasPermission("griefprevention.claim.cancelrent.other"))
+                        && args != null && args.length == 1) {
+                    out.add("[claimId]");
+                }
+                break;
+            case "globallist":
+            case "gui":
+            case "menu":
+                break;
             case "tp":
             case "teleport":
                 if (args != null && args.length == 1) {
@@ -247,6 +259,8 @@ public class ClaimCommandAddonImpl {
 
         List<String> out = new ArrayList<>();
         if (sender.hasPermission("griefprevention.claims")) {
+            out.add("gui");
+            out.add("menu");
             out.add("name");
             out.add("desc");
             out.add("icon");
@@ -274,8 +288,14 @@ public class ClaimCommandAddonImpl {
         if (sender.hasPermission("griefprevention.evict")) {
             out.add("evict");
         }
+        if (sender.hasPermission("griefprevention.claim.cancelrent")) {
+            out.add("cancelrent");
+        }
         if (sender.hasPermission("griefprevention.claim.toggleglobal")) {
             out.add("global");
+        }
+        if (sender.hasPermission("griefprevention.claim.gui.globallist")) {
+            out.add("globallist");
         }
         if (sender.hasPermission("griefprevention.claim.teleport")) {
             out.add("tp");

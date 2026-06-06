@@ -285,6 +285,10 @@ public class GUIManager implements Listener {
     
     // Open global claim list
     public void openGlobalClaimList(Player player) {
+        if (!plugin.getConfigManager().isGlobalClaimsEnabled()) {
+            plugin.getMessages().send(player, "claim.global-disabled");
+            return;
+        }
         GlobalClaimListGUI.openAsync(this, player, null);
     }
 

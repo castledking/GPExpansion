@@ -17,6 +17,7 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
+import codes.castled.gpexpansion.sign.RentalSignManager;
 import codes.castled.gpexpansion.util.EcoKind;
 
 import java.util.HashMap;
@@ -52,6 +53,15 @@ public class SignDisplayListener implements Listener {
         keyRenter = new NamespacedKey(plugin, "rent.renter");
         keyExpiry = new NamespacedKey(plugin, "rent.expiry");
         keyScrollIdx = new NamespacedKey(plugin, "sign.scrollIdx");
+    }
+
+    private net.kyori.adventure.text.Component getMailboxHeader(Block signBlock) {
+        boolean hanging = signBlock.getType().name().contains("HANGING_SIGN");
+        String path = hanging
+            ? "signs.mailbox.hanging-sign-formats.outputs.header"
+            : "signs.mailbox.sign-formats.outputs.header";
+        return LegacyComponentSerializer.legacyAmpersand().deserialize(
+            plugin.getConfig().getString(path, "&9&l[Mailbox]"));
     }
 
     @EventHandler(priority = EventPriority.LOW)
@@ -105,9 +115,10 @@ public class SignDisplayListener implements Listener {
                                 // Update sign display for owned mailbox
                                 org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
                                 net.kyori.adventure.text.Component line0 = front.line(0);
-                                String line0Str = line0 != null ? LegacyComponentSerializer.legacySection().serialize(line0) : "";
-                                if (!line0Str.contains("§9§l[Mailbox]")) {
-                                    front.line(0, LegacyComponentSerializer.legacySection().deserialize("§9§l[Mailbox]"));
+                                String line0Str = PlainTextComponentSerializer.plainText().serialize(line0 != null ? line0 : net.kyori.adventure.text.Component.empty());
+                                String expectedLine0 = PlainTextComponentSerializer.plainText().serialize(getMailboxHeader(b));
+                                if (!line0Str.equals(expectedLine0)) {
+                                    front.line(0, getMailboxHeader(b));
                                     front.line(1, LegacyComponentSerializer.legacySection().deserialize("§a" + ownerName));
                                     front.line(2, LegacyComponentSerializer.legacySection().deserialize("§0(Click to open)"));
                                     front.line(3, net.kyori.adventure.text.Component.empty());
@@ -135,13 +146,16 @@ public class SignDisplayListener implements Listener {
 
                     // Auto-reset sign when eviction has become effective (no sneak+break needed)
                     if (evictionEffective && "RENT".equals(signType)) {
-                        plugin.getRentalSignManager().resetRentalSign(b);
+                        plugin.getRentalSignManager().resetRentalSign(b, RentalSignManager.ResetCause.EVICT);
                         continue; // resetRentalSign updated the sign; skip display logic this tick
                     }
 
                     // Auto-reset when rental has naturally expired (no eviction was started)
                     if ("RENT".equals(signType) && renterStr != null && expiry != null && expiry <= nowMs && eviction == null) {
-                        plugin.getRentalSignManager().resetRentalSign(b);
+                        plugin.getRentalSignManager().resetRentalSign(b, RentalSignManager.ResetCause.EXPIRE);
+                        if (plugin.getConfigManager().areExpiredRentSignsAutoRemoved()) {
+                            b.setType(Material.AIR);
+                        }
                         continue;
                     }
 

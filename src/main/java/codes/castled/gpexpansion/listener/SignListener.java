@@ -30,12 +30,17 @@ import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.permission.SignLimitManager;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
 import codes.castled.gpexpansion.util.EcoKind;
+import codes.castled.gpexpansion.util.RentalSnapshotUtil;
 import codes.castled.gpexpansion.util.RenewalSpec;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public class SignListener implements Listener {
@@ -75,7 +80,99 @@ public class SignListener implements Listener {
     
     private String stripLegacyColors(String input) {
         if (input == null || input.isEmpty()) return "";
-        return input.replaceAll("§[0-9A-FK-ORa-fk-or]", "");
+        return input.replaceAll("(?i)[§&][0-9A-FK-OR]", "");
+    }
+
+    private String cleanInputLine(String input) {
+        if (input == null) return "";
+        return input.trim();
+    }
+
+    private String normalizeHeader(String input) {
+        return cleanInputLine(stripLegacyColors(input)).toLowerCase(Locale.ROOT);
+    }
+
+    private boolean matchesHeader(String header, String type, String formatGroup, List<String> fallbacks) {
+        Set<String> accepted = new HashSet<>();
+        accepted.addAll(fallbacks);
+        accepted.addAll(plugin.getConfig().getStringList("signs." + type + "." + formatGroup + ".inputs"));
+        String normalizedHeader = normalizeHeader(header);
+        for (String candidate : accepted) {
+            if (candidate == null) continue;
+            if (normalizedHeader.equals(normalizeHeader(candidate))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesAnyHeader(String header, String type, List<String> signFallbacks, List<String> hangingFallbacks) {
+        return matchesHeader(header, type, "sign-formats", signFallbacks)
+            || matchesHeader(header, type, "hanging-sign-formats", hangingFallbacks);
+    }
+
+    private Optional<Object> findClaimFromInputLine(String line) {
+        String candidate = cleanInputLine(line);
+        if (candidate.isEmpty()) return Optional.empty();
+        if (candidate.contains(";")) {
+            candidate = candidate.split(";")[0].trim();
+        }
+        if (candidate.isEmpty()) return Optional.empty();
+        return gp.findClaimById(candidate);
+    }
+
+    private boolean matchesOutputHeader(String header, String type, String signFallback, String hangingFallback) {
+        String normalizedHeader = normalizeHeader(header);
+        return normalizedHeader.equals(normalizeHeader(getOutputHeader(type, false, signFallback)))
+            || normalizedHeader.equals(normalizeHeader(getOutputHeader(type, true, hangingFallback)));
+    }
+
+    private boolean matchesManagedHeader(String header, String type, List<String> signFallbacks, List<String> hangingFallbacks,
+                                         String outputFallback, String hangingOutputFallback) {
+        return matchesAnyHeader(header, type, signFallbacks, hangingFallbacks)
+            || matchesOutputHeader(header, type, outputFallback, hangingOutputFallback);
+    }
+
+    private boolean isSignTypeEnabled(String type) {
+        return switch (type) {
+            case "rent" -> plugin.getConfigManager().areRentSignsEnabled();
+            case "sell" -> plugin.getConfigManager().areSellSignsEnabled();
+            case "mailbox" -> plugin.getConfigManager().areMailboxSignsEnabled();
+            case "global" -> plugin.getConfigManager().areGlobalSignsEnabled();
+            default -> true;
+        };
+    }
+
+    private boolean isSellPaymentKindAllowed(EcoKind kind) {
+        return switch (kind) {
+            case MONEY -> plugin.getConfigManager().areSellMoneyPaymentsAllowed();
+            case EXPERIENCE -> plugin.getConfigManager().areSellExperiencePaymentsAllowed();
+            case CLAIMBLOCKS -> plugin.getConfigManager().areSellClaimBlockPaymentsAllowed();
+            case ITEM -> plugin.getConfigManager().areSellItemPaymentsAllowed();
+        };
+    }
+
+    private boolean isRentPaymentKindAllowed(EcoKind kind) {
+        return switch (kind) {
+            case MONEY -> plugin.getConfigManager().areRentMoneyPaymentsAllowed();
+            case EXPERIENCE -> plugin.getConfigManager().areRentExperiencePaymentsAllowed();
+            case CLAIMBLOCKS -> plugin.getConfigManager().areRentClaimBlockPaymentsAllowed();
+            case ITEM -> plugin.getConfigManager().areRentItemPaymentsAllowed();
+        };
+    }
+
+    private String getOutputHeader(String type, boolean hanging, String fallback) {
+        String path = hanging
+            ? "signs." + type + "hanging-sign-formats.outputs.header"
+            : "signs." + type + ".sign-formats.outputs.header";
+        return plugin.getConfig().getString(path, fallback);
+    }
+
+    private boolean getOutputDisplayClaimId(String type, boolean hanging, boolean fallback) {
+        String path = hanging
+            ? "signs." + type + "hanging-sign-formats.outputs.display-claim-id"
+            : "signs." + type + ".sign-formats.outputs.display-claim-id";
+        return plugin.getConfig().getBoolean(path, fallback);
     }
     
     // Parse EcoKind from string input
@@ -164,6 +261,30 @@ public class SignListener implements Listener {
             default: return 0L;
         }
     }
+
+    private void validateRentDurationLimits(RenewalSpec renewal) {
+        long perClickMs = parseDurationToMillis(renewal.perClick);
+        long maxCapMs = parseDurationToMillis(renewal.maxCap);
+        long configuredMaxMs = plugin.getConfigManager().getMaxRentDurationMillis();
+        if (configuredMaxMs > 0L && maxCapMs > configuredMaxMs) {
+            throw new IllegalArgumentException("Max rental duration cannot exceed " + plugin.getConfigManager().getString("signs.rent.max-rent-duration", "30d") + ".");
+        }
+        int maxClickRenewals = plugin.getConfigManager().getMaxRentClickRenewals();
+        if (maxClickRenewals > 0 && perClickMs > 0L && maxCapMs > perClickMs * maxClickRenewals) {
+            throw new IllegalArgumentException("Max rental duration cannot exceed " + maxClickRenewals + " renewal clicks.");
+        }
+    }
+
+    private boolean hasAttachedContainer(Block signBlock) {
+        if (signBlock == null) return false;
+        if (signBlock.getType().name().contains("WALL_SIGN")
+                && signBlock.getBlockData() instanceof org.bukkit.block.data.Directional dir) {
+            Block attached = signBlock.getRelative(dir.getFacing().getOppositeFace());
+            return isContainerBlock(attached.getType());
+        }
+        Block below = signBlock.getRelative(org.bukkit.block.BlockFace.DOWN);
+        return isContainerBlock(below.getType());
+    }
     
     // Format duration in milliseconds to a human-readable string (e.g., "3d 5h")
     private String formatDurationForMessage(long millis) {
@@ -221,18 +342,24 @@ public class SignListener implements Listener {
             return;
         }
         
-        String line0Text = LegacyComponentSerializer.legacySection().serialize(line0).trim();
-        String strippedLine0 = stripLegacyColors(line0Text).trim();
-        // Support both [rent]/[rent claim] and [buy]/[buy claim]/[sell claim] headers
-        boolean rent = strippedLine0.equalsIgnoreCase("[Rent Claim]") || strippedLine0.equalsIgnoreCase("[Rent]") 
-                    || strippedLine0.equalsIgnoreCase("[Rented]") || strippedLine0.equalsIgnoreCase("[Renew]");
-        boolean sell = strippedLine0.equalsIgnoreCase("[Buy Claim]") || strippedLine0.equalsIgnoreCase("[Buy]")
-                    || strippedLine0.equalsIgnoreCase("[Sell Claim]") || strippedLine0.equalsIgnoreCase("[Sell]");
-        boolean mailbox = strippedLine0.equalsIgnoreCase("[Mailbox]");
-        boolean globalClaim = strippedLine0.equalsIgnoreCase("[Global Claim]") || strippedLine0.equalsIgnoreCase("[Global]") || strippedLine0.equalsIgnoreCase("[global claim]");
-        boolean invalid = strippedLine0.equalsIgnoreCase("[Invalid Rental]") || strippedLine0.equalsIgnoreCase("[Invalid Listing]");
-        // Check if using short header format (no claim ID on line 1, uses sign location)
-        boolean useLocationClaim = strippedLine0.equalsIgnoreCase("[Rent]") || strippedLine0.equalsIgnoreCase("[Buy]") || strippedLine0.equalsIgnoreCase("[Sell]") || globalClaim;
+        String line0Text = LegacyComponentSerializer.legacySection().serialize(line0);
+        String strippedLine0 = stripLegacyColors(line0Text);
+        // Support configured headers for every body format. The remaining lines decide
+        // whether this is a claim-id format or a location-based short format.
+        boolean rent = matchesAnyHeader(strippedLine0, "rent",
+            List.of("[Rent Claim]", "[Rent]", "[Rented]", "[Renew]"),
+            List.of("[Rent]"));
+        boolean sell = matchesAnyHeader(strippedLine0, "sell",
+            List.of("[Buy Claim]", "[Buy]", "[Sell Claim]", "[Sell]"),
+            List.of("[Buy]", "[Sell]"));
+        boolean mailbox = matchesAnyHeader(strippedLine0, "mailbox",
+            List.of("[Mailbox]"),
+            List.of("[Mailbox]"));
+        boolean globalClaim = matchesAnyHeader(strippedLine0, "global",
+            List.of("[Global Claim]", "[Global]"),
+            List.of("[Global]"));
+        boolean invalid = normalizeHeader(strippedLine0).equals(normalizeHeader("[Invalid Rental]"))
+            || normalizeHeader(strippedLine0).equals(normalizeHeader("[Invalid Listing]"));
 
         if (invalid) {
             return;
@@ -242,11 +369,17 @@ public class SignListener implements Listener {
             return; // Not a rent/sell/mailbox/global claim sign, ignore
         }
 
+        String disabledType = rent ? "rent" : (sell ? "sell" : (mailbox ? "mailbox" : "global"));
+        if (!isSignTypeEnabled(disabledType)) {
+            plugin.getMessages().send(player, "sign-creation.type-disabled", "{signtype}", disabledType);
+            return;
+        }
+
         // Instant [Mailbox] creation: wall sign on container, empty lines - handled by MailboxListener
         if (mailbox) {
-            String l1 = stripLegacyColors(safeLine(event, 1)).trim();
-            String l2 = stripLegacyColors(safeLine(event, 2)).trim();
-            String l3 = stripLegacyColors(safeLine(event, 3)).trim();
+            String l1 = cleanInputLine(stripLegacyColors(safeLine(event, 1)));
+            String l2 = cleanInputLine(stripLegacyColors(safeLine(event, 2)));
+            String l3 = cleanInputLine(stripLegacyColors(safeLine(event, 3)));
             if (l1.isEmpty() && l2.isEmpty() && l3.isEmpty()) {
                 Block signBlock = event.getBlock();
                 if (signBlock.getType().name().contains("WALL_SIGN") && signBlock.getBlockData() instanceof org.bukkit.block.data.Directional dir) {
@@ -272,15 +405,19 @@ public class SignListener implements Listener {
 
         boolean hasPerm = rent ? hasPermissionOrFullAccess(player, "griefprevention.sign.create.rent") :
                        (sell ? hasPermissionOrFullAccess(player, "griefprevention.sign.create.buy") :
-                               (hasPermissionOrFullAccess(player, "griefprevention.sign.create.mailbox") || hasPermissionOrFullAccess(player, "griefprevention.sign.create.self-mailbox")));
+                               (mailbox
+                                   ? (hasPermissionOrFullAccess(player, "griefprevention.sign.create.mailbox") || hasPermissionOrFullAccess(player, "griefprevention.sign.create.self-mailbox"))
+                                   : hasPermissionOrFullAccess(player, "griefprevention.claim.toggleglobal")));
         if (!hasPerm) {
-            String signType = rent ? "rent" : (sell ? "sell" : "mailbox");
+            String signType = rent ? "rent" : (sell ? "sell" : (mailbox ? "mailbox" : "global"));
             plugin.getMessages().send(player, "permissions.create-sign-denied", "{signtype}", signType);
             return; // Let it place but don't format
         }
         
         // Read raw line1 for claim location check
-        String line1Raw = stripLegacyColors(safeLine(event, 1)).trim();
+        String line1Raw = cleanInputLine(stripLegacyColors(safeLine(event, 1)));
+        boolean line1HasExplicitClaim = (rent || sell) && findClaimFromInputLine(line1Raw).isPresent();
+        boolean useLocationClaim = globalClaim || ((rent || sell) && !line1HasExplicitClaim);
         
         // Determine target claim - either from ID or from sign location
         String targetClaimId = null;
@@ -386,9 +523,9 @@ public class SignListener implements Listener {
         }
 
         // Read raw user inputs - handle both line-based and semicolon-delimited formats
-        String line1 = stripLegacyColors(safeLine(event, 1)).trim();
-        String line2 = stripLegacyColors(safeLine(event, 2)).trim();
-        String line3 = stripLegacyColors(safeLine(event, 3)).trim();
+        String line1 = cleanInputLine(stripLegacyColors(safeLine(event, 1)));
+        String line2 = cleanInputLine(stripLegacyColors(safeLine(event, 2)));
+        String line3 = cleanInputLine(stripLegacyColors(safeLine(event, 3)));
 
         if (plugin.getConfigManager().isDebugEnabled()) {
             plugin.getLogger().info("Processing sign creation - Line1: " + line1 + ", Line2: " + line2 + ", Line3: " + line3);
@@ -659,8 +796,13 @@ public class SignListener implements Listener {
             }
         }
 
-        if (!gp.findClaimById(claimId).isPresent()) {
+        Optional<Object> finalClaimOpt = gp.findClaimById(claimId);
+        if (!finalClaimOpt.isPresent()) {
             plugin.getMessages().send(player, "sign-creation.invalid-claim-id", "{id}", claimId);
+            return;
+        }
+        if (sell && gp.isSubdivision(finalClaimOpt.get())) {
+            plugin.getMessages().send(player, "sign-creation.sell-subclaim-not-allowed");
             return;
         }
 
@@ -674,6 +816,25 @@ public class SignListener implements Listener {
             plugin.getMessages().send(player, "sign-creation.invalid-economy-type", "{type}", ecoKindStr);
             return;
         }
+        if (sell && !isSellPaymentKindAllowed(kind)) {
+            plugin.getMessages().send(player, "sign-creation.economy-disabled",
+                "{economy}", getEconomyToken(kind),
+                "{signtype}", "sell");
+            return;
+        }
+        if (rent && !isRentPaymentKindAllowed(kind)) {
+            plugin.getMessages().send(player, "sign-creation.economy-disabled",
+                "{economy}", getEconomyToken(kind),
+                "{signtype}", "rent");
+            return;
+        }
+
+        if (rent && kind == EcoKind.ITEM && plugin.getConfigManager().isRentItemPaymentContainerRequired()
+                && !hasAttachedContainer(event.getBlock())) {
+            plugin.getMessages().send(player, "sign-creation.invalid-format",
+                "{details}", "Item-payment rent signs must be attached to a container or placed on top of one.");
+            return;
+        }
 
         // Check economy type permission based on sign type
         String signType = rent ? "rent" : (sell ? "sell" : "mailbox");
@@ -683,8 +844,7 @@ public class SignListener implements Listener {
             return;
         }
 
-        if (kind == EcoKind.MONEY && !economyAvailable) {
-            formatInvalidSign(event, rent, claimId, ecoKindStr, renewalSpecStr);
+        if (kind == EcoKind.MONEY && !economyAvailable && !plugin.getConfigManager().isIgnoreVaultMissing()) {
             plugin.getMessages().send(player, "sign-creation.vault-required");
             return;
         }
@@ -715,6 +875,7 @@ public class SignListener implements Listener {
                 renewal = new RenewalSpec(renewalSpecStr, "1", "1"); // dummy values for perClick and maxCap
             } else {
                 renewal = parseRenewal(renewalSpecStr, kind);
+                validateRentDurationLimits(renewal);
             }
         } catch (IllegalArgumentException iae) {
             plugin.getMessages().send(player, "sign-creation.invalid-format",
@@ -726,16 +887,21 @@ public class SignListener implements Listener {
         boolean hanging = event.getBlock().getType().name().contains("HANGING_SIGN");
         String displayLine0;
         if (mailbox) {
-            displayLine0 = "&9&l[Mailbox]";
+            displayLine0 = getOutputHeader("mailbox", hanging, "&9&l[Mailbox]");
         } else if (rent) {
-            displayLine0 = hanging ? plugin.getMessages().getRaw("sign-interaction.sign-display-rent-hanging")
-                : plugin.getMessages().getRaw("sign-interaction.sign-display-rent-full");
+            displayLine0 = getOutputHeader("rent", hanging,
+                hanging ? plugin.getMessages().getRaw("sign-interaction.sign-display-rent-hanging")
+                    : plugin.getMessages().getRaw("sign-interaction.sign-display-rent-full"));
         } else {
-            displayLine0 = hanging ? plugin.getMessages().getRaw("sign-interaction.sign-display-buy-hanging")
-                : plugin.getMessages().getRaw("sign-interaction.sign-display-buy-full");
+            displayLine0 = getOutputHeader("sell", hanging,
+                hanging ? plugin.getMessages().getRaw("sign-interaction.sign-display-buy-hanging")
+                    : plugin.getMessages().getRaw("sign-interaction.sign-display-buy-full"));
         }
         event.line(0, LegacyComponentSerializer.legacyAmpersand().deserialize(displayLine0));
-        event.line(1, LegacyComponentSerializer.legacyAmpersand().deserialize("&0ID: &6" + claimId));
+        String outputType = mailbox ? "mailbox" : (rent ? "rent" : "sell");
+        boolean displayClaimId = getOutputDisplayClaimId(outputType, hanging, !mailbox);
+        String line1Display = displayClaimId ? "&0ID: &6" + claimId : "&0" + player.getName();
+        event.line(1, LegacyComponentSerializer.legacyAmpersand().deserialize(line1Display));
         
         // Determine formatted amount
         String amountDisplay;
@@ -810,6 +976,10 @@ public class SignListener implements Listener {
         plugin.getMessages().send(player, "sign-creation.sign-created",
             "{id}", claimId);
 
+        if (rent && plugin.getConfigManager().isRentSnapshotAutoCreateOnSignCreate()) {
+            RentalSnapshotUtil.createSnapshot(plugin, claimId, finalClaimOpt.get(), "rent sign create");
+        }
+
         // Snapshot prompt: if rent sign and player has restoresnapshot and claim is available for rent
         if (rent && player.hasPermission(codes.castled.gpexpansion.storage.ClaimSnapshotStore.getPermission())) {
             ClaimDataStore.RentalData rental = plugin.getClaimDataStore().getRental(claimId).orElse(null);
@@ -858,22 +1028,49 @@ public class SignListener implements Listener {
         final Player player = event.getPlayer();
         final org.bukkit.Location signLocation = event.getClickedBlock().getLocation();
 
-        String line0Plain = stripLegacyColors(LegacyComponentSerializer.legacySection().serialize(line0Comp)).trim();
-        boolean rentSign = line0Plain.equalsIgnoreCase("[Rent Claim]") || line0Plain.equalsIgnoreCase("[Rent]") || line0Plain.equalsIgnoreCase("[Rented]") || line0Plain.equalsIgnoreCase("[Renew]");
-        boolean sellSign = line0Plain.equalsIgnoreCase("[Buy Claim]") || line0Plain.equalsIgnoreCase("[Sell Claim]") || line0Plain.equalsIgnoreCase("[Sell]") || line0Plain.equalsIgnoreCase("[Buy]");
-        boolean mailboxSign = line0Plain.equalsIgnoreCase("[Mailbox]");
-        boolean globalClaimSign = line0Plain.equalsIgnoreCase("[Global Claim]") || line0Plain.equalsIgnoreCase("[Global]") || line0Plain.equalsIgnoreCase("[global claim]");
+        String line0Plain = cleanInputLine(stripLegacyColors(LegacyComponentSerializer.legacySection().serialize(line0Comp)));
+        boolean rentSign = matchesManagedHeader(line0Plain, "rent",
+            List.of("[Rent Claim]", "[Rent]", "[Rented]", "[Renew]"),
+            List.of("[Rent]"),
+            "&a&l[Rent Claim]", "&a&l[Rent]");
+        boolean sellSign = matchesManagedHeader(line0Plain, "sell",
+            List.of("[Buy Claim]", "[Buy]", "[Sell Claim]", "[Sell]"),
+            List.of("[Buy]", "[Sell]"),
+            "&a&l[Sell Claim]", "&a&l[Sell]");
+        boolean mailboxSign = matchesManagedHeader(line0Plain, "mailbox",
+            List.of("[Mailbox]"),
+            List.of("[Mailbox]"),
+            "&9&l[Mailbox]", "&9&l[Mailbox]");
+        boolean globalClaimSign = matchesManagedHeader(line0Plain, "global",
+            List.of("[Global Claim]", "[Global]"),
+            List.of("[Global]"),
+            "&b&l[Global]", "&b&l[Global]");
 
         if (!rentSign && !sellSign && !mailboxSign && !globalClaimSign) {
+            return;
+        }
+
+        String signType = rentSign ? "rent" : (sellSign ? "sell" : (mailboxSign ? "mailbox" : "global"));
+        if (!isSignTypeEnabled(signType)) {
+            plugin.getMessages().send(player, "sign-creation.type-disabled", "{signtype}", signType);
             return;
         }
 
         // Invalid signs (missing economy, wrong format) never got proper PDC - don't intercept, let native edit
         org.bukkit.block.Sign currentSign = (org.bukkit.block.Sign) signLocation.getBlock().getState();
         PersistentDataContainer pdc = currentSign.getPersistentDataContainer();
-        if (pdc.get(keyKind(), PersistentDataType.STRING) == null || pdc.get(keyClaim(), PersistentDataType.STRING) == null
-                || pdc.get(new NamespacedKey(plugin, "sign.ecoKind"), PersistentDataType.STRING) == null) {
+        String pdcKind = pdc.get(keyKind(), PersistentDataType.STRING);
+        String pdcClaimId = pdc.get(keyClaim(), PersistentDataType.STRING);
+        String pdcEcoKind = pdc.get(new NamespacedKey(plugin, "sign.ecoKind"), PersistentDataType.STRING);
+        boolean globalKind = pdcKind != null && pdcKind.equalsIgnoreCase("GLOBAL");
+        if (pdcKind == null || pdcClaimId == null || (!globalKind && pdcEcoKind == null)) {
             return;
+        }
+        if (globalKind) {
+            rentSign = false;
+            sellSign = false;
+            mailboxSign = false;
+            globalClaimSign = true;
         }
         
         // Check if snapshot is restoring for this claim (rent signs only)
@@ -898,8 +1095,8 @@ public class SignListener implements Listener {
             (sellSign ? "griefprevention.sign.use.buy" :
             (mailboxSign ? "griefprevention.sign.use.mailbox" : "griefprevention.sign.use.global"));
         if (!player.hasPermission(usePermission)) {
-            String signType = rentSign ? "rent" : (sellSign ? "buy" : (mailboxSign ? "mailbox" : "global"));
-            plugin.getMessages().send(player, "permissions.use-sign-denied", "{signtype}", signType);
+            String deniedType = rentSign ? "rent" : (sellSign ? "buy" : (mailboxSign ? "mailbox" : "global"));
+            plugin.getMessages().send(player, "permissions.use-sign-denied", "{signtype}", deniedType);
             if (plugin.getConfig().getBoolean("messages.show-permission-details", true)) {
                 plugin.getMessages().send(player, "permissions.use-sign-denied-detail", "{permission}", usePermission);
             }
@@ -927,15 +1124,18 @@ public class SignListener implements Listener {
                 kindStr = kind.name();
             }
             
-            // Get the economy kind from PDC for all sign types
+            // Get the economy kind from PDC for economy-backed sign types.
             String ecoKindStr = pdc.get(new NamespacedKey(plugin, "sign.ecoKind"), PersistentDataType.STRING);
-            if (ecoKindStr == null) {
+            if (!globalClaimSign && ecoKindStr == null) {
                 plugin.getMessages().send(player, "sign-interaction.sign-missing-economy");
                 return;
             }
-            EcoKind kind = EcoKind.valueOf(ecoKindStr);
+            EcoKind kind = globalClaimSign ? EcoKind.MONEY : EcoKind.valueOf(ecoKindStr);
 
-            if (kind == EcoKind.MONEY && !plugin.getEconomyManager().isEconomyAvailable()) {
+            if (!globalClaimSign
+                    && kind == EcoKind.MONEY
+                    && !plugin.getEconomyManager().isEconomyAvailable()
+                    && !plugin.getConfigManager().isIgnoreVaultMissing()) {
                 plugin.getMessages().send(player, "sign-interaction.economy-required");
                 return;
             }
@@ -1014,9 +1214,31 @@ public class SignListener implements Listener {
             }
         }
         
-        // Check if player is the owner of the claim (prevent self-rental)
+        if (sell && !isSellPaymentKindAllowed(kind)) {
+            plugin.getMessages().send(player, "sign-interaction.economy-disabled",
+                "{economy}", getEconomyToken(kind),
+                "{signtype}", "sell");
+            return;
+        }
+        if (rent && !isRentPaymentKindAllowed(kind)) {
+            plugin.getMessages().send(player, "sign-interaction.economy-disabled",
+                "{economy}", getEconomyToken(kind),
+                "{signtype}", "rent");
+            return;
+        }
+        if (rent) {
+            try {
+                validateRentDurationLimits(new RenewalSpec(ecoAmtRaw, perClick, maxCap));
+            } catch (IllegalArgumentException iae) {
+                plugin.getMessages().send(player, "sign-creation.invalid-format",
+                    "{details}", iae.getMessage());
+                return;
+            }
+        }
+
+        // Check if player is the owner of the claim (prevent self-rental/sale)
         Optional<Object> claimOpt = gp.findClaimById(claimId);
-        if (claimOpt.isPresent()) {
+        if ((rent || sell) && claimOpt.isPresent()) {
             Object claim = claimOpt.get();
             try {
                 Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
@@ -1060,6 +1282,17 @@ public class SignListener implements Listener {
                 plugin.getMessages().send(player, "sign-interaction.rent-already-rented");
                 return;
             }
+            if (alreadyRented && player.getUniqueId().equals(existingRenter)
+                    && !plugin.getConfigManager().areRentRenewalsAllowed()) {
+                plugin.getMessages().send(player, "sign-interaction.renewals-disabled");
+                return;
+            }
+            if (alreadyRented && player.getUniqueId().equals(existingRenter)
+                    && plugin.getConfigManager().areRentRenewalsDeniedDuringEviction()
+                    && plugin.getClaimDataStore().getEviction(claimId).isPresent()) {
+                plugin.getMessages().send(player, "sign-interaction.renewal-denied-eviction");
+                return;
+            }
             
             // Check if too close to max time - require at least 1 renewal period to have passed
             if (alreadyRented && player.getUniqueId().equals(existingRenter)) {
@@ -1067,11 +1300,13 @@ public class SignListener implements Listener {
                 long maxCapMs = parseDurationToMillis(maxCap);
                 long cap = now + maxCapMs;
                 long remainingToMax = cap - existingExpiry;
+                long configuredWindowMs = parseDurationToMillis(plugin.getConfigManager().getRentTooCloseToMaxWindow());
+                long renewalWindowMs = configuredWindowMs > 0 ? configuredWindowMs : perClickMs;
                 
-                // If remaining time to max is less than one perClick, block renewal
-                if (remainingToMax < perClickMs) {
+                // If remaining time to max is less than the configured window, block renewal.
+                if (remainingToMax < renewalWindowMs) {
                     // Calculate time until they can renew
-                    long timeUntilCanRenew = perClickMs - remainingToMax;
+                    long timeUntilCanRenew = renewalWindowMs - remainingToMax;
                     String formattedTime = formatDurationForMessage(timeUntilCanRenew);
                     plugin.getMessages().send(player, "sign-interaction.rent-too-close-to-max", "{time}", formattedTime);
                     return;
@@ -1094,6 +1329,14 @@ public class SignListener implements Listener {
                     ecoAmtRaw,
                     perClick,
                     maxCap,
+                    sign.getLocation()
+                );
+            } else if (sell && !plugin.getConfigManager().isSellConfirmationRequired()) {
+                plugin.getConfirmationService().executeBuy(
+                    player,
+                    claimId,
+                    kind.name(),
+                    ecoAmtRaw,
                     sign.getLocation()
                 );
             } else {
@@ -1123,6 +1366,9 @@ public class SignListener implements Listener {
                     plugin.getEconomyManager().refreshEconomy();
                 }
                 if (!plugin.getEconomyManager().isEconomyAvailable()) {
+                    if (plugin.getConfigManager().isIgnoreVaultMissing()) {
+                        return true;
+                    }
                     player.sendMessage(Component.text("Economy not available. Please ensure Vault and an economy provider are installed.", NamedTextColor.RED));
                     return false;
                 }
@@ -1157,6 +1403,10 @@ public class SignListener implements Listener {
                 return true;
             }
             case ITEM: {
+                if (pdc == null) {
+                    player.sendMessage(Component.text("This sign is missing item data.", NamedTextColor.RED));
+                    return false;
+                }
                 String b64 = pdc.get(keyItemB64(), PersistentDataType.STRING);
                 if (b64 == null || b64.isEmpty()) {
                     player.sendMessage(Component.text("This sign is missing item data.", NamedTextColor.RED));
@@ -1174,6 +1424,15 @@ public class SignListener implements Listener {
                     return false;
                 }
                 return true;
+            }
+            case CLAIMBLOCKS: {
+                int amt = Integer.parseInt(ecoAmtRaw);
+                amt = Math.min(amt, 999_999_999);
+                if (gp.getRemainingClaimBlocks(player) < amt) {
+                    player.sendMessage(Component.text("You don't have enough claim blocks.", NamedTextColor.RED));
+                    return false;
+                }
+                return gp.changeClaimBlocks(player, -amt);
             }
             default:
                 return false;
@@ -1354,14 +1613,21 @@ public class SignListener implements Listener {
      * Handle [global claim] sign creation - toggles global listing and sets spawn point
      */
     private void handleGlobalClaimSign(Player player, Location signLocation, Object claim, String claimId) {
+        if (!plugin.getConfigManager().isGlobalClaimsEnabled()) {
+            plugin.getMessages().send(player, "claim.global-disabled");
+            return;
+        }
+
         // Verify player owns the claim
-        if (!gp.isOwner(claim, player.getUniqueId()) && !player.hasPermission("griefprevention.admin")) {
+        if (plugin.getConfig().getBoolean("signs.global.require-claim-owner", true)
+                && !gp.isOwner(claim, player.getUniqueId())
+                && !player.hasPermission("griefprevention.admin")) {
             plugin.getMessages().send(player, "sign-creation.not-claim-owner");
             return;
         }
         
         // Check if location is safe for spawn point
-        if (!isSafeSpawnLocation(signLocation)) {
+        if (plugin.getConfigManager().isGlobalTeleportSafeSpawnRequired() && !isSafeSpawnLocation(signLocation)) {
             plugin.getMessages().send(player, "sign-creation.unsafe-location");
             return;
         }
@@ -1369,27 +1635,55 @@ public class SignListener implements Listener {
         // Toggle global listing
         ClaimDataStore dataStore = plugin.getClaimDataStore();
         boolean wasPublic = dataStore.isPublicListed(claimId);
-        dataStore.setPublicListed(claimId, !wasPublic);
-        dataStore.save();
-        
-        // Set spawn point at sign location
-        plugin.getClaimDataStore().setSpawn(claimId, signLocation);
-        plugin.getClaimDataStore().save();
+        boolean wasPending = dataStore.isGlobalApprovalPending(claimId);
+        boolean requestedPublic = !wasPublic && !wasPending;
+        boolean allowSignToggle = plugin.getConfig().getBoolean("signs.global.allow-sign-toggle", true);
+        if (allowSignToggle) {
+            if (requestedPublic
+                    && plugin.getConfigManager().isGlobalClaimsApprovalRequired()
+                    && !player.hasPermission("griefprevention.approveclaim")) {
+                dataStore.setGlobalApprovalPending(claimId, true);
+            } else {
+                if (!requestedPublic) {
+                    dataStore.setGlobalApprovalPending(claimId, false);
+                }
+                dataStore.setPublicListed(claimId, requestedPublic);
+            }
+            dataStore.save();
+        }
+
+        if (plugin.getConfigManager().doGlobalClaimSignsSetSpawn()
+                && plugin.getConfig().getBoolean("signs.global.set-spawn-on-create", true)) {
+            plugin.getClaimDataStore().setSpawn(claimId, signLocation);
+            plugin.getClaimDataStore().save();
+        }
         
         // Create the sign with global claim data
         org.bukkit.block.Sign sign = (org.bukkit.block.Sign) signLocation.getBlock().getState();
         org.bukkit.block.sign.SignSide frontSide = sign.getSide(org.bukkit.block.sign.Side.FRONT);
+        PersistentDataContainer pdc = sign.getPersistentDataContainer();
+        pdc.set(keyKind(), PersistentDataType.STRING, "GLOBAL");
+        pdc.set(keyClaim(), PersistentDataType.STRING, claimId);
         
         // Set sign lines
-        frontSide.line(0, LegacyComponentSerializer.legacySection().deserialize("§a§l[Global Claim]"));
-        frontSide.line(1, LegacyComponentSerializer.legacySection().deserialize("§6" + player.getName()));
+        boolean hanging = signLocation.getBlock().getType().name().contains("HANGING_SIGN");
+        String header = getOutputHeader("global", hanging, "&b&l[Global]");
+        frontSide.line(0, LegacyComponentSerializer.legacyAmpersand().deserialize(header));
+        boolean displayClaimId = getOutputDisplayClaimId("global", hanging, true);
+        String line1Display = displayClaimId ? "&0ID: &6" + claimId : "&6" + player.getName();
+        frontSide.line(1, LegacyComponentSerializer.legacyAmpersand().deserialize(line1Display));
         frontSide.line(2, Component.empty());
         frontSide.line(3, Component.empty());
         
         sign.update(true);
         
-        // Send success message
-        plugin.getMessages().send(player, "gui.claim-listed", "{id}", claimId);
+        if (!allowSignToggle) {
+            plugin.getMessages().send(player, "sign-creation.sign-created", "{type}", "global", "{id}", claimId);
+        } else if (dataStore.isGlobalApprovalPending(claimId)) {
+            plugin.getMessages().send(player, "claim.global-approval-required", "{id}", claimId);
+        } else {
+            plugin.getMessages().send(player, requestedPublic ? "gui.claim-listed" : "gui.claim-unlisted", "{id}", claimId);
+        }
         
         if (plugin.getConfigManager().isDebugEnabled()) {
             plugin.getLogger().info("Global claim sign created for claim " + claimId +

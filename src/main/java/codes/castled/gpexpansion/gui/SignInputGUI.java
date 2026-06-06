@@ -177,7 +177,7 @@ public class SignInputGUI implements Listener {
      */
     public static void openDescription(GPExpansionPlugin plugin, Player player, String currentDesc,
                                        Consumer<String> onComplete, Runnable onCancel) {
-        String[] lines = {currentDesc != null ? currentDesc : "", "", "Max 32 chars", ""};
+        String[] lines = {currentDesc != null ? currentDesc : "", "", "Max " + plugin.getConfigManager().getClaimDescriptionMaxLength() + " chars", ""};
         new SignInputGUI(plugin, player, lines, onComplete, onCancel).open();
     }
 }

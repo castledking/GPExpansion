@@ -224,10 +224,16 @@ public class GPBridge {
 
     @SuppressWarnings("all")
     public Optional<ClaimStats> getPlayerClaimStats(Player player) {
+        if (player == null) return Optional.empty();
+        return getPlayerClaimStats(player.getUniqueId());
+    }
+
+    @SuppressWarnings("all")
+    public Optional<ClaimStats> getPlayerClaimStats(UUID playerId) {
         if (!isAvailable()) return Optional.empty();
         try {
             Method getPlayerData = dataStore.getClass().getMethod("getPlayerData", UUID.class);
-            Object pd = getPlayerData.invoke(dataStore, player.getUniqueId());
+            Object pd = getPlayerData.invoke(dataStore, playerId);
             if (pd == null) return Optional.empty();
 
             Integer accrued = invokeInt(pd, "getAccruedClaimBlocks");
@@ -245,7 +251,7 @@ public class GPBridge {
             } else {
                 // Fallback: sum claim areas
                 int sum = 0;
-                for (Object c : getClaimsFor(player)) {
+                for (Object c : getClaimsFor(playerId)) {
                     sum += getClaimAreaSafe(c);
                 }
                 used = sum;
@@ -460,6 +466,73 @@ public class GPBridge {
         int width = Math.abs(maxX - minX) + 1;
         int depth = Math.abs(maxZ - minZ) + 1;
         return width * depth;
+    }
+
+    /**
+     * Show GP's red conflict-zone boundary visualization for the player.
+     */
+    public boolean showConflictVisualization(Player player, Object claim) {
+        if (!isAvailable() || player == null || claim == null) {
+            return false;
+        }
+
+        try {
+            ClassLoader loader = claim.getClass().getClassLoader();
+            Class<?> typeClass = loadFirstClass(loader,
+                    "com.griefprevention.visualization.VisualizationType",
+                    "me.ryanhamshire.GriefPrevention.VisualizationType",
+                    "me.ryanhamshire.griefprevention.VisualizationType");
+            Class<?> visualizationClass = loadFirstClass(loader,
+                    "com.griefprevention.visualization.BoundaryVisualization",
+                    "me.ryanhamshire.GriefPrevention.BoundaryVisualization",
+                    "me.ryanhamshire.griefprevention.BoundaryVisualization");
+            if (typeClass == null || visualizationClass == null) {
+                return false;
+            }
+
+            Object visualizationType = resolveConflictVisualizationType(typeClass, claim);
+            if (visualizationType == null) {
+                return false;
+            }
+
+            Method visualize = findVisualizationMethod(visualizationClass, claim.getClass(), typeClass);
+            if (visualize == null) {
+                return false;
+            }
+
+            visualize.invoke(null, player, claim, visualizationType);
+            return true;
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+     * Clear any active GP boundary visualization for the player.
+     */
+    public boolean clearBoundaryVisualization(Player player) {
+        if (!isAvailable() || player == null) {
+            return false;
+        }
+
+        Object playerData = resolvePlayerData(player.getUniqueId());
+        if (playerData == null) {
+            return false;
+        }
+
+        try {
+            for (Method method : playerData.getClass().getMethods()) {
+                if (!method.getName().equals("setVisibleBoundaries") || method.getParameterCount() != 1) {
+                    continue;
+                }
+                method.invoke(playerData, new Object[]{null});
+                return true;
+            }
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+        }
+        return false;
     }
 
     /**
@@ -748,6 +821,20 @@ public class GPBridge {
         return null;
     }
 
+    private Object resolveConflictVisualizationType(Class<?> typeClass, Object claim) {
+        if (!typeClass.isEnum()) {
+            return null;
+        }
+
+        String primary = is3DClaim(claim) ? "CONFLICT_ZONE_3D" : "CONFLICT_ZONE";
+        Object resolved = enumConstant(typeClass, primary);
+        if (resolved != null) {
+            return resolved;
+        }
+
+        return enumConstant(typeClass, "CONFLICT_ZONE");
+    }
+
     private Object resolveVisualizationType(Class<?> typeClass, Object claim) {
         if (!typeClass.isEnum()) {
             return null;
@@ -909,8 +996,13 @@ public class GPBridge {
     }
 
     public List<Object> getClaimsFor(Player player) {
+        if (player == null) return Collections.emptyList();
+        return getClaimsFor(player.getUniqueId());
+    }
+
+    public List<Object> getClaimsFor(UUID playerId) {
         List<Object> results = new ArrayList<>();
-        if (!isAvailable()) return results;
+        if (!isAvailable() || playerId == null) return results;
         try {
             Method getClaims = dataStore.getClass().getMethod("getClaims");
             Object raw = getClaims.invoke(dataStore);
@@ -919,7 +1011,7 @@ public class GPBridge {
                 try {
                     Method getOwnerID = claim.getClass().getMethod("getOwnerID");
                     Object owner = getOwnerID.invoke(claim);
-                    if (owner != null && owner.equals(player.getUniqueId())) {
+                    if (owner != null && owner.equals(playerId)) {
                         results.add(claim);
                     }
                 } catch (ReflectiveOperationException ignored2) {}
@@ -1334,6 +1426,38 @@ public class GPBridge {
         return false;
     }
 
+    /**
+     * Remove all non-owner trust entries from a claim. Used when a top-level claim is sold.
+     */
+    public boolean clearTrust(Object claim) {
+        if (!isAvailable() || claim == null) return false;
+        boolean changed = false;
+        String[] trustMethods = {
+            "getBuildTrust", "getContainerTrust", "getInventoryTrust", "getAccessTrust", "getManagerTrust",
+            "getPermissionTrust", "getBuildTrusted", "getContainerTrusted", "getInventoryTrusted",
+            "getAccessTrusted", "getManagerTrusted", "getPermissionTrusted"
+        };
+
+        for (String methodName : trustMethods) {
+            try {
+                Method method = claim.getClass().getMethod(methodName);
+                Object trusted = method.invoke(claim);
+                if (trusted instanceof java.util.Collection<?> collection && !collection.isEmpty()) {
+                    collection.clear();
+                    changed = true;
+                } else if (trusted instanceof java.util.Map<?, ?> map && !map.isEmpty()) {
+                    map.clear();
+                    changed = true;
+                }
+            } catch (ReflectiveOperationException ignored) {}
+        }
+
+        if (changed) {
+            saveClaim(claim);
+        }
+        return changed;
+    }
+
     public boolean grantInventoryTrust(Player executor, String target, Object claim) {
         if (!isAvailable() || claim == null || target == null) return false;
 
@@ -1450,6 +1574,82 @@ public class GPBridge {
                 if (DEBUG) e.printStackTrace();
             }
 
+        } catch (Exception e) {
+            if (DEBUG) e.printStackTrace();
+        }
+
+        return false;
+    }
+
+    public boolean grantAccessTrust(Player executor, String target, Object claim) {
+        if (!isAvailable() || claim == null || target == null) return false;
+
+        try {
+            UUID targetUUID;
+            org.bukkit.entity.Player targetPlayer = Bukkit.getPlayer(target);
+            if (targetPlayer != null) {
+                targetUUID = targetPlayer.getUniqueId();
+            } else {
+                targetUUID = Bukkit.getOfflinePlayer(target).getUniqueId();
+            }
+
+            Class<?> claimClass = claim.getClass();
+            try {
+                Method addAccessTrust = claimClass.getMethod("addAccessTrust", UUID.class);
+                addAccessTrust.invoke(claim, targetUUID);
+                return true;
+            } catch (NoSuchMethodException ignored) {
+            } catch (ReflectiveOperationException e) {
+                return false;
+            }
+
+            try {
+                Method getAccessTrust = claimClass.getMethod("getAccessTrust");
+                Object accessTrust = getAccessTrust.invoke(claim);
+                if (accessTrust instanceof java.util.Collection) {
+                    @SuppressWarnings("unchecked")
+                    java.util.Collection<UUID> trustList = (java.util.Collection<UUID>) accessTrust;
+                    if (!trustList.contains(targetUUID)) {
+                        trustList.add(targetUUID);
+                    }
+                    return true;
+                }
+            } catch (ReflectiveOperationException ignored) {
+            }
+
+            try {
+                Class<?> claimPermClass = null;
+                ClassLoader gpClassLoader = claimClass.getClassLoader();
+                String[] permCandidates = new String[]{
+                    "me.ryanhamshire.GriefPrevention.ClaimPermission",
+                    "me.ryanhamshire.griefprevention.ClaimPermission"
+                };
+                for (String cname : permCandidates) {
+                    try {
+                        claimPermClass = gpClassLoader.loadClass(cname);
+                        break;
+                    } catch (ClassNotFoundException ignored) {}
+                }
+
+                if (claimPermClass != null) {
+                    Object accessPerm = null;
+                    Object[] enumConstants = claimPermClass.getEnumConstants();
+                    if (enumConstants != null) {
+                        for (Object enumConst : enumConstants) {
+                            if (enumConst != null && enumConst.toString().equalsIgnoreCase("Access")) {
+                                accessPerm = enumConst;
+                                break;
+                            }
+                        }
+                    }
+                    if (accessPerm != null) {
+                        Method setPermission = claimClass.getMethod("setPermission", String.class, claimPermClass);
+                        setPermission.invoke(claim, targetUUID.toString(), accessPerm);
+                        return true;
+                    }
+                }
+            } catch (ReflectiveOperationException ignored) {
+            }
         } catch (Exception e) {
             if (DEBUG) e.printStackTrace();
         }

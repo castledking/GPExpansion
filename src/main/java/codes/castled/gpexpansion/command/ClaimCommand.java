@@ -5,6 +5,8 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.Particle;
+import org.bukkit.Sound;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -14,9 +16,11 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
+import codes.castled.gpexpansion.economy.TaxManager;
 import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.scheduler.TaskHandle;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
+import codes.castled.gpexpansion.util.ClaimCustomizationUtil;
 import codes.castled.gpexpansion.util.SafeTeleportUtil;
 
 import java.util.ArrayList;
@@ -37,12 +41,40 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     private final GPExpansionPlugin plugin;
     private final Map<UUID, Long> claimTeleportCooldowns = new ConcurrentHashMap<>();
     private final Map<UUID, PendingClaimTeleport> pendingClaimTeleports = new ConcurrentHashMap<>();
+    private final Map<UUID, PendingUnsafeClaimTeleport> pendingUnsafeClaimTeleports = new ConcurrentHashMap<>();
 
-    private static final class PendingClaimTeleport {
+    private static final long UNSAFE_TELEPORT_CONFIRM_WINDOW_MS = 10_000L;
+
+    private record PendingUnsafeClaimTeleport(String claimId, long expiresAt) {
+        boolean matches(String claimId) {
+            return this.claimId.equals(claimId) && System.currentTimeMillis() <= expiresAt;
+        }
+    }
+
+    public static final class PendingClaimTeleport {
         private final TaskHandle task;
+        private final String claimId;
+        private final long initX;
+        private final long initY;
+        private final long initZ;
+        private final org.bukkit.World world;
 
-        private PendingClaimTeleport(TaskHandle task, String claimId) {
+        private PendingClaimTeleport(TaskHandle task, String claimId, org.bukkit.Location location) {
             this.task = task;
+            this.claimId = claimId;
+            // Store rounded coordinates like Essentials does to avoid precision issues
+            this.initX = Math.round(location.getX() * 10);
+            this.initY = Math.round(location.getY() * 10);
+            this.initZ = Math.round(location.getZ() * 10);
+            this.world = location.getWorld();
+        }
+
+        public boolean hasMoved(org.bukkit.Location current) {
+            if (current.getWorld() != world) return true;
+            long curX = Math.round(current.getX() * 10);
+            long curY = Math.round(current.getY() * 10);
+            long curZ = Math.round(current.getZ() * 10);
+            return curX != initX || curY != initY || curZ != initZ;
         }
     }
     
@@ -63,6 +95,20 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             if (!Character.isDigit(c)) return false;
         }
         return true;
+    }
+
+    private boolean isPositiveInteger(String str) {
+        if (!isNumeric(str)) return false;
+        return parsePositiveInteger(str, 0) > 0;
+    }
+
+    private int parsePositiveInteger(String str, int fallback) {
+        try {
+            int value = Integer.parseInt(str);
+            return value > 0 ? value : fallback;
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     // Helper method to format duration in milliseconds to human-readable format
@@ -103,10 +149,33 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         this.gp = new GPBridge();
     }
 
+    /**
+     * Get the map of pending claim teleports for movement detection.
+     * @return Map of player UUIDs to their pending teleports
+     */
+    public Map<UUID, PendingClaimTeleport> getPendingClaimTeleports() {
+        return pendingClaimTeleports;
+    }
+
+    /**
+     * Cancel a pending claim teleport and notify the player.
+     * @param playerId The player UUID whose teleport should be cancelled
+     */
+    public void cancelPendingClaimTeleportWithMessage(UUID playerId) {
+        PendingClaimTeleport pending = pendingClaimTeleports.remove(playerId);
+        if (pending != null) {
+            pending.task.cancel();
+            Player player = Bukkit.getPlayer(playerId);
+            if (player != null && player.isOnline()) {
+                player.sendMessage(plugin.getMessages().get("claim.teleport-cancelled-move"));
+            }
+        }
+    }
+
     /** Subcommands we handle - used when sharing /claim with GP3D (only intercept these) */
     public static final java.util.Set<String> HANDLED_SUBCOMMANDS = java.util.Collections.unmodifiableSet(
             new java.util.HashSet<>(Arrays.asList(
-            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly",
+            "!", "gui", "menu", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -125,6 +194,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             "transfer",          // -> transfer (wraps GP's transferclaim and adds ID support)
             "rentalsignconfirm",
             "evict",             // -> evict player from rental
+            "cancelrent",        // -> renter forfeits their rental
             "collectrent",       // -> collect pending rental payments
             "snapshot",          // -> snapshot list|remove|create [id]
             // Moderation placeholders
@@ -133,7 +203,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBS = Arrays.asList(
             // Our features
-            "!", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly",
+            "!", "gui", "menu", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -150,6 +220,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             "transfer",          // -> transfer
             "rentalsignconfirm",
             "evict",
+            "cancelrent",
             "collectrent",
             "snapshot",
             "ban", "unban", "banlist"
@@ -304,13 +375,25 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         if (command.getName().equalsIgnoreCase("setclaimspawn") || label.equalsIgnoreCase("setclaimspawn")) {
             return handleSetSpawn(sender, args);
         }
-        // Support standalone /globalclaimlist command
-        if (command.getName().equalsIgnoreCase("globalclaimlist") || label.equalsIgnoreCase("globalclaimlist")) {
+        // Support standalone /globalclaimlist and /globalclaimslist commands
+        if (command.getName().equalsIgnoreCase("globalclaimlist")
+                || command.getName().equalsIgnoreCase("globalclaimslist")
+                || label.equalsIgnoreCase("globalclaimlist")
+                || label.equalsIgnoreCase("globalclaimslist")) {
             return handleGlobalList(sender);
         }
         // Support standalone /globalclaim [true|false] [claimId] command (toggle when no args)
         if (command.getName().equalsIgnoreCase("globalclaim") || label.equalsIgnoreCase("globalclaim")) {
             return handleGlobalClaim(sender, args);
+        }
+        if (command.getName().equalsIgnoreCase("approveclaim")
+                || command.getName().equalsIgnoreCase("aclaim")
+                || label.equalsIgnoreCase("approveclaim")
+                || label.equalsIgnoreCase("aclaim")) {
+            return handleApproveClaim(sender, args);
+        }
+        if (command.getName().equalsIgnoreCase("cancelrent") || label.equalsIgnoreCase("cancelrent")) {
+            return handleCancelRent(sender, args);
         }
         if (args.length == 0) {
             // Check if GUI mode is enabled and sender is a player
@@ -328,6 +411,9 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         switch (sub) {
             case "!":
                 return handleReturnToGUI(sender);
+            case "gui":
+            case "menu":
+                return handleOpenMainMenu(sender);
             case "trust":
                 return handleTrustDispatch(sender, subArgs);
             case "untrust":
@@ -380,6 +466,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 return handleRentalSignConfirm(sender, subArgs);
             case "evict":
                 return handleEvict(sender, subArgs);
+            case "cancelrent":
+                return handleCancelRent(sender, subArgs);
             case "collectrent":
                 return handleCollectRent(sender, subArgs);
             case "snapshot":
@@ -420,6 +508,10 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         }
         return true;
     }
+
+    private boolean canListOtherClaims(CommandSender sender) {
+        return !(sender instanceof Player) || sender.hasPermission("griefprevention.claimslistother");
+    }
     
     /**
      * Handle /claim ! - return to the last viewed GUI with preserved state.
@@ -446,6 +538,17 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         
+        return true;
+    }
+
+    private boolean handleOpenMainMenu(CommandSender sender) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+        if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
+            sender.sendMessage(plugin.getMessages().get("gui.not-enabled"));
+            return true;
+        }
+        plugin.getGUIManager().openMainMenu(player);
         return true;
     }
 
@@ -715,20 +818,102 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             this.args = args;
         }
     }
+
+    private record ClaimListOptions(
+            boolean showTrustedClaims,
+            boolean showSubclaims,
+            boolean showOwnerListToConsole,
+            boolean showWorld,
+            boolean showCoordinates,
+            boolean showArea,
+            boolean showName,
+            boolean showClaimBlockSummary,
+            int pageSize
+    ) {
+        static ClaimListOptions from(org.bukkit.configuration.file.FileConfiguration config) {
+            return new ClaimListOptions(
+                    config.getBoolean("claim-list.show-trusted-claims", true),
+                    config.getBoolean("claim-list.show-subclaims", true),
+                    config.getBoolean("claim-list.show-owner-list-to-console", true),
+                    config.getBoolean("claim-list.show-world", true),
+                    config.getBoolean("claim-list.show-coordinates", true),
+                    config.getBoolean("claim-list.show-area", true),
+                    config.getBoolean("claim-list.show-name", true),
+                    config.getBoolean("claim-list.show-claim-block-summary", true),
+                    Math.max(1, config.getInt("claim-list.page-size", 10))
+            );
+        }
+    }
+
     // Helper methods for command handling
     private boolean handleList(CommandSender sender, String[] args) {
-        if (!requirePlayer(sender)) {
-            return true;
+        ClaimListOptions listOptions = ClaimListOptions.from(plugin.getConfig());
+        String[] listArgs = args;
+        if (listArgs.length > 0 && listArgs[0].equalsIgnoreCase("list")) {
+            listArgs = Arrays.copyOfRange(listArgs, 1, listArgs.length);
         }
-        Player player = (Player)sender;
-        List<Object> claims = gp.getClaimsFor(player);
+
+        Player senderPlayer = sender instanceof Player ? (Player) sender : null;
+        int requestedPage = 1;
+        if (listArgs.length > 0 && isPositiveInteger(listArgs[listArgs.length - 1])) {
+            requestedPage = parsePositiveInteger(listArgs[listArgs.length - 1], 1);
+            listArgs = Arrays.copyOf(listArgs, listArgs.length - 1);
+        }
+        UUID targetId;
+        String targetName;
+
+        if (listArgs.length > 0 && !listArgs[0].isEmpty()) {
+            if (senderPlayer == null && !listOptions.showOwnerListToConsole()) {
+                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                return true;
+            }
+            String requestedName = listArgs[0];
+            Player onlineTarget = Bukkit.getPlayerExact(requestedName);
+            if (onlineTarget != null) {
+                targetId = onlineTarget.getUniqueId();
+                targetName = onlineTarget.getName();
+            } else {
+                targetId = resolvePlayerUuid(requestedName);
+                targetName = requestedName;
+            }
+
+            if (targetId == null) {
+                sender.sendMessage(plugin.getMessages().get("claim.list-player-not-found",
+                    "{player}", requestedName));
+                return true;
+            }
+
+            if (senderPlayer != null
+                    && !senderPlayer.getUniqueId().equals(targetId)
+                    && !sender.hasPermission("griefprevention.claimslistother")) {
+                sender.sendMessage(plugin.getMessages().get("permissions.missing",
+                    "{permission}", "griefprevention.claimslistother"));
+                return true;
+            }
+        } else {
+            if (senderPlayer == null) {
+                sender.sendMessage(plugin.getMessages().get("claim.list-usage-other"));
+                return true;
+            }
+            targetId = senderPlayer.getUniqueId();
+            targetName = senderPlayer.getName();
+        }
+
+        boolean viewingOther = senderPlayer == null || !senderPlayer.getUniqueId().equals(targetId);
+        List<Object> claims = gp.getClaimsFor(targetId);
         codes.castled.gpexpansion.storage.ClaimDataStore store = plugin.getClaimDataStore();
-        gp.getPlayerClaimStats(player).ifPresent(stats -> {
-            sender.sendMessage(plugin.getMessages().get("claim.blocks-total",
-                "{accrued}", String.valueOf(stats.accrued),
-                "{bonus}", String.valueOf(stats.bonus),
-                "{total}", String.valueOf(stats.total)));
-        });
+        if (viewingOther) {
+            sender.sendMessage(plugin.getMessages().get("claim.list-player-header",
+                "{player}", targetName));
+        }
+        if (listOptions.showClaimBlockSummary()) {
+            gp.getPlayerClaimStats(targetId).ifPresent(stats -> {
+                sender.sendMessage(plugin.getMessages().get("claim.blocks-total",
+                    "{accrued}", String.valueOf(stats.accrued),
+                    "{bonus}", String.valueOf(stats.bonus),
+                    "{total}", String.valueOf(stats.total)));
+            });
+        }
 
         // Group claims by their parent claim, but only include subclaims that the player owns
         LinkedHashMap<Object, List<Object>> grouped = new LinkedHashMap<>();
@@ -736,7 +921,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             Object parent = toMainClaim(c);
             if (c != parent) { // This is a subclaim
                 // Only add subclaims that the player owns
-                if (gp.isOwner(c, player.getUniqueId())) {
+                if (gp.isOwner(c, targetId)) {
                     grouped.computeIfAbsent(parent, k -> new ArrayList<>()).add(c);
                 }
             }
@@ -753,67 +938,86 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         sender.sendMessage(plugin.getMessages().get("claim.list-header",
             "{count}", String.valueOf(grouped.size())));
 
-        for (Map.Entry<Object, List<Object>> e : grouped.entrySet()) {
+        List<Map.Entry<Object, List<Object>>> groupedEntries = new ArrayList<>(grouped.entrySet());
+        int totalPages = Math.max(1, (int) Math.ceil(groupedEntries.size() / (double) listOptions.pageSize()));
+        int page = Math.min(Math.max(1, requestedPage), totalPages);
+        if (totalPages > 1) {
+            sender.sendMessage(plugin.getMessages().get("claim.list-page",
+                "{page}", String.valueOf(page),
+                "{pages}", String.valueOf(totalPages)));
+        }
+
+        int fromIndex = Math.min(groupedEntries.size(), (page - 1) * listOptions.pageSize());
+        int toIndex = Math.min(groupedEntries.size(), fromIndex + listOptions.pageSize());
+        for (Map.Entry<Object, List<Object>> e : groupedEntries.subList(fromIndex, toIndex)) {
             Object parent = e.getKey();
             String id = gp.getClaimId(parent).orElse("?");
             String parentName = store.getCustomName(id).orElse("unnamed");
-            String name = formatClaimLine(parent, id, parentName);
+            String name = formatClaimLine(parent, id, parentName, listOptions);
             sender.sendMessage(parseColorCodes(name));
 
-            // Get subclaims for this parent that the player owns
-            List<Object> subs = e.getValue();
-            if (subs.isEmpty()) {
-                // If no subclaims in the grouped list, check if there are any subclaims the player owns
-                List<Object> allSubs = getSubclaims(parent);
-                for (Object sub : allSubs) {
-                    if (gp.isOwner(sub, player.getUniqueId())) {
-                        subs.add(sub);
+            if (listOptions.showSubclaims()) {
+                // Get subclaims for this parent that the player owns
+                List<Object> subs = e.getValue();
+                if (subs.isEmpty()) {
+                    // If no subclaims in the grouped list, check if there are any subclaims the player owns
+                    List<Object> allSubs = getSubclaims(parent);
+                    for (Object sub : allSubs) {
+                        if (gp.isOwner(sub, targetId)) {
+                            subs.add(sub);
+                        }
                     }
                 }
-            }
 
-            for (Object sub : subs) {
-                String subId = gp.getClaimId(sub).orElse("");
-                String subName = store.getCustomName(subId).orElse("");
-                String subLine = formatSubclaimLine(sub, id, subName);
-                // Parse color codes in the line
-                sender.sendMessage(parseColorCodes("    " + subLine));
-            }
-        }
-
-        // Get trusted claims and filter out any that the player owns
-        List<Object> trusted = getTrustedClaimsFor(player).stream()
-            .filter(c -> !gp.isOwner(c, player.getUniqueId()))
-            .collect(Collectors.toList());
-
-        if (!trusted.isEmpty()) {
-            sender.sendMessage(plugin.getMessages().get("claim.list-trusted-header",
-                "{count}", String.valueOf(trusted.size())));
-            for (Object c : trusted) {
-                String id = gp.getClaimId(c).orElse("?");
-                String parentId = gp.getClaimId(toMainClaim(c)).orElse("?");
-                String name = store.getCustomName(id).orElse("unnamed");
-                String line = formatTrustedClaimLine(c, id, name, parentId, player);
-                // Parse color codes in the line
-                sender.sendMessage(parseColorCodes(line));
-
-                // Show subclaims of trusted claims if the player is trusted on them
-                List<Object> trustedSubs = getSubclaims(c);
-                for (Object sub : trustedSubs) {
-                    if (gp.getClaimsWhereTrusted(player.getUniqueId()).contains(sub)) {
-                        String subId = gp.getClaimId(sub).orElse("");
-                        String subName = store.getCustomName(subId).orElse("");
-                        String subLine = formatSubclaimLine(sub, id, subName);
-                        sender.sendMessage(parseColorCodes("  " + subLine));
-                    }
+                for (Object sub : subs) {
+                    String subId = gp.getClaimId(sub).orElse("");
+                    String subName = store.getCustomName(subId).orElse("");
+                    String subLine = formatSubclaimLine(sub, id, subName, listOptions);
+                    // Parse color codes in the line
+                    sender.sendMessage(parseColorCodes("    " + subLine));
                 }
             }
         }
 
-        gp.getPlayerClaimStats(player).ifPresent(stats -> {
-            sender.sendMessage(plugin.getMessages().get("claim.blocks-remaining",
-                "{remaining}", String.valueOf(stats.remaining)));
-        });
+        if (listOptions.showTrustedClaims()) {
+            // Get trusted claims and filter out any that the player owns
+            List<Object> trusted = getTrustedClaimsFor(targetId).stream()
+                .filter(c -> !gp.isOwner(c, targetId))
+                .collect(Collectors.toList());
+
+            if (!trusted.isEmpty()) {
+                sender.sendMessage(plugin.getMessages().get("claim.list-trusted-header",
+                    "{count}", String.valueOf(trusted.size())));
+                for (Object c : trusted) {
+                    String id = gp.getClaimId(c).orElse("?");
+                    String parentId = gp.getClaimId(toMainClaim(c)).orElse("?");
+                    String name = store.getCustomName(id).orElse("unnamed");
+                    String line = formatTrustedClaimLine(c, id, name, parentId, targetId, listOptions);
+                    // Parse color codes in the line
+                    sender.sendMessage(parseColorCodes(line));
+
+                    if (listOptions.showSubclaims()) {
+                        // Show subclaims of trusted claims if the player is trusted on them
+                        List<Object> trustedSubs = getSubclaims(c);
+                        for (Object sub : trustedSubs) {
+                            if (gp.getClaimsWhereTrusted(targetId).contains(sub)) {
+                                String subId = gp.getClaimId(sub).orElse("");
+                                String subName = store.getCustomName(subId).orElse("");
+                                String subLine = formatSubclaimLine(sub, id, subName, listOptions);
+                                sender.sendMessage(parseColorCodes("  " + subLine));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (listOptions.showClaimBlockSummary()) {
+            gp.getPlayerClaimStats(targetId).ifPresent(stats -> {
+                sender.sendMessage(plugin.getMessages().get("claim.blocks-remaining",
+                    "{remaining}", String.valueOf(stats.remaining)));
+            });
+        }
         return true;
     }
     
@@ -828,6 +1032,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             return true;
         }
         
+        ClaimListOptions listOptions = ClaimListOptions.from(plugin.getConfig());
         codes.castled.gpexpansion.storage.ClaimDataStore store = plugin.getClaimDataStore();
         List<Object> all = gp.getAllClaims();
         List<Object> admins = new ArrayList<>();
@@ -846,15 +1051,17 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         for (Object c : admins) {
             String id = gp.getClaimId(c).orElse("?");
             String name = store.getCustomName(id).orElse("unnamed");
-            String line = formatClaimLine(c, id, name);
+            String line = formatClaimLine(c, id, name, listOptions);
             sender.sendMessage(parseColorCodes(line));
             
-            for (Object sub : getSubclaims(c)) {
-                String subId = gp.getClaimId(sub).orElse("");
-                String subName = store.getCustomName(subId).orElse("");
-                String subLine = formatSubclaimLine(sub, id, subName);
-                // Parse color codes in the line
-                sender.sendMessage(parseColorCodes("    " + subLine));
+            if (listOptions.showSubclaims()) {
+                for (Object sub : getSubclaims(c)) {
+                    String subId = gp.getClaimId(sub).orElse("");
+                    String subName = store.getCustomName(subId).orElse("");
+                    String subLine = formatSubclaimLine(sub, id, subName, listOptions);
+                    // Parse color codes in the line
+                    sender.sendMessage(parseColorCodes("    " + subLine));
+                }
             }
         }
         
@@ -972,8 +1179,16 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             return true;
         }
 
-        String enforced = enforceColorPermissions(sender, legacyName);
-        String stored = toAmpersand(enforced);
+        ClaimCustomizationUtil.TextResult normalized = ClaimCustomizationUtil.normalizeName(plugin, sender, legacyName);
+        String stored = normalized.value();
+        if (stored.isEmpty()) {
+            sender.sendMessage(plugin.getMessages().get("claim.name-usage"));
+            return true;
+        }
+        if (normalized.truncated()) {
+            sender.sendMessage(plugin.getMessages().get("claim.name-truncated",
+                "{max}", String.valueOf(plugin.getConfigManager().getClaimNameMaxLength())));
+        }
 
         Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, allowAnywhere, "rename this claim");
         if (!ctxOpt.isPresent()) return true;
@@ -1004,6 +1219,10 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         org.bukkit.inventory.ItemStack item = player.getInventory().getItemInMainHand();
         if (item == null || item.getType() == org.bukkit.Material.AIR) {
             sender.sendMessage(plugin.getMessages().get("claim.icon-hold-item"));
+            return true;
+        }
+        if (!ClaimCustomizationUtil.isIconAllowed(plugin, item)) {
+            sender.sendMessage(plugin.getMessages().get("claim.icon-denied", "{icon}", item.getType().name()));
             return true;
         }
 
@@ -1075,14 +1294,19 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             return true;
         }
 
-        // Apply color/format permissions (same as name)
-        description = enforceColorPermissions(sender, description);
-        description = toAmpersand(description);
-
-        // Limit description length
-        if (description.length() > 64) {
-            description = description.substring(0, 64);
-            sender.sendMessage(plugin.getMessages().get("claim.description-truncated", "{max}", "64"));
+        ClaimCustomizationUtil.TextResult normalized = ClaimCustomizationUtil.normalizeDescription(plugin, sender, description);
+        if (normalized.rejected()) {
+            sender.sendMessage(plugin.getMessages().get("claim.description-links-denied"));
+            return true;
+        }
+        description = normalized.value();
+        if (description.isEmpty()) {
+            sender.sendMessage(plugin.getMessages().get("claim.description-usage"));
+            return true;
+        }
+        if (normalized.truncated()) {
+            sender.sendMessage(plugin.getMessages().get("claim.description-truncated",
+                "{max}", String.valueOf(plugin.getConfigManager().getClaimDescriptionMaxLength())));
         }
 
         Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, allowAnywhere, "set description for this claim");
@@ -1257,6 +1481,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         codes.castled.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
 
         if (targetName.equalsIgnoreCase("public")) {
+            String publicPermission = plugin.getConfigManager().getClaimBanPublicPermission();
+            if (!publicPermission.isEmpty() && !sender.hasPermission(publicPermission)) {
+                sender.sendMessage(plugin.getMessages().get("claim.public-ban-no-permission",
+                    "{permission}", publicPermission));
+                return true;
+            }
             if (dataStore.isPublicBanned(ctx.mainClaimId)) {
                 sender.sendMessage(plugin.getMessages().get("claim.ban-already", "{id}", ctx.mainClaimId));
                 return true;
@@ -1348,6 +1578,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         codes.castled.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
 
         if (targetName.equalsIgnoreCase("public")) {
+            String publicPermission = plugin.getConfigManager().getClaimBanPublicPermission();
+            if (!publicPermission.isEmpty() && !sender.hasPermission(publicPermission)) {
+                sender.sendMessage(plugin.getMessages().get("claim.public-ban-no-permission",
+                    "{permission}", publicPermission));
+                return true;
+            }
             if (!dataStore.isPublicBanned(ctx.mainClaimId)) {
                 sender.sendMessage(plugin.getMessages().get("claim.unban-public-missing", "{id}", ctx.mainClaimId));
                 return true;
@@ -1393,14 +1629,14 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     
     private boolean handleBanList(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
-        if (!sender.hasPermission("griefprevention.claim.ban")) {
-            sender.sendMessage(plugin.getMessages().get("claim.ban-no-permission"));
+        if (!sender.hasPermission("griefprevention.claim.banlist")) {
+            sender.sendMessage(plugin.getMessages().get("claim.banlist-no-permission"));
             return true;
         }
 
         Player player = (Player) sender;
-        boolean allowOther = sender.hasPermission("griefprevention.claim.ban.other");
-        boolean allowAnywhere = sender.hasPermission("griefprevention.claim.ban.anywhere");
+        boolean allowOther = sender.hasPermission("griefprevention.claim.banlist.other");
+        boolean allowAnywhere = sender.hasPermission("griefprevention.claim.banlist.anywhere");
 
         Optional<Object> explicitClaim = Optional.empty();
         String explicitId = null;
@@ -1511,6 +1747,51 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         return Optional.of(new ClaimContext(mainClaim, claimId, mainClaimId));
     }
 
+    private boolean validateRentEvictionStanding(CommandSender sender, Player player, ClaimContext ctx) {
+        if (!plugin.getConfigManager().isRentEvictionStandingRequired()) {
+            return true;
+        }
+        Optional<Object> standingClaimOpt = gp.getClaimAt(player.getLocation(), player);
+        if (!standingClaimOpt.isPresent()) {
+            sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+            return false;
+        }
+        Object standingMainClaim = gp.getParentClaim(standingClaimOpt.get()).orElse(standingClaimOpt.get());
+        String standingMainId = gp.getClaimId(standingMainClaim).orElse(null);
+        if (standingMainId == null || !standingMainId.equals(ctx.mainClaimId)) {
+            sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+            return false;
+        }
+        return true;
+    }
+
+    private void removeRenterTrust(UUID renterId, Object claim) {
+        if (renterId == null || claim == null) return;
+        String renterName = Bukkit.getOfflinePlayer(renterId).getName();
+        if (renterName == null) renterName = renterId.toString();
+        if (gp.untrust(renterName, claim)) {
+            gp.saveClaim(claim);
+        }
+    }
+
+    private void grantRenterTrust(UUID renterId, Object claim, Player executor) {
+        if (renterId == null || claim == null || executor == null) return;
+        OfflinePlayer offline = Bukkit.getOfflinePlayer(renterId);
+        String renterName = offline.getName();
+        if (renterName == null) renterName = renterId.toString();
+
+        boolean changed = gp.trust(executor, renterName, claim);
+        if (plugin.getConfigManager().isRentContainerTrustGranted()) {
+            changed = gp.grantInventoryTrust(executor, renterName, claim) || changed;
+        }
+        if (plugin.getConfigManager().isRentAccessTrustGranted()) {
+            changed = gp.grantAccessTrust(executor, renterName, claim) || changed;
+        }
+        if (changed) {
+            gp.saveClaim(claim);
+        }
+    }
+
     private UUID resolvePlayerUuid(String name) {
         if (name == null || name.isEmpty()) return null;
         Player online = Bukkit.getPlayerExact(name);
@@ -1535,41 +1816,61 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         return LegacyComponentSerializer.legacyAmpersand().deserialize(text);
     }
     
-    // Helper methods for claim formatting (use claim.line-format / subline-format from lang.yml)
-    private String formatClaimLine(Object claim, String id, String name) {
-        String displayName = name.isEmpty() ? "unnamed" : name;
-        String worldName = gp.getClaimWorld(claim).orElse("unknown");
-        int centerX = gp.getClaimCorners(claim).map(c -> (c.x1 + c.x2) / 2).orElse(0);
-        int centerZ = gp.getClaimCorners(claim).map(c -> (c.z1 + c.z2) / 2).orElse(0);
-        int area = gp.getClaimArea(claim);
-        String key = name.isEmpty() ? "claim.line-format-unnamed" : "claim.line-format";
-        return plugin.getMessages().getRaw(key,
-            "{id}", id,
-            "{name}", displayName,
-            "{world}", worldName,
-            "{x}", String.valueOf(centerX),
-            "{z}", String.valueOf(centerZ),
-            "{area}", String.valueOf(area));
+    private String formatClaimLine(Object claim, String id, String name, ClaimListOptions options) {
+        StringBuilder line = new StringBuilder("&eID ").append(id);
+        appendClaimListFields(line, claim, name, options, false, null);
+        return line.toString();
     }
     
-    private String formatSubclaimLine(Object subclaim, String parentId, String name) {
+    private String formatSubclaimLine(Object subclaim, String parentId, String name, ClaimListOptions options) {
         String id = gp.getClaimId(subclaim).orElse("");
-        String displayName = name.isEmpty() ? "unnamed" : name;
-        String worldName = gp.getClaimWorld(subclaim).orElse("unknown");
-        int centerX = gp.getClaimCorners(subclaim).map(c -> (c.x1 + c.x2) / 2).orElse(0);
-        int centerZ = gp.getClaimCorners(subclaim).map(c -> (c.z1 + c.z2) / 2).orElse(0);
-        String key = name.isEmpty() ? "claim.subline-format-unnamed" : "claim.subline-format";
-        return plugin.getMessages().getRaw(key,
-            "{id}", id,
-            "{name}", displayName,
-            "{world}", worldName,
-            "{x}", String.valueOf(centerX),
-            "{z}", String.valueOf(centerZ),
-            "{parent}", parentId);
+        StringBuilder line = new StringBuilder("&7- ID &f").append(id);
+        appendClaimListFields(line, subclaim, name, options, true, parentId);
+        return line.toString();
     }
     
-    private String formatTrustedClaimLine(Object claim, String id, String name, String parentId, Player player) {
-        return formatClaimLine(claim, id, name);
+    private String formatTrustedClaimLine(Object claim, String id, String name, String parentId, UUID playerId, ClaimListOptions options) {
+        return formatClaimLine(claim, id, name, options);
+    }
+
+    private void appendClaimListFields(
+            StringBuilder line,
+            Object claim,
+            String name,
+            ClaimListOptions options,
+            boolean subclaim,
+            String parentId
+    ) {
+        if (options.showName()) {
+            String displayName = name == null || name.isEmpty() ? "unnamed" : name;
+            line.append(subclaim ? " &7(&f" : " &e(")
+                .append(displayName)
+                .append(subclaim ? "&7)" : "&e)");
+        }
+
+        List<String> locationParts = new ArrayList<>();
+        if (options.showWorld()) {
+            locationParts.add(gp.getClaimWorld(claim).orElse("unknown"));
+        }
+        if (options.showCoordinates()) {
+            int centerX = gp.getClaimCorners(claim).map(c -> (c.x1 + c.x2) / 2).orElse(0);
+            int centerZ = gp.getClaimCorners(claim).map(c -> (c.z1 + c.z2) / 2).orElse(0);
+            locationParts.add("x" + centerX + ", z" + centerZ);
+        }
+        if (!locationParts.isEmpty()) {
+            line.append(subclaim ? " &7" : " &e")
+                .append(String.join(": ", locationParts));
+        }
+
+        if (options.showArea()) {
+            line.append(subclaim ? " &8(&6" : " &e(-")
+                .append(gp.getClaimArea(claim))
+                .append(subclaim ? " blocks&8)" : " blocks)");
+        }
+
+        if (subclaim && parentId != null && !parentId.isEmpty()) {
+            line.append(" &8(&6Child of ").append(parentId).append("&8)");
+        }
     }
     
     private Object toMainClaim(Object claim) {
@@ -1585,6 +1886,10 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private List<Object> getTrustedClaimsFor(Player player) {
         // Get all claims where player is trusted
         return gp.getClaimsWhereTrusted(player.getUniqueId());
+    }
+
+    private List<Object> getTrustedClaimsFor(UUID playerId) {
+        return gp.getClaimsWhereTrusted(playerId);
     }
     
     private boolean handleEvict(CommandSender sender, String[] args) {
@@ -1629,6 +1934,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (!ctxOpt.isPresent()) return true;
 
         ClaimContext ctx = ctxOpt.get();
+        if (!validateRentEvictionStanding(sender, player, ctx)) return true;
 
         // Check if the claim is currently rented
         ClaimDataStore dataStore = plugin.getClaimDataStore();
@@ -1670,13 +1976,17 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         String renterName = Bukkit.getOfflinePlayer(rental.renter).getName();
         if (renterName == null) renterName = rental.renter.toString();
 
+        if (plugin.getConfigManager().isRenterTrustRemovedOnEvictionStart()) {
+            removeRenterTrust(rental.renter, ctx.mainClaim);
+        }
+
         sender.sendMessage(plugin.getMessages().get("eviction.notice-started", "{renter}", renterName));
         sender.sendMessage(plugin.getMessages().get("eviction.notice-duration", "{duration}", noticeDisplay));
         sender.sendMessage(plugin.getMessages().get("eviction.notice-no-extend"));
 
         // Notify the renter if they're online
         Player renter = Bukkit.getPlayer(rental.renter);
-        if (renter != null) {
+        if (renter != null && plugin.getConfigManager().isRenterNotifiedOnEvictionStart()) {
             renter.sendMessage(plugin.getMessages().get("eviction.notice-received", "{id}", ctx.mainClaimId));
             renter.sendMessage(plugin.getMessages().get("eviction.notice-days", "{duration}", noticeDisplay));
             renter.sendMessage(plugin.getMessages().get("eviction.notice-no-extend"));
@@ -1688,7 +1998,8 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private boolean handleEvictCancel(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         Player player = (Player) sender;
-        boolean allowOther = sender.hasPermission("griefprevention.evict.other");
+        boolean hasOtherPermission = sender.hasPermission("griefprevention.evict.other");
+        boolean allowOther = hasOtherPermission && plugin.getConfigManager().isRentEvictionAdminCancelAllowed();
 
         Optional<Object> explicitClaim = Optional.empty();
         String explicitId = null;
@@ -1706,6 +2017,15 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (!ctxOpt.isPresent()) return true;
 
         ClaimContext ctx = ctxOpt.get();
+        if (!validateRentEvictionStanding(sender, player, ctx)) return true;
+        boolean owner = gp.isOwner(ctx.mainClaim, player.getUniqueId());
+        boolean canCancelAsOwner = owner && plugin.getConfigManager().isRentEvictionOwnerCancelAllowed();
+        boolean canCancelAsAdmin = hasOtherPermission && plugin.getConfigManager().isRentEvictionAdminCancelAllowed();
+        if (!canCancelAsOwner && !canCancelAsAdmin) {
+            sender.sendMessage(plugin.getMessages().get("eviction.cancel-disabled"));
+            return true;
+        }
+
         ClaimDataStore dataStore = plugin.getClaimDataStore();
         ClaimDataStore.EvictionData eviction = dataStore.getEviction(ctx.mainClaimId).orElse(null);
         if (eviction == null) {
@@ -1721,6 +2041,10 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (rental != null) {
             rental.paymentFailed = false; // reuse as "being evicted"
             dataStore.save();
+
+            if (plugin.getConfigManager().isRenterTrustRemovedOnEvictionStart()) {
+                grantRenterTrust(rental.renter, ctx.mainClaim, player);
+            }
 
             // Notify the renter if online
             Player renter = Bukkit.getPlayer(rental.renter);
@@ -1754,6 +2078,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (!ctxOpt.isPresent()) return true;
 
         ClaimContext ctx = ctxOpt.get();
+        if (!validateRentEvictionStanding(sender, player, ctx)) return true;
         ClaimDataStore dataStore = plugin.getClaimDataStore();
         ClaimDataStore.EvictionData eviction = dataStore.getEviction(ctx.mainClaimId).orElse(null);
         if (eviction == null) {
@@ -1771,6 +2096,95 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             String remaining = formatDuration(eviction.effectiveAt - System.currentTimeMillis());
             sender.sendMessage(plugin.getMessages().get("eviction.pending", "{renter}", renterName));
             sender.sendMessage(plugin.getMessages().get("eviction.time-remaining", "{time}", remaining));
+        }
+
+        return true;
+    }
+
+    private boolean handleCancelRent(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+
+        if (!player.hasPermission("griefprevention.claim.cancelrent")) {
+            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+
+        boolean allowAnywhere = player.hasPermission("griefprevention.claim.cancelrent.anywhere");
+        boolean allowOther = player.hasPermission("griefprevention.claim.cancelrent.other");
+        Optional<Object> explicitClaim = Optional.empty();
+        String explicitId = null;
+
+        if (args.length > 0 && args[0] != null && !args[0].isBlank()) {
+            explicitId = args[0];
+            if (!allowAnywhere && !allowOther) {
+                sender.sendMessage(plugin.getMessages().get("permissions.missing",
+                        "{permission}", "griefprevention.claim.cancelrent.anywhere"));
+                return true;
+            }
+            explicitClaim = gp.findClaimById(explicitId);
+            if (!explicitClaim.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", explicitId));
+                return true;
+            }
+        }
+
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(
+                sender,
+                player,
+                explicitClaim,
+                explicitId,
+                allowOther,
+                false,
+                allowAnywhere || allowOther,
+                "cancel this rental"
+        );
+        if (!ctxOpt.isPresent()) return true;
+
+        ClaimContext ctx = ctxOpt.get();
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
+        ClaimDataStore.RentalData rental = dataStore.getRental(ctx.mainClaimId).orElse(null);
+        if (rental == null || rental.expiry <= System.currentTimeMillis()) {
+            sender.sendMessage(plugin.getMessages().get("claim.cancelrent-not-rented", "{id}", ctx.mainClaimId));
+            return true;
+        }
+
+        if (!allowOther && !player.getUniqueId().equals(rental.renter)) {
+            sender.sendMessage(plugin.getMessages().get("claim.cancelrent-not-renter", "{id}", ctx.mainClaimId));
+            return true;
+        }
+
+        Optional<Object> claimOpt = gp.findClaimById(ctx.mainClaimId);
+        if (claimOpt.isPresent()) {
+            String renterName = Bukkit.getOfflinePlayer(rental.renter).getName();
+            if (renterName != null) {
+                gp.untrust(renterName, claimOpt.get());
+                gp.saveClaim(claimOpt.get());
+            }
+        }
+
+        Location signLocation = rental.signLocation;
+        dataStore.clearRental(ctx.mainClaimId);
+        dataStore.clearEviction(ctx.mainClaimId);
+        dataStore.save();
+
+        boolean resetSign = false;
+        if (signLocation != null && signLocation.getWorld() != null) {
+            org.bukkit.block.Block block = signLocation.getBlock();
+            if (block.getState() instanceof org.bukkit.block.Sign) {
+                plugin.getRentalSignManager().resetRentalSign(block);
+                resetSign = true;
+            }
+        }
+
+        sender.sendMessage(plugin.getMessages().get("claim.cancelrent-success", "{id}", ctx.mainClaimId));
+        if (!resetSign) {
+            sender.sendMessage(plugin.getMessages().get("claim.cancelrent-sign-not-found", "{id}", ctx.mainClaimId));
+        }
+
+        Player renter = Bukkit.getPlayer(rental.renter);
+        if (renter != null && !renter.getUniqueId().equals(player.getUniqueId())) {
+            renter.sendMessage(plugin.getMessages().get("claim.cancelrent-cancelled-by-admin", "{id}", ctx.mainClaimId));
         }
 
         return true;
@@ -1845,7 +2259,14 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
 
         if ("RENT".equals(signKind)) {
-            plugin.getRentalSignManager().resetRentalSign(b);
+            ClaimDataStore.EvictionData eviction = claimId != null
+                    ? plugin.getClaimDataStore().getEviction(claimId).orElse(null)
+                    : null;
+            codes.castled.gpexpansion.sign.RentalSignManager.ResetCause resetCause = eviction != null
+                    && System.currentTimeMillis() >= eviction.effectiveAt
+                    ? codes.castled.gpexpansion.sign.RentalSignManager.ResetCause.EVICT
+                    : codes.castled.gpexpansion.sign.RentalSignManager.ResetCause.GENERAL;
+            plugin.getRentalSignManager().resetRentalSign(b, resetCause);
         } else {
             // Non-rent signs (e.g. mailbox): clear data and remove block
             if (claimId != null) {
@@ -1881,6 +2302,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         // Check if player has any pending rents to collect
         boolean hasPending = false;
         double totalMoney = 0;
+        double totalTax = 0;
         int totalExp = 0;
         int totalClaimBlocks = 0;
 
@@ -1891,7 +2313,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                     double amount = Double.parseDouble(entry.amount);
                     switch (entry.kind) {
                         case "MONEY":
-                            totalMoney += amount;
+                            TaxManager.Context taxContext = entry.isPurchase
+                                ? TaxManager.Context.SELL
+                                : TaxManager.Context.RENT;
+                            TaxManager.TaxResult tax = plugin.getTaxManager().calculateTax(amount, taxContext, player);
+                            totalMoney += tax.net;
+                            totalTax += tax.tax;
                             break;
                         case "EXPERIENCE":
                             totalExp += (int) amount;
@@ -1917,6 +2344,15 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 success = false;
                 sender.sendMessage(plugin.getMessages().get("claim.pending-rent-failed-money",
                     "{amount}", String.valueOf(totalMoney)));
+            } else {
+                if (totalTax > 0) {
+                    plugin.getTaxManager().depositTax(totalTax);
+                }
+                if (totalTax > 0 && plugin.getConfigManager().shouldNotifyTaxPayee()) {
+                    plugin.getMessages().send(player, "tax.payee-notify",
+                        "{tax}", plugin.getEconomyManager().formatMoney(totalTax),
+                        "{net}", plugin.getEconomyManager().formatMoney(totalMoney));
+                }
             }
         }
 
@@ -2116,9 +2552,22 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     }
 
     private void applyClaimTeleportCooldown(Player player) {
+        if (hasClaimTeleportCooldownBypass(player)) return;
         int cooldownSeconds = plugin.getConfigManager().getClaimTeleportCooldownSeconds();
         if (cooldownSeconds <= 0) return;
         claimTeleportCooldowns.put(player.getUniqueId(), System.currentTimeMillis() + (cooldownSeconds * 1000L));
+    }
+
+    private boolean hasClaimTeleportCooldownBypass(Player player) {
+        return hasConfiguredPermission(player, plugin.getConfigManager().getClaimTeleportCooldownBypassPermission());
+    }
+
+    private boolean hasClaimTeleportDelayBypass(Player player) {
+        return hasConfiguredPermission(player, plugin.getConfigManager().getClaimTeleportDelayBypassPermission());
+    }
+
+    private boolean hasConfiguredPermission(Player player, String permission) {
+        return permission != null && !permission.isBlank() && player.hasPermission(permission);
     }
 
     private void cancelPendingClaimTeleport(UUID playerId) {
@@ -2129,7 +2578,10 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     }
 
     private void completeClaimTeleport(CommandSender sender, Player targetPlayer, String claimId, Location destination) {
+        spawnClaimTeleportParticles(targetPlayer.getLocation());
         plugin.getSchedulerFacade().teleportEntity(targetPlayer, destination);
+        playConfiguredSound(targetPlayer, plugin.getConfigManager().getClaimTeleportCompleteSound());
+        spawnClaimTeleportParticles(destination);
         if (sender == targetPlayer) {
             applyClaimTeleportCooldown(targetPlayer);
         }
@@ -2142,14 +2594,17 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             return;
         }
 
-        long cooldownRemaining = getClaimTeleportCooldownRemaining(targetPlayer);
+        boolean bypassCooldown = hasClaimTeleportCooldownBypass(targetPlayer);
+        long cooldownRemaining = bypassCooldown ? 0L : getClaimTeleportCooldownRemaining(targetPlayer);
         if (cooldownRemaining > 0L) {
             sender.sendMessage(plugin.getMessages().get("claim.teleport-cooldown",
                 "{time}", formatDuration(cooldownRemaining)));
             return;
         }
 
-        int delaySeconds = plugin.getConfigManager().getClaimTeleportDelaySeconds();
+        int delaySeconds = hasClaimTeleportDelayBypass(targetPlayer)
+            ? 0
+            : plugin.getConfigManager().getClaimTeleportDelaySeconds();
         UUID playerId = targetPlayer.getUniqueId();
         cancelPendingClaimTeleport(playerId);
 
@@ -2161,6 +2616,8 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         sender.sendMessage(plugin.getMessages().get("claim.teleport-delay-start",
             "{id}", claimId,
             "{time}", formatDuration(delaySeconds * 1000L)));
+        playConfiguredSound(targetPlayer, plugin.getConfigManager().getClaimTeleportStartSound());
+        spawnClaimTeleportParticles(targetPlayer.getLocation());
 
         final PendingClaimTeleport[] pendingRef = new PendingClaimTeleport[1];
         TaskHandle task = codes.castled.gpexpansion.scheduler.SchedulerAdapter.runLaterEntity(plugin, targetPlayer, () -> {
@@ -2174,7 +2631,9 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 return;
             }
 
-            long remaining = getClaimTeleportCooldownRemaining(targetPlayer);
+            long remaining = hasClaimTeleportCooldownBypass(targetPlayer)
+                ? 0L
+                : getClaimTeleportCooldownRemaining(targetPlayer);
             if (remaining > 0L) {
                 targetPlayer.sendMessage(plugin.getMessages().get("claim.teleport-cooldown",
                     "{time}", formatDuration(remaining)));
@@ -2184,9 +2643,125 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             completeClaimTeleport(sender, targetPlayer, claimId, destination);
         }, Math.max(1L, delaySeconds * 20L));
 
-        PendingClaimTeleport pending = new PendingClaimTeleport(task, claimId);
+        PendingClaimTeleport pending = new PendingClaimTeleport(task, claimId, targetPlayer.getLocation());
         pendingRef[0] = pending;
         pendingClaimTeleports.put(playerId, pending);
+    }
+
+    private void playConfiguredSound(Player player, String configuredSound) {
+        Sound sound = parseSound(configuredSound);
+        if (sound == null) return;
+        player.playSound(player.getLocation(), sound, 1.0f, 1.0f);
+    }
+
+    private Sound parseSound(String configuredSound) {
+        String normalized = normalizeRegistryName(configuredSound);
+        if (normalized == null) return null;
+        try {
+            return Sound.valueOf(normalized);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private void spawnClaimTeleportParticles(Location location) {
+        Particle particle = parseParticle(plugin.getConfigManager().getClaimTeleportParticle());
+        if (particle == null || location == null || location.getWorld() == null) return;
+        location.getWorld().spawnParticle(particle, location.clone().add(0, 1.0, 0), 24, 0.35, 0.7, 0.35, 0.02);
+    }
+
+    private Particle parseParticle(String configuredParticle) {
+        String normalized = normalizeRegistryName(configuredParticle);
+        if (normalized == null) return null;
+        try {
+            return Particle.valueOf(normalized);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private String normalizeRegistryName(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        if (trimmed.isEmpty() || trimmed.equalsIgnoreCase("none") || trimmed.equalsIgnoreCase("false")) {
+            return null;
+        }
+        return trimmed.toUpperCase(Locale.ROOT).replace('.', '_').replace('-', '_').replace(':', '_');
+    }
+
+    private int[] buildTeleportSearchBounds(Location origin, Object claim, int claimSearchRadius) {
+        int configuredRadius = plugin.getConfigManager().getClaimTeleportSafeLocationSearchRadius();
+        int radius = Math.max(claimSearchRadius, configuredRadius);
+
+        GPBridge.ClaimCorners corners = gp.getClaimCorners(claim).orElse(null);
+        if (corners != null && !plugin.getConfigManager().isClaimTeleportNearbyFallbackAllowed()) {
+            return new int[] { origin.getBlockX(), origin.getBlockX(), origin.getBlockZ(), origin.getBlockZ() };
+        }
+
+        return new int[] {
+            origin.getBlockX() - radius,
+            origin.getBlockX() + radius,
+            origin.getBlockZ() - radius,
+            origin.getBlockZ() + radius
+        };
+    }
+
+    private boolean hasConfirmedUnsafeTeleport(CommandSender sender, String claimId) {
+        if (!(sender instanceof Player)) return true;
+        UUID playerId = ((Player) sender).getUniqueId();
+        PendingUnsafeClaimTeleport pending = pendingUnsafeClaimTeleports.get(playerId);
+        if (pending == null || !pending.matches(claimId)) {
+            pendingUnsafeClaimTeleports.remove(playerId);
+            return false;
+        }
+        pendingUnsafeClaimTeleports.remove(playerId);
+        return true;
+    }
+
+    private boolean needsUnsafeTeleportConfirmation(CommandSender sender, Player targetPlayer, String claimId, Location requested, Location resolved) {
+        if (sender != targetPlayer) return false;
+        if (!plugin.getConfigManager().isClaimTeleportUnsafeConfirmationEnabled()) return false;
+        if (!plugin.getConfigManager().isClaimTeleportNearbyFallbackAllowed()) return false;
+        if (SafeTeleportUtil.isLocationSafeForSpawn(requested)) return false;
+        if (sameBlockLocation(requested, resolved)) return false;
+        return !hasConfirmedUnsafeTeleport(sender, claimId);
+    }
+
+    private boolean sameBlockLocation(Location left, Location right) {
+        if (left == null || right == null || left.getWorld() == null || right.getWorld() == null) return false;
+        return left.getWorld().equals(right.getWorld())
+            && left.getBlockX() == right.getBlockX()
+            && left.getBlockY() == right.getBlockY()
+            && left.getBlockZ() == right.getBlockZ();
+    }
+
+    private boolean queueResolvedClaimTeleport(CommandSender sender, Player targetPlayer, String claimId, Object claim, Location requested, int claimSearchRadius) {
+        Location destination = requested;
+        if (plugin.getConfigManager().isClaimTeleportSafeLocationEnabled()) {
+            if (!plugin.getConfigManager().isClaimTeleportNearbyFallbackAllowed()) {
+                if (!SafeTeleportUtil.isLocationSafeForSpawn(requested)) {
+                    sender.sendMessage(plugin.getMessages().get("claim.teleport-unsafe", "{id}", claimId));
+                    return false;
+                }
+                destination = new Location(requested.getWorld(), requested.getBlockX() + 0.5, requested.getBlockY(), requested.getBlockZ() + 0.5, requested.getYaw(), requested.getPitch());
+            } else {
+                int[] bounds = buildTeleportSearchBounds(requested, claim, claimSearchRadius);
+                destination = SafeTeleportUtil.getSafeDestination(requested, bounds);
+                if (destination == null) {
+                    sender.sendMessage(plugin.getMessages().get("claim.teleport-unsafe", "{id}", claimId));
+                    return false;
+                }
+                if (needsUnsafeTeleportConfirmation(sender, targetPlayer, claimId, requested, destination)) {
+                    pendingUnsafeClaimTeleports.put(((Player) sender).getUniqueId(),
+                        new PendingUnsafeClaimTeleport(claimId, System.currentTimeMillis() + UNSAFE_TELEPORT_CONFIRM_WINDOW_MS));
+                    sender.sendMessage(plugin.getMessages().get("claim.teleport-unsafe-confirm", "{id}", claimId));
+                    return false;
+                }
+            }
+        }
+
+        queueClaimTeleport(sender, targetPlayer, claimId, destination);
+        return true;
     }
     
     // /claim tp|teleport <claimId> [player]
@@ -2242,24 +2817,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         
         if (spawnOpt.isPresent()) {
             Location teleportLoc = spawnOpt.get();
-            
-            // Bounds based on claim size - use claim dimensions but ensure at least 8
-            int radius = Math.max(searchRadius, 8);
-            int[] bounds = new int[] {
-                teleportLoc.getBlockX() - radius,
-                teleportLoc.getBlockX() + radius,
-                teleportLoc.getBlockZ() - radius,
-                teleportLoc.getBlockZ() + radius
-            };
-            
-            Location safeLoc = SafeTeleportUtil.getSafeDestination(teleportLoc, bounds);
-            
-            if (safeLoc == null) {
-                sender.sendMessage(plugin.getMessages().get("claim.teleport-unsafe", "{id}", claimId));
-                return true;
-            }
-            
-            queueClaimTeleport(finalSender, finalTarget, finalClaimId, safeLoc);
+            queueResolvedClaimTeleport(finalSender, finalTarget, finalClaimId, claim, teleportLoc, searchRadius);
         } else {
             // Use claim center as fallback - need to get Y on correct region thread
             Optional<Location> centerXZOpt = gp.getClaimCenterXZ(claim);
@@ -2270,29 +2828,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             Location centerXZ = centerXZOpt.get();
             
             final int finalSearchRadius = searchRadius;
+            final Object finalClaim = claim;
             
             // Schedule on target region to get highest Y and teleport
             codes.castled.gpexpansion.scheduler.SchedulerAdapter.runAtLocation(plugin, centerXZ, () -> {
                 int y = centerXZ.getWorld().getHighestBlockYAt(centerXZ.getBlockX(), centerXZ.getBlockZ()) + 1;
                 Location teleportLoc = new Location(centerXZ.getWorld(), centerXZ.getX(), y, centerXZ.getZ());
-                
-                // Bounds based on claim size - use claim dimensions but ensure at least 8
-                int radius = Math.max(finalSearchRadius, 8);
-                int[] bounds = new int[] {
-                    centerXZ.getBlockX() - radius,
-                    centerXZ.getBlockX() + radius,
-                    centerXZ.getBlockZ() - radius,
-                    centerXZ.getBlockZ() + radius
-                };
-                
-                Location safeLoc = SafeTeleportUtil.getSafeDestination(teleportLoc, bounds);
-                
-                if (safeLoc == null) {
-                    finalSender.sendMessage(plugin.getMessages().get("claim.teleport-unsafe", "{id}", finalClaimId));
-                    return;
-                }
-                
-                queueClaimTeleport(finalSender, finalTarget, finalClaimId, safeLoc);
+                queueResolvedClaimTeleport(finalSender, finalTarget, finalClaimId, finalClaim, teleportLoc, finalSearchRadius);
             });
         }
         
@@ -2384,6 +2926,11 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private boolean handleGlobalList(CommandSender sender) {
         if (!requirePlayer(sender)) return true;
         Player player = (Player) sender;
+
+        if (!plugin.getConfigManager().isGlobalClaimsEnabled()) {
+            sender.sendMessage(plugin.getMessages().get("claim.global-disabled"));
+            return true;
+        }
         
         if (!player.hasPermission("griefprevention.claim.gui.globallist")) {
             sender.sendMessage(plugin.getMessages().get("general.no-permission"));
@@ -2403,6 +2950,11 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
      * Handle /globalclaim [true|false] [claimId] - standalone command with toggle support when no args
      */
     private boolean handleGlobalClaim(CommandSender sender, String[] args) {
+        if (!plugin.getConfigManager().isGlobalClaimsEnabled()) {
+            sender.sendMessage(plugin.getMessages().get("claim.global-disabled"));
+            return true;
+        }
+
         if (args.length == 0) {
             // Toggle: get current claim, flip state
             if (!requirePlayer(sender)) return true;
@@ -2442,6 +2994,11 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     
     // /claim global true|false [claimId]
     private boolean handleToggleGlobal(CommandSender sender, String[] args) {
+        if (!plugin.getConfigManager().isGlobalClaimsEnabled()) {
+            sender.sendMessage(plugin.getMessages().get("claim.global-disabled"));
+            return true;
+        }
+
         if (args.length < 1) {
             sender.sendMessage(plugin.getMessages().get("claim.global-usage"));
             return true;
@@ -2531,6 +3088,17 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         
         // Toggle the global listing
         codes.castled.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
+        if (value && plugin.getConfigManager().isGlobalClaimsApprovalRequired()
+                && !sender.hasPermission("griefprevention.approveclaim")) {
+            dataStore.setGlobalApprovalPending(claimId, true);
+            dataStore.save();
+            sender.sendMessage(plugin.getMessages().get("claim.global-approval-required", "{id}", claimId));
+            return true;
+        }
+
+        if (!value) {
+            dataStore.setGlobalApprovalPending(claimId, false);
+        }
         dataStore.setPublicListed(claimId, value);
         dataStore.save();
         
@@ -2539,6 +3107,64 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         } else {
             sender.sendMessage(plugin.getMessages().get("gui.claim-unlisted", "{id}", claimId));
         }
+        return true;
+    }
+
+    private boolean handleApproveClaim(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("griefprevention.approveclaim")) {
+            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+        if (!plugin.getConfigManager().isGlobalClaimsEnabled()) {
+            sender.sendMessage(plugin.getMessages().get("claim.global-disabled"));
+            return true;
+        }
+        String claimId = null;
+        if (args.length > 0 && !args[0].equalsIgnoreCase("approve")) {
+            claimId = args[0];
+        } else if (args.length >= 2) {
+            claimId = args[1];
+        }
+
+        if (claimId != null) {
+            java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
+            if (!claimOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", claimId));
+                return true;
+            }
+        } else {
+            if (!(sender instanceof Player)) {
+                sender.sendMessage(plugin.getMessages().get("claim.approve-usage"));
+                return true;
+            }
+            Player player = (Player) sender;
+            java.util.Optional<Object> claimOpt = gp.getClaimAt(player.getLocation(), player);
+            if (!claimOpt.isPresent()) {
+                sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+                sender.sendMessage(plugin.getMessages().get("claim.provide-id"));
+                return true;
+            }
+            Object claim = claimOpt.get();
+            claimId = gp.getClaimId(claim).orElse(null);
+            if (claimId == null) {
+                sender.sendMessage(plugin.getMessages().get("general.error"));
+                return true;
+            }
+        }
+
+        codes.castled.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
+        if (dataStore.isPublicListed(claimId)) {
+            sender.sendMessage(plugin.getMessages().get("claim.approve-already-listed", "{id}", claimId));
+            return true;
+        }
+        if (!dataStore.isGlobalApprovalPending(claimId)) {
+            sender.sendMessage(plugin.getMessages().get("claim.approve-not-pending", "{id}", claimId));
+            return true;
+        }
+
+        dataStore.setPublicListed(claimId, true);
+        dataStore.save();
+        sender.sendMessage(plugin.getMessages().get("claim.approve-success", "{id}", claimId));
         return true;
     }
     
@@ -2607,6 +3233,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             if (sub.equals("teleport")) return "tp";
             if (sub.equals("setspawn")) return "setspawn";
             if (sub.equals("toggleglobal")) return "global";
+            if (sub.equals("cancelrent")) return "cancelrent";
             
             // GUI commands
             if (sub.equals("gui.globallist")) return "globallist";
@@ -2634,8 +3261,15 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     
     @SuppressWarnings("all")
     private List<String> completeTab(CommandSender sender, Command command, String alias, String[] args) {
-        // Standalone /claimlist and /claimslist: no args (they show your claims list); return empty so no misleading /claim subcommands
+        // Standalone /claimlist and /claimslist: optional player target for console or claimslistother permission
         if (command.getName().equalsIgnoreCase("claimslist") || alias.equalsIgnoreCase("claimslist") || alias.equalsIgnoreCase("claimlist")) {
+            if (args.length == 1 && canListOtherClaims(sender)) {
+                return Bukkit.getOnlinePlayers().stream()
+                    .map(Player::getName)
+                    .filter(n -> n.toLowerCase(Locale.ROOT).startsWith(args[0].toLowerCase(Locale.ROOT)))
+                    .sorted()
+                    .collect(Collectors.toList());
+            }
             return Collections.emptyList();
         }
         // Standalone /adminclaimlist and /adminclaimslist: no args; return empty
@@ -2683,6 +3317,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
         // Tab completion for /globalclaim [true|false] [claimId]
         if (command.getName().equalsIgnoreCase("globalclaim") || alias.equalsIgnoreCase("globalclaim")) {
+            if (!plugin.getConfigManager().isGlobalClaimsEnabled()) return Collections.emptyList();
             if (!sender.hasPermission("griefprevention.claim.toggleglobal")) return Collections.emptyList();
             if (args.length == 1) {
                 List<String> opts = new ArrayList<>(Arrays.asList("true", "false"));
@@ -2701,6 +3336,53 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             }
             return Collections.emptyList();
         }
+        if (command.getName().equalsIgnoreCase("approveclaim")
+                || command.getName().equalsIgnoreCase("aclaim")
+                || alias.equalsIgnoreCase("approveclaim")
+                || alias.equalsIgnoreCase("aclaim")) {
+            if (!sender.hasPermission("griefprevention.approveclaim")) return Collections.emptyList();
+            if (!plugin.getConfigManager().isGlobalClaimsEnabled()) return Collections.emptyList();
+            if (command.getName().equalsIgnoreCase("aclaim") || alias.equalsIgnoreCase("aclaim")) {
+                if (args.length == 1) {
+                    List<String> options = new ArrayList<>();
+                    options.add("approve");
+                    options.addAll(plugin.getClaimDataStore().getPendingGlobalApprovalClaims());
+                    return options.stream()
+                        .filter(s -> s.toLowerCase(Locale.ROOT).startsWith(args[0].toLowerCase(Locale.ROOT)))
+                        .sorted()
+                        .collect(Collectors.toList());
+                }
+                if (args.length == 2 && args[0].equalsIgnoreCase("approve")) {
+                    return plugin.getClaimDataStore().getPendingGlobalApprovalClaims().stream()
+                        .filter(id -> id.toLowerCase(Locale.ROOT).startsWith(args[1].toLowerCase(Locale.ROOT)))
+                        .sorted()
+                        .collect(Collectors.toList());
+                }
+                return Collections.emptyList();
+            }
+            if (args.length == 1) {
+                return plugin.getClaimDataStore().getPendingGlobalApprovalClaims().stream()
+                    .filter(id -> id.toLowerCase(Locale.ROOT).startsWith(args[0].toLowerCase(Locale.ROOT)))
+                    .sorted()
+                    .collect(Collectors.toList());
+            }
+            return Collections.emptyList();
+        }
+        if (command.getName().equalsIgnoreCase("cancelrent") || alias.equalsIgnoreCase("cancelrent")) {
+            if (!sender.hasPermission("griefprevention.claim.cancelrent")) return Collections.emptyList();
+            if (args.length == 1
+                    && (sender.hasPermission("griefprevention.claim.cancelrent.anywhere")
+                    || sender.hasPermission("griefprevention.claim.cancelrent.other"))) {
+                return Collections.singletonList("[claimId]");
+            }
+            return Collections.emptyList();
+        }
+        if (command.getName().equalsIgnoreCase("globalclaimlist")
+                || command.getName().equalsIgnoreCase("globalclaimslist")
+                || alias.equalsIgnoreCase("globalclaimlist")
+                || alias.equalsIgnoreCase("globalclaimslist")) {
+            return Collections.emptyList();
+        }
         if (args.length == 1) {
             // If they typed a full subcommand that has sub-options, return those (some servers pass only one arg)
             String first = (args[0] != null ? args[0].trim() : "").toLowerCase(Locale.ROOT);
@@ -2709,6 +3391,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             }
             if ("evict".equals(first) && sender.hasPermission("griefprevention.evict")) {
                 return Arrays.asList("cancel", "status", "[claimId]", "[player]").stream().sorted().collect(Collectors.toList());
+            }
+            if ("cancelrent".equals(first) && sender.hasPermission("griefprevention.claim.cancelrent")) {
+                return sender.hasPermission("griefprevention.claim.cancelrent.anywhere")
+                        || sender.hasPermission("griefprevention.claim.cancelrent.other")
+                        ? Collections.singletonList("[claimId]")
+                        : Collections.emptyList();
             }
             // Get available player commands from config (filtered by permissions)
             List<String> availableCommands = getAvailablePlayerCommands(sender);
@@ -2720,6 +3408,8 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             // Add commands from SUBS that require specific permissions
             if (sender.hasPermission("griefprevention.claims")) {
                 // Base commands available to all with claims permission
+                if (!allCommands.contains("gui")) allCommands.add("gui");
+                if (!allCommands.contains("menu")) allCommands.add("menu");
                 if (!allCommands.contains("list")) allCommands.add("list");
                 if (!allCommands.contains("create")) allCommands.add("create");
                 if (!allCommands.contains("!")) allCommands.add("!");
@@ -2757,6 +3447,9 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             if (sender.hasPermission("griefprevention.evict")) {
                 if (!allCommands.contains("evict")) allCommands.add("evict");
             }
+            if (sender.hasPermission("griefprevention.claim.cancelrent")) {
+                if (!allCommands.contains("cancelrent")) allCommands.add("cancelrent");
+            }
             if (sender.hasPermission(codes.castled.gpexpansion.storage.ClaimSnapshotStore.getPermission())) {
                 if (!allCommands.contains("snapshot")) allCommands.add("snapshot");
             }
@@ -2765,6 +3458,10 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             }
             if (sender.hasPermission("griefprevention.claim.gui.options")) {
                 if (!allCommands.contains("options")) allCommands.add("options");
+            }
+            if (!plugin.getConfigManager().isGlobalClaimsEnabled()) {
+                allCommands.removeIf(commandName ->
+                    commandName.equalsIgnoreCase("global") || commandName.equalsIgnoreCase("globallist"));
             }
             
             // Filter by input and return
@@ -2787,10 +3484,39 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 case "adminclaimslist":
                 case "adminlist":
                 case "globallist":
+                case "gui":
+                case "menu":
+                    return new ArrayList<>();
+                case "cancelrent":
+                    if (args.length == 2
+                            && (sender.hasPermission("griefprevention.claim.cancelrent.anywhere")
+                            || sender.hasPermission("griefprevention.claim.cancelrent.other"))) {
+                        return Collections.singletonList("[claimId]");
+                    }
+                    return new ArrayList<>();
+                case "list":
+                    if (args.length == 2 && canListOtherClaims(sender)) {
+                        return Bukkit.getOnlinePlayers().stream()
+                            .map(Player::getName)
+                            .filter(n -> n.toLowerCase(Locale.ROOT).startsWith(args[1].toLowerCase(Locale.ROOT)))
+                            .sorted()
+                            .collect(Collectors.toList());
+                    }
                     return new ArrayList<>();
                 case "ban":
                 case "unban":
-                    if (args.length == 2) return Collections.singletonList("<player>");
+                    if (args.length == 2) {
+                        List<String> targets = new ArrayList<>();
+                        targets.add("<player>");
+                        String publicPermission = plugin.getConfigManager().getClaimBanPublicPermission();
+                        if (publicPermission.isEmpty() || sender.hasPermission(publicPermission)) {
+                            targets.add("public");
+                        }
+                        return targets.stream()
+                            .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(args[1].toLowerCase(Locale.ROOT))
+                                || value.startsWith("<"))
+                            .collect(Collectors.toList());
+                    }
                     if (args.length == 3) return Collections.singletonList("[claimId]");
                     return new ArrayList<>();
                 case "trust":
@@ -2824,6 +3550,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 case "setspawn":
                     return new ArrayList<>();
                 case "global":
+                    if (!plugin.getConfigManager().isGlobalClaimsEnabled()) return new ArrayList<>();
                     if (args.length == 2) return Arrays.asList("true", "false");
                     if (args.length == 3) return Collections.singletonList("[claimId]");
                     return new ArrayList<>();
