@@ -262,13 +262,13 @@ signs:
       outputs:
         header: "&9&l[Mailbox]"
         display-claim-id: false
-      hanging-sign-formats:
-        inputs:
-          - "[mailbox]"
-          - "[mbox]"
-        outputs:
-          header: "&9&l[Mailbox]"
-          display-claim-id: false
+    hanging-sign-formats:
+      inputs:
+        - "[mailbox]"
+        - "[mbox]"
+      outputs:
+        header: "&9&l[Mailbox]"
+        display-claim-id: false
 
     limits:
       max-signs: 5
@@ -301,12 +301,12 @@ signs:
       outputs:
         header: "&b&l[Global]"
         display-claim-id: true
-      hanging-sign-formats:
-        inputs:
-          - "[global]"
-        outputs:
-          header: "&b&l[Global]"
-          display-claim-id: true
+    hanging-sign-formats:
+      inputs:
+        - "[global]"
+      outputs:
+        header: "&b&l[Global]"
+        display-claim-id: true
 
     limits:
       max-claims-per-player: 1
