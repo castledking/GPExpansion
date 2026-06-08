@@ -6,7 +6,9 @@ import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
+import org.bukkit.Registry;
 import org.bukkit.Sound;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -2658,11 +2660,8 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private Sound parseSound(String configuredSound) {
         String normalized = normalizeRegistryName(configuredSound);
         if (normalized == null) return null;
-        try {
-            return Sound.valueOf(normalized);
-        } catch (IllegalArgumentException ignored) {
-            return null;
-        }
+        NamespacedKey key = NamespacedKey.fromString(normalized.toLowerCase(Locale.ROOT).replace('_', '.'));
+        return key != null ? Registry.SOUNDS.get(key) : null;
     }
 
     private void spawnClaimTeleportParticles(Location location) {
@@ -2674,11 +2673,8 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private Particle parseParticle(String configuredParticle) {
         String normalized = normalizeRegistryName(configuredParticle);
         if (normalized == null) return null;
-        try {
-            return Particle.valueOf(normalized);
-        } catch (IllegalArgumentException ignored) {
-            return null;
-        }
+        NamespacedKey key = NamespacedKey.fromString(normalized.toLowerCase(Locale.ROOT).replace('_', '.'));
+        return key != null ? Registry.PARTICLE_TYPE.get(key) : null;
     }
 
     private String normalizeRegistryName(String value) {
