@@ -56,6 +56,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
     private codes.castled.gpexpansion.listener.SignDisplayListener signDisplayListener;
     private codes.castled.gpexpansion.scheduler.TaskHandle evictionDisplayTickTask;
     private ClaimFlyManager claimFlyManager;
+    private codes.castled.gpexpansion.listener.ClaimFlyListener claimFlyListener;
 
     @Override
     public void onEnable() {
@@ -159,7 +160,8 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Economy late-hook listener
         Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.EconomyHookListener(this), this);
         // Claim flight listener
-        Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.ClaimFlyListener(this), this);
+        claimFlyListener = new codes.castled.gpexpansion.listener.ClaimFlyListener(this);
+        Bukkit.getPluginManager().registerEvents(claimFlyListener, this);
         getLogger().info("- Registered ClaimFlyListener for claim flight feature");
         // Claim teleport movement listener (cancels teleport if player moves during delay)
         if (configManager.isClaimTeleportCancelOnMove()) {
@@ -767,6 +769,10 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
     public ClaimFlyManager getClaimFlyManager() {
         return claimFlyManager;
+    }
+
+    public codes.castled.gpexpansion.listener.ClaimFlyListener getClaimFlyListener() {
+        return claimFlyListener;
     }
 
     public codes.castled.gpexpansion.reminder.RentalReminderService getReminderService() {
