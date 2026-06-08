@@ -20,26 +20,10 @@ jobs:
           java-version: ${{ matrix.java }}
           distribution: temurin
           cache: maven
-      - name: "Cache Gradle wrapper distribution"
-        uses: actions/cache@v4
-        with:
-          path: ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('/tmp/GriefPrevention3D/gradle/wrapper/gradle-wrapper.properties') }}
-
       - name: "Clone and Build GriefPrevention3D"
         run: |
           git clone https://github.com/castledking/GriefPrevention3D.git /tmp/GriefPrevention3D
           cd /tmp/GriefPrevention3D
-          GP3D_VER=$(grep '^version=' gradle.properties | cut -d= -f2)
-          chmod +x gradlew
-          ./gradlew jar
-          mvn install:install-file \
-            -Dfile=build/libs/GriefPrevention3D.jar \
-            -DgroupId=com.griefprevention \
-            -DartifactId=GriefPrevention3D \
-            -Dversion="$GP3D_VER" \
-            -Dpackaging=jar \
-            -DgeneratePom=true
-          echo "Installed GP3D version $GP3D_VER"
+          mvn install -DskipTests -B
       - name: "Test"
         run: mvn --batch-mode verify
