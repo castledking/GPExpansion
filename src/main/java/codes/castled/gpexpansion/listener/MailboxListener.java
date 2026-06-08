@@ -989,12 +989,12 @@ public class MailboxListener implements Listener {
     private void playConfiguredMailboxSound(Player player, String configured) {
         if (player == null || configured == null || configured.isBlank() || configured.equalsIgnoreCase("none")) return;
         String key = configured.trim().toUpperCase(Locale.ROOT).replace('.', '_').replace('-', '_');
-        try {
-            player.playSound(player.getLocation(), Sound.valueOf(key), 1.0f, 1.0f);
-        } catch (IllegalArgumentException ignored) {
-            if (plugin.getConfigManager().isDebugEnabled()) {
-                plugin.getLogger().warning("Unknown mailbox sound in config: " + configured);
-            }
+        NamespacedKey namespacedKey = NamespacedKey.fromString(key.toLowerCase(Locale.ROOT).replace('_', '.'));
+        Sound sound = namespacedKey != null ? Registry.SOUNDS.get(namespacedKey) : null;
+        if (sound != null) {
+            player.playSound(player.getLocation(), sound, 1.0f, 1.0f);
+        } else if (plugin.getConfigManager().isDebugEnabled()) {
+            plugin.getLogger().warning("Unknown mailbox sound in config: " + configured);
         }
     }
 
