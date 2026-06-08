@@ -20,6 +20,12 @@ jobs:
           java-version: ${{ matrix.java }}
           distribution: temurin
           cache: maven
+      - name: "Cache Gradle wrapper distribution"
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('/tmp/GriefPrevention3D/gradle/wrapper/gradle-wrapper.properties') }}
+
       - name: "Clone and Build GriefPrevention3D"
         run: |
           git clone https://github.com/castledking/GriefPrevention3D.git /tmp/GriefPrevention3D
