@@ -16,7 +16,7 @@
     <paper.version>1.20.6-R0.1-SNAPSHOT</paper.version>
     <adventure.minimessage.version>4.17.0</adventure.minimessage.version>
     <vault.api.version>1.7</vault.api.version>
-    <griefprevention3d.version>18.0.7</griefprevention3d.version>
+    <griefprevention3d.version>18.0.10</griefprevention3d.version>
   </properties>
 
   <repositories>
