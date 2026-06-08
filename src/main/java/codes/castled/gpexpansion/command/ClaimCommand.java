@@ -3,6 +3,7 @@ package codes.castled.gpexpansion.command;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Particle;
@@ -2720,6 +2721,10 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
     private boolean needsUnsafeTeleportConfirmation(CommandSender sender, Player targetPlayer, String claimId, Location requested, Location resolved) {
         if (sender != targetPlayer) return false;
+        if (plugin.getConfigManager().isClaimTeleportStaffIgnoreUnsafeLocation()) {
+            GameMode mode = targetPlayer.getGameMode();
+            if (mode == GameMode.CREATIVE || mode == GameMode.SPECTATOR) return false;
+        }
         if (!plugin.getConfigManager().isClaimTeleportUnsafeConfirmationEnabled()) return false;
         if (!plugin.getConfigManager().isClaimTeleportNearbyFallbackAllowed()) return false;
         if (SafeTeleportUtil.isLocationSafeForSpawn(requested)) return false;
@@ -2736,6 +2741,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     }
 
     private boolean queueResolvedClaimTeleport(CommandSender sender, Player targetPlayer, String claimId, Object claim, Location requested, int claimSearchRadius) {
+        if (plugin.getConfigManager().isClaimTeleportStaffIgnoreUnsafeLocation()) {
+            GameMode mode = targetPlayer.getGameMode();
+            if (mode == GameMode.CREATIVE || mode == GameMode.SPECTATOR) {
+                queueClaimTeleport(sender, targetPlayer, claimId, requested);
+                return true;
+            }
+        }
         Location destination = requested;
         if (plugin.getConfigManager().isClaimTeleportSafeLocationEnabled()) {
             if (!plugin.getConfigManager().isClaimTeleportNearbyFallbackAllowed()) {

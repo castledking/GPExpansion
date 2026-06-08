@@ -358,6 +358,8 @@ teleport:
     search-radius: 8
     allow-nearby-fallback: true
     confirm-unsafe-teleport: true
+    # Players in CREATIVE or SPECTATOR mode bypass unsafe location checks
+    staff-ignore-unsafe-location: true
   effects:
     start-sound: entity.enderman.teleport
     complete-sound: entity.player.levelup

@@ -120,6 +120,7 @@ public class Config {
         DEFAULTS.put("teleport.safe-location.search-radius", 8);
         DEFAULTS.put("teleport.safe-location.allow-nearby-fallback", true);
         DEFAULTS.put("teleport.safe-location.confirm-unsafe-teleport", true);
+        DEFAULTS.put("teleport.safe-location.staff-ignore-unsafe-location", true);
         DEFAULTS.put("teleport.effects.start-sound", "entity.enderman.teleport");
         DEFAULTS.put("teleport.effects.complete-sound", "entity.player.levelup");
         DEFAULTS.put("teleport.effects.particles", "portal");
@@ -490,6 +491,10 @@ public class Config {
 
     public boolean isClaimTeleportUnsafeConfirmationEnabled() {
         return config.getBoolean("teleport.safe-location.confirm-unsafe-teleport", true);
+    }
+
+    public boolean isClaimTeleportStaffIgnoreUnsafeLocation() {
+        return config.getBoolean("teleport.safe-location.staff-ignore-unsafe-location", true);
     }
 
     public String getClaimTeleportStartSound() {

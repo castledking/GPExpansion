@@ -98,6 +98,7 @@ public class ClaimFlyCommand implements CommandExecutor, TabCompleter {
         }
 
         player.setAllowFlight(true);
+        plugin.getClaimFlyListener().markClaimFlightGranted(player.getUniqueId());
     }
 
     private boolean handleAdmin(CommandSender sender, String[] args) {

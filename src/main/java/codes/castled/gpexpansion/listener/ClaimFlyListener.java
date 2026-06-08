@@ -282,6 +282,10 @@ public class ClaimFlyListener implements Listener {
                 || (plugin.getConfigManager().isClaimFlightAccessTrustAllowed() && levels.contains(GPBridge.TrustLevel.ACCESS));
     }
 
+    public void markClaimFlightGranted(UUID playerId) {
+        claimFlightGranted.add(playerId);
+    }
+
     private void revokeClaimFlight(Player player) {
         UUID playerID = player.getUniqueId();
         if (!claimFlightGranted.remove(playerID) || !player.getAllowFlight()) return;
