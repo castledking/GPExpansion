@@ -365,6 +365,7 @@ public class ClaimFlagsGUI extends BaseGUI {
     /**
      * Check if a player can access the claim flags GUI for a claim.
      * Requires griefprevention.claim.gui.flags; for other players' claims also requires .flags.other.
+     * Players with manager trust (permissiontrust) can also access flags.
      */
     public static boolean canAccess(Player player, Object claim, GPBridge gp) {
         if (!GPFlagsBridge.isAvailable()) return false;
@@ -376,6 +377,12 @@ public class ClaimFlagsGUI extends BaseGUI {
         if (isOwner) {
             return true;
         }
+
+        // Players with manager trust can toggle flags
+        if (gp.getTrustLevels(claim, player.getUniqueId()).contains(GPBridge.TrustLevel.MANAGE)) {
+            return true;
+        }
+
         return player.hasPermission(OTHER_PERMISSION);
     }
 

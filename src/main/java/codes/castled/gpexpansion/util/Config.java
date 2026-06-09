@@ -145,6 +145,8 @@ public class Config {
         DEFAULTS.put("signs.mailbox.sounds.close", "block.chest.close");
         DEFAULTS.put("signs.mailbox.sounds.deposit", "entity.item.pickup");
         DEFAULTS.put("signs.mailbox.sounds.full", "block.note_block.bass");
+        DEFAULTS.put("signs.mailbox.limits.max-signs", 5);
+        DEFAULTS.put("signs.mailbox.limits.max-self-mailboxes-per-claim", 1);
 
         // Sell sign behavior
         DEFAULTS.put("signs.sell.enabled", true);
@@ -157,6 +159,7 @@ public class Config {
         DEFAULTS.put("signs.sell.transfer-spawn-point", true);
         DEFAULTS.put("signs.sell.require-confirmation", true);
         DEFAULTS.put("signs.sell.remove-sign-after-sale", true);
+        DEFAULTS.put("signs.sell.limits.max-signs", 5);
 
         // Rent sign behavior
         DEFAULTS.put("signs.rent.enabled", true);
@@ -192,7 +195,9 @@ public class Config {
         DEFAULTS.put("signs.rent.snapshots.auto-create.before-eviction-complete", false);
         DEFAULTS.put("signs.rent.snapshots.auto-restore.on-rental-expire", false);
         DEFAULTS.put("signs.rent.snapshots.auto-restore.on-eviction-complete", false);
+        DEFAULTS.put("signs.rent.limits.max-signs", 5);
         DEFAULTS.put("signs.global.enabled", true);
+        DEFAULTS.put("signs.global.limits.max-claims-per-player", 1);
 
         // Tax settings
         DEFAULTS.put("tax.percent", 5);

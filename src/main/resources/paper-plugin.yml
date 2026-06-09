@@ -447,7 +447,7 @@ permissions:
 
   griefprevention.claimfly.use:
     description: Grants flight when inside claims the player has access to
-    default: true
+    default: op
 
   # griefprevention.transferclaim is registered by GriefPrevention itself; do not redeclare here.
 

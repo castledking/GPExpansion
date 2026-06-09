@@ -1941,18 +1941,18 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
         // Check if the claim is currently rented
         ClaimDataStore dataStore = plugin.getClaimDataStore();
-        ClaimDataStore.RentalData rental = dataStore.getRental(ctx.mainClaimId).orElse(null);
+        ClaimDataStore.RentalData rental = dataStore.getRental(ctx.claimId).orElse(null);
         if (rental == null) {
             sender.sendMessage(plugin.getMessages().get("claim.not-rented"));
             return true;
         }
         
-        ClaimDataStore.EvictionData existing = dataStore.getEviction(ctx.mainClaimId).orElse(null);
+        ClaimDataStore.EvictionData existing = dataStore.getEviction(ctx.claimId).orElse(null);
         long now = System.currentTimeMillis();
         if (existing != null) {
             if (now >= existing.effectiveAt) {
                 sender.sendMessage(plugin.getMessages().get("eviction.notice-passed"));
-                sender.sendMessage(plugin.getMessages().get("eviction.cancel-hint", "{id}", ctx.mainClaimId));
+                sender.sendMessage(plugin.getMessages().get("eviction.cancel-hint", "{id}", ctx.claimId));
             } else {
                 String remaining = formatDuration(existing.effectiveAt - now);
                 sender.sendMessage(plugin.getMessages().get("eviction.notice-in-progress", "{time}", remaining));
@@ -1972,7 +1972,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
         
         // Start the eviction notice
-        dataStore.setEviction(ctx.mainClaimId, ownerId, rental.renter, initiatedAt, effectiveAt);
+        dataStore.setEviction(ctx.claimId, ownerId, rental.renter, initiatedAt, effectiveAt);
         rental.paymentFailed = true; // reuse as "being evicted"
         dataStore.save();
 
@@ -1990,7 +1990,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         // Notify the renter if they're online
         Player renter = Bukkit.getPlayer(rental.renter);
         if (renter != null && plugin.getConfigManager().isRenterNotifiedOnEvictionStart()) {
-            renter.sendMessage(plugin.getMessages().get("eviction.notice-received", "{id}", ctx.mainClaimId));
+            renter.sendMessage(plugin.getMessages().get("eviction.notice-received", "{id}", ctx.claimId));
             renter.sendMessage(plugin.getMessages().get("eviction.notice-days", "{duration}", noticeDisplay));
             renter.sendMessage(plugin.getMessages().get("eviction.notice-no-extend"));
         }
@@ -2030,17 +2030,17 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
 
         ClaimDataStore dataStore = plugin.getClaimDataStore();
-        ClaimDataStore.EvictionData eviction = dataStore.getEviction(ctx.mainClaimId).orElse(null);
+        ClaimDataStore.EvictionData eviction = dataStore.getEviction(ctx.claimId).orElse(null);
         if (eviction == null) {
             sender.sendMessage(plugin.getMessages().get("eviction.no-pending"));
             return true;
         }
 
         // Cancel the eviction
-        dataStore.clearEviction(ctx.mainClaimId);
+        dataStore.clearEviction(ctx.claimId);
 
         // Update rental store
-        ClaimDataStore.RentalData rental = dataStore.getRental(ctx.mainClaimId).orElse(null);
+        ClaimDataStore.RentalData rental = dataStore.getRental(ctx.claimId).orElse(null);
         if (rental != null) {
             rental.paymentFailed = false; // reuse as "being evicted"
             dataStore.save();
@@ -2052,11 +2052,11 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             // Notify the renter if online
             Player renter = Bukkit.getPlayer(rental.renter);
             if (renter != null) {
-                renter.sendMessage(plugin.getMessages().get("eviction.cancelled-notify", "{id}", ctx.mainClaimId));
+                renter.sendMessage(plugin.getMessages().get("eviction.cancelled-notify", "{id}", ctx.claimId));
             }
         }
 
-        sender.sendMessage(plugin.getMessages().get("eviction.cancelled", "{id}", ctx.mainClaimId));
+        sender.sendMessage(plugin.getMessages().get("eviction.cancelled", "{id}", ctx.claimId));
         return true;
     }
 
@@ -2083,7 +2083,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         ClaimContext ctx = ctxOpt.get();
         if (!validateRentEvictionStanding(sender, player, ctx)) return true;
         ClaimDataStore dataStore = plugin.getClaimDataStore();
-        ClaimDataStore.EvictionData eviction = dataStore.getEviction(ctx.mainClaimId).orElse(null);
+        ClaimDataStore.EvictionData eviction = dataStore.getEviction(ctx.claimId).orElse(null);
         if (eviction == null) {
             sender.sendMessage(plugin.getMessages().get("eviction.no-pending-info"));
             return true;
@@ -2146,18 +2146,18 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
         ClaimContext ctx = ctxOpt.get();
         ClaimDataStore dataStore = plugin.getClaimDataStore();
-        ClaimDataStore.RentalData rental = dataStore.getRental(ctx.mainClaimId).orElse(null);
+        ClaimDataStore.RentalData rental = dataStore.getRental(ctx.claimId).orElse(null);
         if (rental == null || rental.expiry <= System.currentTimeMillis()) {
-            sender.sendMessage(plugin.getMessages().get("claim.cancelrent-not-rented", "{id}", ctx.mainClaimId));
+            sender.sendMessage(plugin.getMessages().get("claim.cancelrent-not-rented", "{id}", ctx.claimId));
             return true;
         }
 
         if (!allowOther && !player.getUniqueId().equals(rental.renter)) {
-            sender.sendMessage(plugin.getMessages().get("claim.cancelrent-not-renter", "{id}", ctx.mainClaimId));
+            sender.sendMessage(plugin.getMessages().get("claim.cancelrent-not-renter", "{id}", ctx.claimId));
             return true;
         }
 
-        Optional<Object> claimOpt = gp.findClaimById(ctx.mainClaimId);
+        Optional<Object> claimOpt = gp.findClaimById(ctx.claimId);
         if (claimOpt.isPresent()) {
             String renterName = Bukkit.getOfflinePlayer(rental.renter).getName();
             if (renterName != null) {
@@ -2167,8 +2167,8 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
 
         Location signLocation = rental.signLocation;
-        dataStore.clearRental(ctx.mainClaimId);
-        dataStore.clearEviction(ctx.mainClaimId);
+        dataStore.clearRental(ctx.claimId);
+        dataStore.clearEviction(ctx.claimId);
         dataStore.save();
 
         boolean resetSign = false;
@@ -2180,9 +2180,9 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             }
         }
 
-        sender.sendMessage(plugin.getMessages().get("claim.cancelrent-success", "{id}", ctx.mainClaimId));
+        sender.sendMessage(plugin.getMessages().get("claim.cancelrent-success", "{id}", ctx.claimId));
         if (!resetSign) {
-            sender.sendMessage(plugin.getMessages().get("claim.cancelrent-sign-not-found", "{id}", ctx.mainClaimId));
+            sender.sendMessage(plugin.getMessages().get("claim.cancelrent-sign-not-found", "{id}", ctx.claimId));
         }
 
         Player renter = Bukkit.getPlayer(rental.renter);
