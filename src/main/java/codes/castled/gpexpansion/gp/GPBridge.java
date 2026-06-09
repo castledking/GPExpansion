@@ -4328,6 +4328,14 @@ public class GPBridge {
         if (isTrusted(claim, playerId, "inventory")) return true;
         if (isTrusted(claim, playerId, "access")) return true;
         if (isTrusted(claim, playerId, "manager")) return true;
+        // Check parent claim trust for subclaims
+        Object parent = getParentClaim(claim).orElse(null);
+        if (parent != null && parent != claim) {
+            if (isTrusted(parent, playerId, "build")) return true;
+            if (isTrusted(parent, playerId, "inventory")) return true;
+            if (isTrusted(parent, playerId, "access")) return true;
+            if (isTrusted(parent, playerId, "manager")) return true;
+        }
         return false;
     }
 
@@ -4347,6 +4355,17 @@ public class GPBridge {
         if (isTrusted(claim, playerId, "build")) levels.add(TrustLevel.BUILD);
         if (isTrusted(claim, playerId, "inventory")) levels.add(TrustLevel.CONTAINERS);
         if (isTrusted(claim, playerId, "access")) levels.add(TrustLevel.ACCESS);
+
+        // If claim is a subclaim, also inherit trust from parent claim
+        if (levels.isEmpty()) {
+            Object parent = getParentClaim(claim).orElse(null);
+            if (parent != null && parent != claim) {
+                if (isTrusted(parent, playerId, "manager")) levels.add(TrustLevel.MANAGE);
+                if (isTrusted(parent, playerId, "build")) levels.add(TrustLevel.BUILD);
+                if (isTrusted(parent, playerId, "inventory")) levels.add(TrustLevel.CONTAINERS);
+                if (isTrusted(parent, playerId, "access")) levels.add(TrustLevel.ACCESS);
+            }
+        }
         return levels;
     }
 
