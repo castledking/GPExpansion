@@ -4351,7 +4351,7 @@ public class GPBridge {
         EnumSet<TrustLevel> levels = EnumSet.noneOf(TrustLevel.class);
         if (claim == null || playerId == null) return levels;
 
-        if (isTrusted(claim, playerId, "manager")) levels.add(TrustLevel.MANAGE);
+        if (isTrusted(claim, playerId, "manager") || isTrusted(claim, playerId, "permission")) levels.add(TrustLevel.MANAGE);
         if (isTrusted(claim, playerId, "build")) levels.add(TrustLevel.BUILD);
         if (isTrusted(claim, playerId, "inventory")) levels.add(TrustLevel.CONTAINERS);
         if (isTrusted(claim, playerId, "access")) levels.add(TrustLevel.ACCESS);
@@ -4360,7 +4360,7 @@ public class GPBridge {
         if (levels.isEmpty()) {
             Object parent = getParentClaim(claim).orElse(null);
             if (parent != null && parent != claim) {
-                if (isTrusted(parent, playerId, "manager")) levels.add(TrustLevel.MANAGE);
+                if (isTrusted(parent, playerId, "manager") || isTrusted(parent, playerId, "permission")) levels.add(TrustLevel.MANAGE);
                 if (isTrusted(parent, playerId, "build")) levels.add(TrustLevel.BUILD);
                 if (isTrusted(parent, playerId, "inventory")) levels.add(TrustLevel.CONTAINERS);
                 if (isTrusted(parent, playerId, "access")) levels.add(TrustLevel.ACCESS);
@@ -4603,6 +4603,41 @@ public class GPBridge {
                 return players;
             }
         }
+
+        // GP3D fallback: read managers field or call getPermissions
+        String lowerType = trustType.toLowerCase(Locale.ROOT);
+        try {
+            if ("manage".equals(lowerType) || "permission".equals(lowerType)) {
+                Field managersField = claim.getClass().getField("managers");
+                Object managersObj = managersField.get(claim);
+                if (managersObj instanceof Collection) {
+                    players.addAll(normalizeTrustedEntries(managersObj));
+                }
+            } else {
+                Method getPerms;
+                try {
+                    getPerms = claim.getClass().getMethod("getPermissions", ArrayList.class, ArrayList.class, ArrayList.class, ArrayList.class);
+                } catch (NoSuchMethodException e) {
+                    getPerms = null;
+                }
+                if (getPerms != null) {
+                    ArrayList<String> builders = new ArrayList<>();
+                    ArrayList<String> containers = new ArrayList<>();
+                    ArrayList<String> accessors = new ArrayList<>();
+                    ArrayList<String> managers = new ArrayList<>();
+                    getPerms.invoke(claim, builders, containers, accessors, managers);
+                    Collection<String> raw;
+                    switch (lowerType) {
+                        case "build": raw = builders; break;
+                        case "container":
+                        case "inventory": raw = containers; break;
+                        case "access": raw = accessors; break;
+                        default: raw = Collections.emptyList();
+                    }
+                    players.addAll(normalizeTrustedEntries(raw));
+                }
+            }
+        } catch (Exception ignored) {}
 
         return players;
     }
@@ -4878,7 +4913,7 @@ public class GPBridge {
                     Method getTrust = claim.getClass().getMethod(methodName);
                     Object trusted = getTrust.invoke(claim);
                     if (trusted instanceof Collection) {
-                        return ((Collection<?>) trusted).contains(playerId);
+                        return normalizeTrustedEntries(trusted).contains(playerId);
                     }
                     return false; // Method exists but doesn't return a collection
                 } catch (NoSuchMethodException e) {
@@ -4890,11 +4925,26 @@ public class GPBridge {
                 }
             }
             
-            // If we get here, no method was found
-            if (DEBUG && lastException != null) {
+            // If we get here, no method was found — try GP3D hasExplicitPermission(UUID, ClaimPermission)
+            if (lastException != null) {
                 try {
-                    Bukkit.getLogger().warning("Trust method not found for type: " + trustType);
-                } catch (Throwable ignored) {}
+                    ClassLoader cl = claim.getClass().getClassLoader();
+                    Class<?> permClass = cl.loadClass("me.ryanhamshire.GriefPrevention.ClaimPermission");
+                    String permName = mapTrustTypeToClaimPermission(trustType);
+                    if (permName != null) {
+                        for (Object c : permClass.getEnumConstants()) {
+                            if (c != null && c.toString().equals(permName)) {
+                                Method hasPerm = claim.getClass().getMethod("hasExplicitPermission", UUID.class, permClass);
+                                return (boolean) hasPerm.invoke(claim, playerId, c);
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+                if (DEBUG) {
+                    try {
+                        Bukkit.getLogger().warning("Trust method not found for type: " + trustType);
+                    } catch (Throwable ignored) {}
+                }
             }
         } catch (Exception e) {
             if (DEBUG) {
@@ -4906,6 +4956,23 @@ public class GPBridge {
         return false;
     }
     
+    private static String mapTrustTypeToClaimPermission(String trustType) {
+        switch (trustType.toLowerCase(Locale.ROOT)) {
+            case "manage":
+            case "permission":
+                return "Manage";
+            case "build":
+                return "Build";
+            case "container":
+            case "inventory":
+                return "Container";
+            case "access":
+                return "Access";
+            default:
+                return null;
+        }
+    }
+
     /**
      * Simple data class to hold claim corner coordinates
      */
