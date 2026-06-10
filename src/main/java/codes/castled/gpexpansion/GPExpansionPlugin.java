@@ -732,6 +732,11 @@ public final class GPExpansionPlugin extends JavaPlugin {
         if (permissionManager != null) {
             permissionManager.reload();
         }
+
+        // Reload sign limit config and clear cached limits
+        if (signLimitManager != null) {
+            signLimitManager.reloadConfig();
+        }
     }
 
     public codes.castled.gpexpansion.permission.PermissionManager getPermissionManager() {

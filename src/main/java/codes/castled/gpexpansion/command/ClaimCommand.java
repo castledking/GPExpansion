@@ -1722,6 +1722,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 }
             } else {
                 claim = claimOpt.get();
+                // Check if player is in a subclaim - some GP forks return the parent claim
+                // even when the player is standing inside a subdivision
+                Optional<Object> subclaim = findSubclaimAt(claim, player.getLocation());
+                if (subclaim.isPresent()) {
+                    claim = subclaim.get();
+                }
             }
         }
 
@@ -1748,6 +1754,15 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
 
         return Optional.of(new ClaimContext(mainClaim, claimId, mainClaimId));
+    }
+
+    private Optional<Object> findSubclaimAt(Object parentClaim, Location location) {
+        for (Object sub : gp.getSubclaims(parentClaim)) {
+            if (gp.claimContains(sub, location.getWorld(), location.getBlockX(), location.getBlockY(), location.getBlockZ())) {
+                return Optional.of(sub);
+            }
+        }
+        return Optional.empty();
     }
 
     private boolean validateRentEvictionStanding(CommandSender sender, Player player, ClaimContext ctx) {
