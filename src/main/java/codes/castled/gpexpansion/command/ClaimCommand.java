@@ -26,6 +26,7 @@ import codes.castled.gpexpansion.storage.ClaimDataStore;
 import codes.castled.gpexpansion.util.ClaimCustomizationUtil;
 import codes.castled.gpexpansion.util.SafeTeleportUtil;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -1530,8 +1531,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                     .orElse(false);
 
             if (insideClaim) {
-                Optional<Location> eject = gp.getClaimCenter(ctx.mainClaim);
-                eject.ifPresent(location -> plugin.getSchedulerFacade().teleportEntity(target, location));
+                ejectFromClaim(target, ctx.mainClaim);
             }
         }
 
@@ -3646,5 +3646,102 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             }
         }
         return new ArrayList<>();
+    }
+
+    private void ejectFromClaim(Player target, Object claim) {
+        try {
+            boolean folia = codes.castled.gpexpansion.scheduler.SchedulerAdapter.isFolia();
+            Object main = claim;
+            try {
+                Method getParent = claim.getClass().getMethod("getParentClaim");
+                Object p = getParent.invoke(claim);
+                if (p != null && p != claim) main = p;
+            } catch (NoSuchMethodException ignored) {}
+
+            Method getWorldMethod = main.getClass().getMethod("getWorld");
+            org.bukkit.World claimWorld = (org.bukkit.World) getWorldMethod.invoke(main);
+            if (claimWorld == null || target.getWorld() == null) return;
+            if (!target.getWorld().getUID().equals(claimWorld.getUID())) return;
+
+            Optional<GPBridge.ClaimCorners> optCorners = gp.getClaimCorners(main);
+            if (!optCorners.isPresent()) return;
+            GPBridge.ClaimCorners c = optCorners.get();
+
+            Location loc = target.getLocation();
+            if (loc == null) return;
+
+            int x = loc.getBlockX(), z = loc.getBlockZ();
+            int minX = Math.min(c.x1, c.x2);
+            int maxX = Math.max(c.x1, c.x2);
+            int minZ = Math.min(c.z1, c.z2);
+            int maxZ = Math.max(c.z1, c.z2);
+
+            int dx = Math.min(Math.abs(x - minX), Math.abs(maxX - x));
+            int dz = Math.min(Math.abs(z - minZ), Math.abs(maxZ - z));
+            int tx = x, tz = z;
+            if (dx <= dz) {
+                if (Math.abs(x - minX) <= Math.abs(maxX - x)) tx = minX - 1; else tx = maxX + 1;
+            } else {
+                if (Math.abs(z - minZ) <= Math.abs(maxZ - z)) tz = minZ - 1; else tz = maxZ + 1;
+            }
+
+            final int ftx = tx, ftz = tz;
+            int py = loc.getBlockY();
+
+            if (!folia) {
+                Location dest = findSafeLocation(target.getWorld(), ftx, ftz, py);
+                if (dest == null) {
+                    dest = new Location(target.getWorld(), ftx + 0.5,
+                        target.getWorld().getHighestBlockYAt(ftx, ftz) + 1, ftz + 0.5);
+                }
+                plugin.getSchedulerFacade().teleportEntity(target, dest);
+            } else {
+                Location base = new Location(target.getWorld(), ftx + 0.5, py, ftz + 0.5);
+                codes.castled.gpexpansion.scheduler.SchedulerAdapter.runAtLocation(plugin, base, () -> {
+                    Location dest = findSafeLocation(target.getWorld(), ftx, ftz, py);
+                    if (dest == null) {
+                        int y = target.getWorld().getHighestBlockYAt(ftx, ftz) + 1;
+                        dest = new Location(target.getWorld(), ftx + 0.5, y, ftz + 0.5);
+                    }
+                    plugin.getSchedulerFacade().teleportEntity(target, dest);
+                });
+            }
+        } catch (ReflectiveOperationException ignored) {}
+    }
+
+    private Location findSafeLocation(org.bukkit.World world, int x, int z, int startY) {
+        int minY = world.getMinHeight();
+        int maxY = world.getMaxHeight();
+        for (int dy = 0; dy <= 20; dy++) {
+            int checkY = startY - dy;
+            if (checkY >= minY) {
+                Location safe = checkSafeAt(world, x, checkY, z);
+                if (safe != null) return safe;
+            }
+            checkY = startY + dy;
+            if (checkY < maxY - 1) {
+                Location safe = checkSafeAt(world, x, checkY, z);
+                if (safe != null) return safe;
+            }
+        }
+        int seaLevel = world.getSeaLevel();
+        for (int y = seaLevel; y < maxY - 1; y++) {
+            Location safe = checkSafeAt(world, x, y, z);
+            if (safe != null) return safe;
+        }
+        return null;
+    }
+
+    private Location checkSafeAt(org.bukkit.World world, int x, int y, int z) {
+        org.bukkit.block.Block feet = world.getBlockAt(x, y, z);
+        org.bukkit.block.Block head = world.getBlockAt(x, y + 1, z);
+        org.bukkit.block.Block ground = world.getBlockAt(x, y - 1, z);
+        boolean feetOk = !feet.getType().isSolid() || feet.getType() == org.bukkit.Material.WATER;
+        boolean headOk = !head.getType().isSolid() || head.getType() == org.bukkit.Material.WATER;
+        boolean groundOk = ground.getType().isSolid() || ground.getType() == org.bukkit.Material.WATER;
+        if (feetOk && headOk && groundOk) {
+            return new Location(world, x + 0.5, y, z + 0.5);
+        }
+        return null;
     }
 }

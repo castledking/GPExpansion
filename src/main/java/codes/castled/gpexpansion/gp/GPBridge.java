@@ -4144,16 +4144,16 @@ public class GPBridge {
             Object greater = getGreater.invoke(claim);
             
             Method getX = lesser.getClass().getMethod("getX");
-            Method getY = lesser.getClass().getMethod("getY");
             Method getZ = lesser.getClass().getMethod("getZ");
             
             int x1 = ((Number) getX.invoke(lesser)).intValue();
-            int y1 = ((Number) getY.invoke(lesser)).intValue();
             int z1 = ((Number) getZ.invoke(lesser)).intValue();
             
             int x2 = ((Number) getX.invoke(greater)).intValue();
-            int y2 = ((Number) getY.invoke(greater)).intValue();
             int z2 = ((Number) getZ.invoke(greater)).intValue();
+            
+            int y1 = getClaimMinY(claim);
+            int y2 = getClaimMaxY(claim);
             
             return Optional.of(new ClaimCorners(x1, y1, z1, x2, y2, z2));
         } catch (ReflectiveOperationException e) {
@@ -4859,6 +4859,30 @@ public class GPBridge {
             if (DEBUG) e.printStackTrace();
         }
         return false;
+    }
+
+    public int getClaimMinY(Object claim) {
+        return getClaimY(claim, "getMinY", "getMinimumY", "getMinHeight", 0);
+    }
+
+    public int getClaimMaxY(Object claim) {
+        return getClaimY(claim, "getMaxY", "getMaximumY", "getMaxHeight", 255);
+    }
+
+    private int getClaimY(Object claim, String primary, String alt1, String alt2, int fallback) {
+        if (!isAvailable() || claim == null) return fallback;
+        for (String name : new String[]{primary, alt1, alt2}) {
+            try {
+                Method m = claim.getClass().getMethod(name);
+                Object val = m.invoke(claim);
+                if (val instanceof Integer) return (Integer) val;
+                if (val instanceof Number) return ((Number) val).intValue();
+            } catch (NoSuchMethodException ignored) {
+            } catch (ReflectiveOperationException e) {
+                if (DEBUG) e.printStackTrace();
+            }
+        }
+        return fallback;
     }
 
     /**
