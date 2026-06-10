@@ -58,14 +58,10 @@ public class BanEnforcementListener implements Listener {
 
     private boolean isWithinVerticalBounds(Object claim, Location location) {
         if (claim == null || location == null) return false;
-        return gp.getClaimCorners(claim)
-                .map(corners -> {
-                    int minY = Math.min(corners.y1, corners.y2);
-                    int maxY = Math.max(corners.y1, corners.y2);
-                    int y = location.getBlockY();
-                    return y >= minY && y <= maxY;
-                })
-                .orElse(true);
+        int maxY = gp.getClaimMaxY(claim);
+        int minY = gp.getClaimMinY(claim);
+        int y = location.getBlockY();
+        return y >= minY && y <= maxY;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -286,12 +282,11 @@ public class BanEnforcementListener implements Listener {
     private Vector calculateDirectionFromClaimCenter(Location playerLoc, Object claim) {
         try {
             Object main = toMainClaim(claim);
-            Location lesser = (Location) main.getClass().getMethod("getLesserBoundaryCorner").invoke(main);
-            Location greater = (Location) main.getClass().getMethod("getGreaterBoundaryCorner").invoke(main);
-            
-            if (lesser != null && greater != null) {
-                double centerX = (lesser.getX() + greater.getX()) / 2.0;
-                double centerZ = (lesser.getZ() + greater.getZ()) / 2.0;
+            Optional<GPBridge.ClaimCorners> optCorners = gp.getClaimCorners(main);
+            if (optCorners.isPresent()) {
+                GPBridge.ClaimCorners c = optCorners.get();
+                double centerX = (c.x1 + c.x2) / 2.0;
+                double centerZ = (c.z1 + c.z2) / 2.0;
                 
                 Vector away = new Vector(playerLoc.getX() - centerX, 0, playerLoc.getZ() - centerZ);
                 if (away.lengthSquared() > 0.01) {
@@ -300,7 +295,6 @@ public class BanEnforcementListener implements Listener {
             }
         } catch (Exception ignored) {}
         
-        // Ultimate fallback - push in player's facing direction reversed
         return playerLoc.getDirection().multiply(-1).setY(0).normalize();
     }
     
@@ -352,24 +346,26 @@ public class BanEnforcementListener implements Listener {
 
     private boolean ejectFromClaim(Player target, Object claim) {
         try {
-            // Mark as being ejected immediately to block movement
             beingEjected.add(target.getUniqueId());
             
             Object main = toMainClaim(claim);
-            Location lesser = (Location) main.getClass().getMethod("getLesserBoundaryCorner").invoke(main);
-            Location greater = (Location) main.getClass().getMethod("getGreaterBoundaryCorner").invoke(main);
-            if (lesser == null || greater == null) {
+            Method getWorldMethod = main.getClass().getMethod("getWorld");
+            org.bukkit.World claimWorld = (org.bukkit.World) getWorldMethod.invoke(main);
+            if (claimWorld == null) {
                 beingEjected.remove(target.getUniqueId());
                 return false;
             }
-            if (target.getWorld() == null || lesser.getWorld() == null) {
+            if (target.getWorld() == null || !target.getWorld().getUID().equals(claimWorld.getUID())) {
                 beingEjected.remove(target.getUniqueId());
                 return false;
             }
-            if (!target.getWorld().getUID().equals(lesser.getWorld().getUID())) {
+
+            Optional<GPBridge.ClaimCorners> optCorners = gp.getClaimCorners(main);
+            if (!optCorners.isPresent()) {
                 beingEjected.remove(target.getUniqueId());
                 return false;
             }
+            GPBridge.ClaimCorners c = optCorners.get();
 
             Location targetLoc = target.getLocation();
             if (targetLoc == null) {
@@ -379,10 +375,10 @@ public class BanEnforcementListener implements Listener {
 
             int x = targetLoc.getBlockX();
             int z = targetLoc.getBlockZ();
-            int minX = Math.min(lesser.getBlockX(), greater.getBlockX());
-            int maxX = Math.max(lesser.getBlockX(), greater.getBlockX());
-            int minZ = Math.min(lesser.getBlockZ(), greater.getBlockZ());
-            int maxZ = Math.max(lesser.getBlockZ(), greater.getBlockZ());
+            int minX = Math.min(c.x1, c.x2);
+            int maxX = Math.max(c.x1, c.x2);
+            int minZ = Math.min(c.z1, c.z2);
+            int maxZ = Math.max(c.z1, c.z2);
 
             int dx = Math.min(Math.abs(x - minX), Math.abs(maxX - x));
             int dz = Math.min(Math.abs(z - minZ), Math.abs(maxZ - z));

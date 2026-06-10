@@ -205,8 +205,13 @@ public class ClaimCommandAddonImpl {
                 break;
             case "ban":
             case "unban":
-                if (args != null && args.length == 2) out.add("<player>");
-                if (args != null && args.length == 3) out.add("[claimId]");
+            case "banlist":
+                if ("ban".equals(sub) || "unban".equals(sub)) {
+                    if (args != null && args.length == 2) out.add("<player>");
+                    if (args != null && args.length == 3) out.add("[claimId]");
+                } else {
+                    if (args != null && args.length == 1) out.add("[claimId]");
+                }
                 break;
             case "transfer":
                 if (args != null && args.length == 1) out.add("<player>");
@@ -284,6 +289,7 @@ public class ClaimCommandAddonImpl {
         if (sender.hasPermission("griefprevention.claim.ban")) {
             out.add("ban");
             out.add("unban");
+            out.add("banlist");
         }
         if (sender.hasPermission("griefprevention.evict")) {
             out.add("evict");
