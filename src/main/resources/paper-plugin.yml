@@ -138,7 +138,7 @@ permissions:
   griefprevention.claim.name.anywhere:
     description: Allows using /claim name outside own claims
     default: op
-  
+
   griefprevention.claim.name.other:
     description: Allows using /claim name on other claims
     default: op
@@ -515,14 +515,6 @@ permissions:
 
   griefprevention.claim.gui.options.other:
     description: Allows admins to open the options GUI for other players' claims
-    default: op
-
-  gpflags.command.setclaimflag:
-    description: Allows using GPFlags claim flag commands
-    default: op
-
-  gpflags.flag.*:
-    description: Allows toggling any GPFlags flag
     default: op
 
   griefprevention.claim.gui.globallist:
