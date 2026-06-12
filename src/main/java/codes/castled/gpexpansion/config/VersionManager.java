@@ -223,9 +223,12 @@ public class VersionManager {
             loadConfig();
         }
 
-        // Always check for leftover old-structure indicators even if version matches (partial migration fixup)
-        ensureVersion112Structure();
-        loadConfig();
+        // Only run structural fixup if the version is older than 1.1.2 (handles partial migrations).
+        // If the version is already 1.1.2, skip to avoid creating unnecessary backups on every restart.
+        if (isVersionOlder(currentConfigVersion, "1.1.2")) {
+            ensureVersion112Structure();
+            loadConfig();
+        }
 
         // Auto-bump version if no migrations needed and version is older than project version
         // Only auto-bump if player-commands section exists (to avoid bumping before migration)

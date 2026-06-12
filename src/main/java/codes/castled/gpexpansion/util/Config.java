@@ -247,6 +247,10 @@ public class Config {
         if (ensurePlayerCommandsPositionInFile()) {
             config = YamlConfiguration.loadConfiguration(configFile);
         }
+
+        // Keep the JavaPlugin's internal config in sync so that plugin.saveConfig()
+        // (used by VersionManager) does not overwrite values we just saved.
+        plugin.reloadConfig();
     }
 
     /**
