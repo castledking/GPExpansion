@@ -2819,14 +2819,18 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             targetPlayer = (Player) sender;
         }
         
-        // Find the claim
+        // Find the claim — try by ID first, then by custom name
         Optional<Object> claimOpt = gp.findClaimById(claimId);
+        if (!claimOpt.isPresent()) {
+            claimOpt = findClaimByName(claimId, sender);
+        }
         if (!claimOpt.isPresent()) {
             sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", claimId));
             return true;
         }
         
         Object claim = claimOpt.get();
+        claimId = gp.getClaimId(claim).orElse(claimId);
         
         // Get claim bounds for safe teleport search
         int searchRadius = gp.getClaimSearchRadius(claim);
@@ -2864,6 +2868,65 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         return true;
     }
     
+    /**
+     * Find a claim by its custom name.
+     * Supports "playerName:claimName" syntax (gated behind teleport.other).
+     */
+    private Optional<Object> findClaimByName(String name, CommandSender sender) {
+        // For "playerName:claimName" syntax
+        if (name.contains(":")) {
+            if (!sender.hasPermission("griefprevention.claim.teleport.other")) {
+                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                return Optional.empty();
+            }
+            String[] parts = name.split(":", 2);
+            String playerName = parts[0];
+            String claimName = parts[1];
+            @SuppressWarnings("deprecation")
+            OfflinePlayer owner = Bukkit.getOfflinePlayerIfCached(playerName);
+            if (owner == null) {
+                for (OfflinePlayer op : Bukkit.getOfflinePlayers()) {
+                    if (op.getName() != null && op.getName().equalsIgnoreCase(playerName)) {
+                        owner = op;
+                        break;
+                    }
+                }
+            }
+            if (owner == null || !owner.hasPlayedBefore()) {
+                return Optional.empty();
+            }
+            return findClaimByNameFor(claimName, owner.getUniqueId());
+        }
+        // Self lookup
+        if (sender instanceof Player player) {
+            Optional<Object> match = findClaimByNameFor(name, player.getUniqueId());
+            if (match.isPresent()) return match;
+        }
+        // All-claims lookup (requires .other)
+        if (sender.hasPermission("griefprevention.claim.teleport.other")) {
+            return findClaimByNameFor(name, null);
+        }
+        return Optional.empty();
+    }
+
+    private Optional<Object> findClaimByNameFor(String name, UUID ownerId) {
+        java.util.List<Object> claims;
+        if (ownerId != null) {
+            claims = gp.getClaimsFor(ownerId);
+        } else {
+            claims = gp.getAllClaims();
+        }
+        for (Object claim : claims) {
+            String claimId = gp.getClaimId(claim).orElse(null);
+            if (claimId == null) continue;
+            Optional<String> customName = plugin.getClaimDataStore().getCustomName(claimId);
+            if (customName.isPresent() && customName.get().equalsIgnoreCase(name)) {
+                return Optional.of(claim);
+            }
+        }
+        return Optional.empty();
+    }
+
     private void sendTeleportMessages(CommandSender sender, Player targetPlayer, String claimId) {
         // Get claim name with color support (falls back to claimId if no custom name)
         String claimName = plugin.getClaimDataStore().getCustomName(claimId).orElse(claimId);
@@ -3261,6 +3324,8 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             // GUI commands
             if (sub.equals("gui.globallist")) return "globallist";
             if (sub.equals("gui.setclaimflag.own")) return null; // GUI command, not tab-completed
+            if (sub.equals("gui.flags")) return "flags";
+            if (sub.equals("gui.options")) return "options";
             
             // Color/format permissions don't map to commands (used for name/desc formatting)
             if (sub.startsWith("color.") || sub.startsWith("format.")) return null;
@@ -3305,9 +3370,28 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             if (args.length <= 1) {
                 String prefix = args.length == 1 ? args[0] : "";
                 if (!(sender instanceof Player)) return Collections.emptyList();
+                Player player = (Player) sender;
                 List<String> ids = new ArrayList<>();
-                for (Object claim : gp.getClaimsFor((Player) sender)) {
-                    gp.getClaimId(claim).ifPresent(id -> ids.add(id));
+                for (Object claim : gp.getClaimsFor(player)) {
+                    gp.getClaimId(claim).ifPresent(id -> {
+                        ids.add(id);
+                        // Also add custom name if present
+                        plugin.getClaimDataStore().getCustomName(id).ifPresent(name -> {
+                            if (!ids.contains(name)) ids.add(name);
+                        });
+                    });
+                }
+                // If teleport.other, include other players' named claims too
+                if (sender.hasPermission("griefprevention.claim.teleport.other")) {
+                    for (Object claim : gp.getAllClaims()) {
+                        String cid = gp.getClaimId(claim).orElse(null);
+                        if (cid != null && !ids.contains(cid)) {
+                            ids.add(cid);
+                            plugin.getClaimDataStore().getCustomName(cid).ifPresent(name -> {
+                                if (!ids.contains(name)) ids.add(name);
+                            });
+                        }
+                    }
                 }
                 return ids.stream()
                     .filter(id -> id.toLowerCase().startsWith(prefix.toLowerCase()))
@@ -3567,7 +3651,34 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                     return new ArrayList<>();
                 case "tp":
                 case "teleport":
-                    if (args.length == 2) return Collections.singletonList("<claimId>");
+                    if (args.length == 2) {
+                        if (!(sender instanceof Player)) return Collections.singletonList("<claimId>");
+                        Player p = (Player) sender;
+                        List<String> suggestions = new ArrayList<>();
+                        for (Object claim : gp.getClaimsFor(p)) {
+                            gp.getClaimId(claim).ifPresent(id -> {
+                                suggestions.add(id);
+                                plugin.getClaimDataStore().getCustomName(id).ifPresent(name -> {
+                                    if (!suggestions.contains(name)) suggestions.add(name);
+                                });
+                            });
+                        }
+                        if (sender.hasPermission("griefprevention.claim.teleport.other")) {
+                            for (Object claim : gp.getAllClaims()) {
+                                String cid = gp.getClaimId(claim).orElse(null);
+                                if (cid != null && !suggestions.contains(cid)) {
+                                    suggestions.add(cid);
+                                    plugin.getClaimDataStore().getCustomName(cid).ifPresent(name -> {
+                                        if (!suggestions.contains(name)) suggestions.add(name);
+                                    });
+                                }
+                            }
+                        }
+                        return suggestions.stream()
+                            .filter(s -> s.toLowerCase(Locale.ROOT).startsWith(args[1].toLowerCase(Locale.ROOT)))
+                            .sorted()
+                            .collect(Collectors.toList());
+                    }
                     if (args.length == 3) return Bukkit.getOnlinePlayers().stream().map(Player::getName).collect(Collectors.toList());
                     return new ArrayList<>();
                 case "setspawn":

@@ -18,7 +18,6 @@ messages:
   # Example: "Missing: griefprevention.sign.rent.money"
   show-permission-details: true
 
-
 # =============================================================================
 # Claim Blocks and Accruals
 # =============================================================================
@@ -59,7 +58,6 @@ accruals:
     world: 1.0
     world_nether: 0.5
     world_the_end: 0.5
-
 
 # =============================================================================
 # Commands and Dynamic Player Permissions
@@ -103,6 +101,9 @@ player-commands:
   - claim.toggleglobal
   - claim.toggleglobal.anywhere
   - claim.toggleglobal.1
+  - claim.gui.return
+  - claim.gui.flags
+  - claim.gui.options
   - claim.color.black
   - claim.color.dark_blue
   - claim.color.dark_green
@@ -128,7 +129,6 @@ permission-tracking:
   enabled: true
   # How often to check for permission changes, in minutes.
   check-interval: 5
-
 
 # =============================================================================
 # Signs
@@ -313,7 +313,6 @@ signs:
       count-unlisted-claims: true
       bypass-permission: griefprevention.claim.global.limit.bypass
 
-
 # =============================================================================
 # Claim Listing and Global Claims
 # =============================================================================
@@ -339,7 +338,6 @@ global-claims:
   max-description-length: 256
   teleport-requires-safe-spawn: true
   public-signs-set-spawn: true
-
 
 # =============================================================================
 # Claim Teleport
@@ -368,7 +366,6 @@ teleport:
     cooldown-permission: griefprevention.claim.teleport.bypass.cooldown
     delay-permission: griefprevention.claim.teleport.bypass.delay
 
-
 # =============================================================================
 # Claim Flight
 # =============================================================================
@@ -396,7 +393,6 @@ claim-flight:
     builder: true
     container: false
     access: false
-
 
 # =============================================================================
 # Claim Names, Descriptions, Icons, and Moderation
@@ -428,7 +424,6 @@ claim-customization:
     public-ban-permission: griefprevention.claim.ban.public
     admin-bypass-permission: griefprevention.admin
 
-
 # =============================================================================
 # GUI
 # =============================================================================
@@ -436,7 +431,6 @@ claim-customization:
 gui:
   # Enable GUI mode for /claim.
   enabled: true
-
 
 # =============================================================================
 # Economy and Tax
@@ -464,7 +458,6 @@ tax:
     enabled: false
     retain-days: 90
 
-
 # =============================================================================
 # Eviction
 # =============================================================================
@@ -484,7 +477,6 @@ eviction:
   restore-snapshot-on-evict: false
   remove-renter-trust-on-start: false
   remove-renter-trust-on-complete: true
-
 
 # =============================================================================
 # Snapshots and Rental Restoration
@@ -508,7 +500,6 @@ snapshots:
   compression: true
   async-restore: true
   max-blocks-per-tick: 5000
-
 
 # =============================================================================
 # Integrations
