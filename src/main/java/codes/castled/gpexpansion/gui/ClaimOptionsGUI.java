@@ -177,7 +177,8 @@ public class ClaimOptionsGUI extends BaseGUI {
             return createItemFromConfig("items.trust", placeholders);
         }
 
-        ItemStack skull = createPlayerSkull(player.getName());
+        String ownerName = getOwnerName();
+        ItemStack skull = createPlayerSkull(ownerName);
         List<String> lore = new ArrayList<>();
         lore.add("&7Review trust on this claim.");
         lore.add("");
@@ -221,6 +222,7 @@ public class ClaimOptionsGUI extends BaseGUI {
 
         Map<String, String> placeholders = new HashMap<>();
         placeholders.put("{children}", String.valueOf(childCount));
+        placeholders.put("{count}", String.valueOf(childCount));
 
         if (config != null && config.contains("items.view-children")) {
             return createItemFromConfig("items.view-children", placeholders);
