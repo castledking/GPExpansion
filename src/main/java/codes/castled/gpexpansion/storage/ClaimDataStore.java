@@ -8,6 +8,9 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
+import me.ryanhamshire.GriefPrevention.Claim;
+import me.ryanhamshire.GriefPrevention.GriefPrevention;
+import org.bukkit.command.CommandSender;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -29,6 +32,24 @@ public class ClaimDataStore {
     
     // In-memory cache
     private final Map<String, ClaimData> claimData = new HashMap<>();
+
+    /**
+     * Resolve a claim ID string to a GP3D Claim object.
+     *
+     * @param claimId the claim ID as a string
+     * @return the Claim, or null if not found or GP3D is not loaded
+     */
+    private Claim resolveClaim(String claimId) {
+        if (GriefPrevention.instance == null || GriefPrevention.instance.dataStore == null) {
+            return null;
+        }
+        try {
+            long id = Long.parseLong(claimId);
+            return GriefPrevention.instance.dataStore.getClaim(id);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
     
     public static class ClaimData {
         // Basic claim info
@@ -813,10 +834,20 @@ public class ClaimDataStore {
     }
     
     public void setPublicListed(String claimId, boolean listed) {
+        setPublicListed(claimId, listed, null);
+    }
+
+    public void setPublicListed(String claimId, boolean listed, @org.jetbrains.annotations.Nullable CommandSender actor) {
+        boolean oldListed = isPublicListed(claimId);
         ClaimData data = get(claimId);
         data.publicListed = listed;
         if (listed) {
             data.globalApprovalPending = false;
+        }
+        Claim claim = resolveClaim(claimId);
+        if (claim != null) {
+            Bukkit.getPluginManager().callEvent(
+                new codes.castled.gpexpansion.events.ClaimGlobalListedEvent(claim, oldListed, listed, actor));
         }
     }
 
@@ -852,13 +883,23 @@ public class ClaimDataStore {
     }
     
     public void setIcon(String claimId, Material icon) {
+        setIcon(claimId, icon, null);
+    }
+
+    public void setIcon(String claimId, Material icon, @org.jetbrains.annotations.Nullable CommandSender actor) {
+        Material oldIcon = getIcon(claimId).orElse(null);
         ClaimData data = get(claimId);
         if (icon == null || icon == Material.AIR) {
             data.iconHistory.clear();
             data.icon = null;
-            return;
+        } else {
+            pushRecentIcon(data, icon);
         }
-        pushRecentIcon(data, icon);
+        Claim claim = resolveClaim(claimId);
+        if (claim != null) {
+            Bukkit.getPluginManager().callEvent(
+                new codes.castled.gpexpansion.events.ClaimIconChangedEvent(claim, oldIcon, icon, actor));
+        }
     }
 
     public Optional<Material> cycleIcon(String claimId) {
@@ -943,11 +984,21 @@ public class ClaimDataStore {
     }
     
     public void setDescription(String claimId, String description) {
+        setDescription(claimId, description, null);
+    }
+
+    public void setDescription(String claimId, String description, @org.jetbrains.annotations.Nullable CommandSender actor) {
+        String oldDescription = getDescription(claimId).orElse(null);
         int maxDescriptionLength = plugin.getConfigManager().getClaimDescriptionMaxLength();
         if (description != null && description.length() > maxDescriptionLength) {
             description = description.substring(0, maxDescriptionLength);
         }
         get(claimId).description = description;
+        Claim claim = resolveClaim(claimId);
+        if (claim != null) {
+            Bukkit.getPluginManager().callEvent(
+                new codes.castled.gpexpansion.events.ClaimDescriptionChangedEvent(claim, oldDescription, description, actor));
+        }
     }
     
     public Optional<String> getCustomName(String claimId) {
@@ -956,7 +1007,17 @@ public class ClaimDataStore {
     }
     
     public void setCustomName(String claimId, String name) {
+        setCustomName(claimId, name, null);
+    }
+
+    public void setCustomName(String claimId, String name, @org.jetbrains.annotations.Nullable CommandSender actor) {
+        String oldName = getCustomName(claimId).orElse(null);
         get(claimId).customName = truncateCustomName(name);
+        Claim claim = resolveClaim(claimId);
+        if (claim != null) {
+            Bukkit.getPluginManager().callEvent(
+                new codes.castled.gpexpansion.events.ClaimRenamedEvent(claim, oldName, name, actor));
+        }
     }
 
     private String truncateCustomName(String name) {
@@ -1024,6 +1085,10 @@ public class ClaimDataStore {
     }
     
     public void addBannedPlayer(String claimId, UUID player) {
+        addBannedPlayer(claimId, player, null);
+    }
+
+    public void addBannedPlayer(String claimId, UUID player, @org.jetbrains.annotations.Nullable CommandSender actor) {
         BanData bans = get(claimId).bans;
         bans.bannedPlayers.add(player);
         try {
@@ -1032,12 +1097,26 @@ public class ClaimDataStore {
                 bans.playerNames.put(player, name);
             }
         } catch (Throwable ignored) {}
+        Claim claim = resolveClaim(claimId);
+        if (claim != null) {
+            Bukkit.getPluginManager().callEvent(
+                new codes.castled.gpexpansion.events.ClaimBanChangedEvent(claim, player, true, actor));
+        }
     }
     
     public void removeBannedPlayer(String claimId, UUID player) {
+        removeBannedPlayer(claimId, player, null);
+    }
+
+    public void removeBannedPlayer(String claimId, UUID player, @org.jetbrains.annotations.Nullable CommandSender actor) {
         BanData bans = get(claimId).bans;
         bans.bannedPlayers.remove(player);
         bans.playerNames.remove(player);
+        Claim claim = resolveClaim(claimId);
+        if (claim != null) {
+            Bukkit.getPluginManager().callEvent(
+                new codes.castled.gpexpansion.events.ClaimBanChangedEvent(claim, player, false, actor));
+        }
     }
     
     public Set<UUID> getBannedPlayers(String claimId) {
@@ -1196,11 +1275,31 @@ public class ClaimDataStore {
     }
     
     public void setSpawn(String claimId, Location location) {
+        setSpawn(claimId, location, null);
+    }
+
+    public void setSpawn(String claimId, Location location, @org.jetbrains.annotations.Nullable CommandSender actor) {
+        Location oldSpawn = getSpawn(claimId).orElse(null);
         get(claimId).spawn = location;
+        Claim claim = resolveClaim(claimId);
+        if (claim != null) {
+            Bukkit.getPluginManager().callEvent(
+                new codes.castled.gpexpansion.events.ClaimSpawnChangedEvent(claim, oldSpawn, location, actor));
+        }
     }
     
     public void clearSpawn(String claimId) {
+        clearSpawn(claimId, null);
+    }
+
+    public void clearSpawn(String claimId, @org.jetbrains.annotations.Nullable CommandSender actor) {
+        Location oldSpawn = getSpawn(claimId).orElse(null);
         get(claimId).spawn = null;
+        Claim claim = resolveClaim(claimId);
+        if (claim != null) {
+            Bukkit.getPluginManager().callEvent(
+                new codes.castled.gpexpansion.events.ClaimSpawnChangedEvent(claim, oldSpawn, null, actor));
+        }
     }
     
     // Utility methods

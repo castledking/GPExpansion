@@ -33,6 +33,8 @@ import java.util.Locale;
 
 public final class GPExpansionPlugin extends JavaPlugin {
 
+    private static GPExpansionPlugin instance;
+
     private codes.castled.gpexpansion.economy.EconomyManager economyManager;
     private codes.castled.gpexpansion.economy.TaxManager taxManager;
     private codes.castled.gpexpansion.sign.RentalSignManager rentalSignManager;
@@ -57,9 +59,12 @@ public final class GPExpansionPlugin extends JavaPlugin {
     private codes.castled.gpexpansion.scheduler.TaskHandle evictionDisplayTickTask;
     private ClaimFlyManager claimFlyManager;
     private codes.castled.gpexpansion.listener.ClaimFlyListener claimFlyListener;
+    private codes.castled.gpexpansion.api.ClaimMetadataService metadataService;
 
     @Override
     public void onEnable() {
+        instance = this;
+
         // Initialize config manager (handles defaults automatically)
         configManager = new codes.castled.gpexpansion.util.Config(this);
         configManager.load();
@@ -95,6 +100,9 @@ public final class GPExpansionPlugin extends JavaPlugin {
         claimDataStore = new codes.castled.gpexpansion.storage.ClaimDataStore(this);
         claimDataStore.load();
         snapshotStore = new codes.castled.gpexpansion.storage.ClaimSnapshotStore(this);
+
+        // Initialize metadata service
+        metadataService = new codes.castled.gpexpansion.api.ClaimMetadataServiceImpl(claimDataStore);
         
         // Initialize GUI manager
         guiManager = new codes.castled.gpexpansion.gui.GUIManager(this);
@@ -816,5 +824,13 @@ public final class GPExpansionPlugin extends JavaPlugin {
     
     public codes.castled.gpexpansion.permission.PermissionService getPermissionService() {
         return permissionService;
+    }
+
+    public static GPExpansionPlugin getInstance() {
+        return instance;
+    }
+
+    public codes.castled.gpexpansion.api.ClaimMetadataService getMetadataService() {
+        return metadataService;
     }
 }
