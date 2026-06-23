@@ -48,10 +48,5 @@ wiki/
 .release/old/
 .release/plans
 
-# SpigotMC release automation
-.release/node_modules/
-.release/.spigot-cookies.json
-.release/.screenshots/
-
 # Track the latest release notes pointer
 !.release/latest/
