@@ -5,7 +5,10 @@
 # <p align="center"> Extend GriefPrevention with rental signs, mailboxes, and more </p>
 
 <p align="center">
-<a href="https://discord.com/invite/pCKdCX6nYr"><img src="https://img.shields.io/badge/Discord-Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="" /></a><a href="https://github.com/castledking/GPExpansion"><img src="https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github" alt="" /></a><a href="https://github.com/castledking/GPExpansion/issues"><img src="https://img.shields.io/badge/GitHub-Issues-181717?style=for-the-badge&logo=github" alt="" /></a><a href="https://github.com/castledking/GPExpansion/wiki"><img src="https://img.shields.io/badge/GitHub-Wiki-181717?style=for-the-badge&logo=github" alt="" /></a>
+    <a href="https://modrinth.com/plugin/gpexpansion"><img alt="Download on Modrinth" src="https://img.shields.io/badge/Download%20on-Modrinth-1bd96a?style=for-the-badge&logo=modrinth&logoColor=white"></a>
+    <a href="https://discord.com/invite/pCKdCX6nYr"><img src="https://img.shields.io/badge/Discord-Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Community" /></a>
+    <a href="https://github.com/castledking/GPExpansion/issues"><img src="https://img.shields.io/badge/GitHub-Issues-181717?style=for-the-badge&logo=github" alt="GitHub Issues" /></a>
+    <a href="https://github.com/castledking/GPExpansion/wiki"><img src="https://img.shields.io/badge/GitHub-Wiki-181717?style=for-the-badge&logo=github" alt="GitHub Wiki" /></a>
 </p>
 
 GPExpansion adds powerful features to [GriefPrevention](https://github.com/GriefPrevention/GriefPrevention) including **rental signs**, **claim mailboxes**, **global claims**, **rental snapshots**, **claim GUIs**, **sign protection**, and more — all while maintaining the self-service philosophy.
