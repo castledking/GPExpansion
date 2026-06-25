@@ -22,6 +22,7 @@ jobs:
           cache: maven
       - name: "Clone and Build GriefPrevention3D"
         run: |
+          rm -rf ~/.m2/repository/net/kyori/examination-string
           git clone https://github.com/castledking/GriefPrevention3D.git /tmp/GriefPrevention3D
           cd /tmp/GriefPrevention3D
           mvn install -DskipTests -B
