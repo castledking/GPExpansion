@@ -1,5 +1,5 @@
 <p align="center">
-<img src="https://repository-images.githubusercontent.com/1126629614/19884d9d-e1cc-40ce-88e5-774ba811e5d7" alt="" />
+<img src="https://repository-images.githubusercontent.com/1233137157/9b5b7d73-7311-4c0e-9b1b-8a78c9e13cca" alt="" />
 </p>
 
 # <p align="center"> Extend GriefPrevention with rental signs, mailboxes, and more </p>
