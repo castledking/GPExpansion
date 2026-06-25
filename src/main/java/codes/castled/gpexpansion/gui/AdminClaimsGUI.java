@@ -9,6 +9,7 @@ import org.bukkit.inventory.ItemStack;
 
 import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.util.ClaimCustomizationUtil;
+import codes.castled.gpexpansion.util.ClaimGeometryUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -130,8 +131,8 @@ public class AdminClaimsGUI extends BaseGUI {
             // Get claim details
             info.name = plugin.getClaimDataStore().getCustomName(claimId).orElse("Admin Claim #" + claimId);
             info.childCount = gp.getSubclaims(claim).size();
-            info.area = getClaimArea(claim);
-            info.location = getClaimLocation(claim);
+            info.area = ClaimGeometryUtil.getClaimArea(claim);
+            info.location = ClaimGeometryUtil.getClaimLocation(claim);
             
             // Apply filter
             if (matchesFilter(info) && matchesSearch(info)) {
@@ -165,29 +166,7 @@ public class AdminClaimsGUI extends BaseGUI {
         return plugin.getClaimDataStore().isMailbox(claimId);
     }
     
-    private int getClaimArea(Object claim) {
-        try {
-            Object lesserCorner = claim.getClass().getMethod("getLesserBoundaryCorner").invoke(claim);
-            Object greaterCorner = claim.getClass().getMethod("getGreaterBoundaryCorner").invoke(claim);
-            
-            int width = Math.abs(((Location) greaterCorner).getBlockX() - ((Location) lesserCorner).getBlockX()) + 1;
-            int length = Math.abs(((Location) greaterCorner).getBlockZ() - ((Location) lesserCorner).getBlockZ()) + 1;
-            
-            return width * length;
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-    
-    private String getClaimLocation(Object claim) {
-        try {
-            Object lesserCorner = claim.getClass().getMethod("getLesserBoundaryCorner").invoke(claim);
-            Location loc = (Location) lesserCorner;
-            return loc.getWorld().getName() + " @ " + loc.getBlockX() + ", " + loc.getBlockZ();
-        } catch (Exception e) {
-            return "Unknown";
-        }
-    }
+
     
     @Override
     public Inventory createInventory() {
