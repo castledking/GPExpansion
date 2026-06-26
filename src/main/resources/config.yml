@@ -423,6 +423,7 @@ claim-customization:
     eject-on-reload: true
     public-ban-permission: griefprevention.claim.ban.public
     admin-bypass-permission: griefprevention.admin
+    bypass-permission: griefprevention.claim.ban.bypass
 
 # =============================================================================
 # GUI
