@@ -90,6 +90,7 @@ public class Config {
         DEFAULTS.put("claim-customization.bans.eject-on-reload", true);
         DEFAULTS.put("claim-customization.bans.public-ban-permission", "griefprevention.claim.ban.public");
         DEFAULTS.put("claim-customization.bans.admin-bypass-permission", "griefprevention.admin");
+        DEFAULTS.put("claim-customization.bans.bypass-permission", "griefprevention.claim.ban.bypass");
 
         // Claim flight settings
         DEFAULTS.put("claim-flight.passive-mode", false);
@@ -1035,6 +1036,11 @@ public class Config {
     public String getClaimBanAdminBypassPermission() {
         String permission = config.getString("claim-customization.bans.admin-bypass-permission", "griefprevention.admin");
         return permission == null || permission.isBlank() ? "griefprevention.admin" : permission.trim();
+    }
+
+    public String getClaimBanBypassPermission() {
+        String permission = config.getString("claim-customization.bans.bypass-permission", "griefprevention.claim.ban.bypass");
+        return permission == null || permission.isBlank() ? "griefprevention.claim.ban.bypass" : permission.trim();
     }
 
     public boolean isGlobalTeleportSafeSpawnRequired() {

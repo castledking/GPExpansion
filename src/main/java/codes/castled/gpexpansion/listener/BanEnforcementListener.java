@@ -215,8 +215,10 @@ public class BanEnforcementListener implements Listener {
      */
     private BanCheckResult checkBanned(Player player, Location loc) {
         if (loc == null) return null;
-        String bypassPermission = plugin.getConfigManager().getClaimBanAdminBypassPermission();
-        if (!bypassPermission.isEmpty() && player.hasPermission(bypassPermission)) {
+        String adminBypass = plugin.getConfigManager().getClaimBanAdminBypassPermission();
+        String banBypass = plugin.getConfigManager().getClaimBanBypassPermission();
+        if ((!adminBypass.isEmpty() && player.hasPermission(adminBypass)) ||
+            (!banBypass.isEmpty() && player.hasPermission(banBypass))) {
             return null;
         }
         Optional<Object> oc = gp.getClaimAt(loc, player);

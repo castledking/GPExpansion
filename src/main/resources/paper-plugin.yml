@@ -205,6 +205,10 @@ permissions:
     description: Allows using /claim ban public and /claim unban public
     default: op
 
+  griefprevention.claim.ban.bypass:
+    description: Allows bypassing claim bans entirely (entry, teleport, interact)
+    default: op
+
   griefprevention.claim.unban:
     description: Allows using /claim unban
     default: true
