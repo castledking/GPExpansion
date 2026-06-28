@@ -39,14 +39,5 @@ org.eclipse.m2e.core.prefs
 .classpath
 .factorypath
 
-# Release work
-RELEASE-*.md
-CHANGES-*.md
-PLAN-*.md
-.modrinth/
+# wiki
 wiki/
-.release/old/
-.release/plans
-
-# Track the latest release notes pointer
-!.release/latest/
