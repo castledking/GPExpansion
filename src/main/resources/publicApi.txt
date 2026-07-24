@@ -1,0 +1,350 @@
+================================================================================
+ GPExpansion (GPX) - PUBLIC API FOR ADD-ON DEVELOPERS
+================================================================================
+ Repo    : https://github.com/castledking/GPExpansion
+ Requires: Paper 1.20+, Java 21, GriefPrevention3D
+ Scope   : Everything below is safe to depend on from a separate plugin.
+           Anything not listed here is internal and may change without notice.
+================================================================================
+
+
+--------------------------------------------------------------------------------
+1. DEPENDING ON GPX
+--------------------------------------------------------------------------------
+
+pom.xml:
+
+  <repositories>
+    <repository>
+      <id>jitpack.io</id>
+      <url>https://jitpack.io</url>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.github.castledking</groupId>
+      <artifactId>GPExpansion</artifactId>
+      <version>main-SNAPSHOT</version>   <!-- or a commit hash / release tag -->
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- REQUIRED at compile time. Either fork works - see "FORKS" below. -->
+    <dependency>
+      <groupId>com.github.castledking</groupId>
+      <artifactId>GriefPrevention3D</artifactId>
+      <version>18.2.7</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+Compile with Java 21 (<release>21</release>) to match GPX.
+
+You must declare the GriefPrevention dependency yourself. GPX declares it at
+<scope>provided</scope>, and provided-scope dependencies are NOT transitive, so
+nothing arrives on your classpath automatically. You need it even if your code
+never names the Claim type: several GPX signatures mention Claim, and javac
+loads the parameter types of every overload candidate during overload
+resolution. Omit it and you get:
+
+  error: cannot access me.ryanhamshire.GriefPrevention.Claim
+         class file for me.ryanhamshire.GriefPrevention.Claim not found
+
+...on an innocent-looking getName(String) call.
+
+
+FORKS - GriefPrevention3D vs upstream GriefPrevention
+
+Either satisfies the compile-time requirement. Both forks use the package
+me.ryanhamshire.GriefPrevention and register under the plugin name
+GriefPrevention, so the type references and the paper-plugin.yml block below
+are identical for both.
+
+  GP3D      com.github.castledking:GriefPrevention3D:18.2.7   (JitPack)
+  Upstream  com.griefprevention:GriefPrevention:18.0.0-SNAPSHOT
+
+GPBridge is pure reflection, so at RUNTIME it binds to whichever fork is
+actually installed - you do not compile against one and break on the other.
+GPX itself treats GriefPrevention as required: false and runs on either.
+
+Behavioural differences that reach the API are called out inline below under
+GPBridge. The short version: everything an add-on needs works on both forks.
+
+paper-plugin.yml:
+
+  dependencies:
+    server:
+      GPExpansion:
+        load: BEFORE
+        required: true
+        join-classpath: true
+
+  join-classpath: true is REQUIRED. Without it Paper's isolated classloaders
+  will not expose GPX's classes to your plugin and you will get NoClassDefFound.
+
+
+--------------------------------------------------------------------------------
+2. ENTRY POINT - codes.castled.gpexpansion.GPExpansionPlugin
+--------------------------------------------------------------------------------
+
+  static GPExpansionPlugin getInstance()
+
+    Returns the running GPX instance, or null if GPX is not loaded.
+    Prefer resolving it in onEnable() and caching it.
+
+Accessors intended for add-ons:
+
+  ClaimMetadataService getMetadataService()
+  ClaimFlyManager     getClaimFlyManager()
+  EconomyManager      getEconomyManager()
+  TaxManager          getTaxManager()
+  PermissionService   getPermissionService()
+
+The remaining getters on the plugin class (GUI managers, data stores, command
+handlers, listeners) are internal plumbing. They are public for wiring reasons
+only - do not build against them.
+
+
+--------------------------------------------------------------------------------
+3. CLAIM METADATA - codes.castled.gpexpansion.api.ClaimMetadataService
+--------------------------------------------------------------------------------
+
+Read-only access to the values players set via /claim name, /claim description
+and the claim GUIs. This is the canonical source for custom claim names.
+
+Obtain with: GPExpansionPlugin.getInstance().getMetadataService()
+
+  Optional<String>   getName(String claimId)
+  Optional<String>   getName(Claim claim)
+  Optional<String>   getDescription(String claimId)
+  Optional<String>   getDescription(Claim claim)
+  Optional<Material> getIcon(String claimId)
+  Optional<Material> getIcon(Claim claim)
+  Collection<ClaimMetadata> getAllMetadata()
+
+Notes:
+  - Prefer the String claimId overloads. They keep GP's Claim class off your
+    classpath entirely.
+  - getName / getDescription / getIcon are plain map lookups. Cheap enough to
+    call per placeholder request.
+  - getAllMetadata() walks every claim on the server. Do NOT call it on a hot
+    path - use it for periodic rebuilds only.
+  - This interface is deliberately read-only. All mutation goes through GPX
+    commands and GUIs so there is exactly one write path.
+  - Fork-independent: this data is GPX's own store, keyed by claim ID string.
+    But claim IDs are issued by whichever GP fork is installed, so metadata
+    written under one fork will not line up if you later swap forks.
+
+  record ClaimMetadata(Claim claim, String name, String description,
+                       Material icon)
+    name / description / icon are nullable when unset.
+
+
+--------------------------------------------------------------------------------
+4. GRIEFPREVENTION BRIDGE - codes.castled.gpexpansion.gp.GPBridge
+--------------------------------------------------------------------------------
+
+Version-tolerant reflective wrapper over GriefPrevention / GP3D. Claims are
+passed as Object so you never need GP on your classpath.
+
+Construct with: GPBridge gp = new GPBridge();   (public no-arg constructor)
+
+AVAILABILITY
+  boolean isAvailable()          GP is loaded and reachable
+  boolean isGP3D()               the GP3D fork is present (3D claim support)
+  String  availabilityDiag()     human-readable diagnostic string
+
+LOOKUP
+  Optional<Object> getClaimAt(Location loc)
+  Optional<Object> getClaimAt(Location loc, Player player)
+                                 player overload respects subdivision context
+  Optional<Object> findClaimById(String id)
+                                 DFS over top-level claims and all subclaims
+  List<Object>     getAllClaims()
+                                 top-level claims only; reflective scan
+  List<Object>     getClaimsFor(Player player)
+  List<Object>     getClaimsFor(UUID playerId)
+                                 claims OWNED by that player
+
+IDENTITY
+  Optional<String> getClaimId(Object claim)
+                                 numeric GP id, or a synthetic owner:corner key
+                                 on forks without ids
+  Optional<String> getClaimWorld(Object claim)
+  boolean          isOwner(Object claim, UUID playerId)
+  boolean          isAdminClaim(Object claim)
+  boolean          isSubdivision(Object claim)
+  boolean          is3DClaim(Object claim)
+  Optional<Object> getParentClaim(Object claim)
+                                 CAUTION: returns the claim ITSELF, not empty,
+                                 when it has no parent. Compare identities.
+  List<Object>     getSubclaims(Object claim)
+
+TRUST
+  enum TrustLevel { MANAGE, BUILD, CONTAINERS, ACCESS }
+
+  List<Object>  getClaimsWhereTrusted(UUID playerId)
+                                 every claim the player has any trust in.
+                                 This is the "which claims am I a resident of"
+                                 query.
+                                 INCLUDES CLAIMS THE PLAYER OWNS - owner is
+                                 short-circuited to true. Filter with isOwner()
+                                 if "resident" means non-owner to you.
+  EnumSet<TrustLevel> getTrustLevels(Object claim, UUID playerId)
+                                 empty set = no trust. Automatically inherits
+                                 from the parent claim for subdivisions.
+  Map<UUID, EnumSet<TrustLevel>> getTrustedPlayers(Object claim)
+  boolean hasBuildOrInventoryTrust(Object claim, UUID playerId)
+                                 owner counts as trusted here
+
+FORK NOTE - trust resolution
+  GP3D exposes trust as collections (getBuildTrust() and friends); GPBridge
+  reads those directly. Upstream GP has no such getters, so GPBridge falls
+  through to Claim.hasExplicitPermission(UUID, ClaimPermission), which upstream
+  does provide. All four trust levels resolve correctly on both forks.
+
+  Older GPX builds missed manager-only trust in getClaimsWhereTrusted() on
+  upstream GP: a player granted ONLY /permissiontrust was absent from the
+  result, because the "manager" key was not mapped onto ClaimPermission.Manage.
+  Build, container and access trust were unaffected. If you are pinned to an
+  older build, work around it with
+      for (Object claim : gp.getAllClaims())
+          if (!gp.getTrustLevels(claim, playerId).isEmpty()) { ... }
+  which checks the "permission" key as well and so catches managers.
+
+GEOMETRY
+  boolean          claimContains(Object claim, World w, int x, int y, int z)
+  Optional<Location> getClaimCenter(Object claim)
+  Optional<Location> getClaimCenterXZ(Object claim)
+  Optional<Location> getSafeTeleportLocation(Object claim)
+  int              getClaimArea(Object claim)
+  int[]            getClaimDimensions(Object claim)
+  int              getClaimMinY(Object claim)
+  int              getClaimMaxY(Object claim)
+
+PERFORMANCE WARNING
+  getAllClaims(), getClaimsWhereTrusted() and getClaimsFor() are reflective
+  scans over the full claim set. They are fine in a command or a periodic task,
+  and are NOT fine inside a PlaceholderAPI onRequest() - scoreboards call
+  placeholders every tick or two. Cache the result and refresh on an interval.
+
+THREAD SAFETY
+  GP's data structures are not thread-safe. Call GPBridge from the main thread.
+
+
+--------------------------------------------------------------------------------
+5. EVENTS - codes.castled.gpexpansion.events
+--------------------------------------------------------------------------------
+
+All extend ClaimValueChangedEvent<T> and fire AFTER the change is applied.
+
+  ClaimValueChangedEvent<T>        (abstract base)
+    Claim         getClaim()
+    T             getOldValue()    nullable
+    T             getNewValue()    nullable
+    CommandSender getActor()       nullable
+    boolean       isPlayerInitiated()
+
+  ClaimRenamedEvent               getOldName()        / getNewName()
+  ClaimDescriptionChangedEvent    getOldDescription() / getNewDescription()
+  ClaimIconChangedEvent           icon material change
+  ClaimSpawnChangedEvent          claim spawn point change
+  ClaimBanChangedEvent            claim ban list change
+  ClaimGlobalListedEvent          claim listed/unlisted in the global browser
+
+Use ClaimRenamedEvent to invalidate any cached display name instead of polling.
+
+
+--------------------------------------------------------------------------------
+6. PLACEHOLDERS PROVIDED BY GPX
+--------------------------------------------------------------------------------
+
+Identifier: griefprevention   (do NOT reuse this id in your own expansion)
+
+  %griefprevention_in_claim%                   yes / no
+  %griefprevention_currentclaim_claimid%
+  %griefprevention_currentclaim_claimname%     custom name, "" if unset
+  %griefprevention_claim_flight%               yes / no
+  %griefprevention_claim_flight_time%          formatted remaining duration
+
+The currentclaim_* placeholders resolve against the player's CURRENT LOCATION.
+They are intentionally location-scoped. If you want a persistent per-player
+claim (a "home" or "resident" claim shown on a nameplate), that selection is
+add-on territory: GPX cannot guess which of a player's trusted claims to pin.
+
+
+--------------------------------------------------------------------------------
+7. WORKED EXAMPLE - "RESIDENT CLAIM" ADD-ON
+--------------------------------------------------------------------------------
+
+Pattern: your plugin owns the player's CHOICE, GPX owns everything else.
+
+  private final GPBridge gp = new GPBridge();
+  private final Map<UUID, String> selection = new HashMap<>();  // persist this
+
+  // /residentclaimlist - claims this player is trusted in
+  UUID id = player.getUniqueId();
+  List<String> ids = new ArrayList<>();
+  for (Object claim : gp.getClaimsWhereTrusted(id)) {
+      if (gp.isAdminClaim(claim)) continue;
+      if (gp.isOwner(claim, id)) continue;   // drop this line if owners count
+      gp.getClaimId(claim).ifPresent(ids::add);
+  }
+
+  // Equivalent, if you also want the trust levels themselves:
+  //   for (Object claim : gp.getAllClaims())
+  //       if (!gp.getTrustLevels(claim, id).isEmpty()) { ... }
+
+  ClaimMetadataService meta = GPExpansionPlugin.getInstance().getMetadataService();
+  for (String id : ids) {
+      player.sendMessage(id + " - " + meta.getName(id).orElse("Unnamed"));
+  }
+
+  // /residentclaimdisplay <id|name> - resolve against the trusted list only,
+  // so a player can never pin a claim they have no trust in
+  String resolved = null;
+  for (String id : ids) {
+      if (id.equalsIgnoreCase(arg)) { resolved = id; break; }
+      if (meta.getName(id).filter(n -> n.equalsIgnoreCase(arg)).isPresent()) {
+          resolved = id; break;
+      }
+  }
+  if (resolved != null) selection.put(player.getUniqueId(), resolved);
+
+  // your own expansion - pick an identifier that is not "griefprevention"
+  public class ResidentExpansion extends PlaceholderExpansion {
+      @Override public String getIdentifier() { return "resident"; }
+      @Override public boolean persist() { return true; }
+
+      @Override
+      public String onRequest(OfflinePlayer player, String params) {
+          if (player == null) return "";
+          String claimId = selection.get(player.getUniqueId());
+          if (claimId == null) return "";
+
+          ClaimMetadataService meta =
+              GPExpansionPlugin.getInstance().getMetadataService();
+
+          if (params.equalsIgnoreCase("claim_name"))
+              return meta.getName(claimId).orElse("");
+          if (params.equalsIgnoreCase("claim_id"))
+              return claimId;
+          return null;
+      }
+  }
+
+  -> %resident_claim_name% now works in TAB, scoreboards and chat formats,
+     and stays put wherever the player walks.
+
+Two things to get right:
+  - Keep getClaimsWhereTrusted() out of onRequest(). Run it in the commands and
+    in a repeating task (30s+); onRequest should only do the map lookup.
+  - Trust can be revoked while a player is pinned. Re-validate on that same
+    refresh tick and clear the selection when trust is gone, or the nameplate
+    will keep advertising a claim the player was removed from.
+
+
+================================================================================
+ Questions, or something you need exposed that is not on this list?
+ Open an issue: https://github.com/castledking/GPExpansion/issues
+================================================================================
