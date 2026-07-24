@@ -4983,6 +4983,7 @@ public class GPBridge {
     private static String mapTrustTypeToClaimPermission(String trustType) {
         switch (trustType.toLowerCase(Locale.ROOT)) {
             case "manage":
+            case "manager":
             case "permission":
                 return "Manage";
             case "build":
