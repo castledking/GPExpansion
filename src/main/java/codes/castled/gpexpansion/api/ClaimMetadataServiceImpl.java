@@ -13,7 +13,7 @@ import java.util.Optional;
 /**
  * Implementation of {@link ClaimMetadataService} that delegates to internal {@code ClaimDataStore}.
  */
-public class ClaimMetadataServiceImpl implements ClaimMetadataService {
+class ClaimMetadataServiceImpl implements ClaimMetadataService {
 
     private final codes.castled.gpexpansion.storage.ClaimDataStore dataStore;
 
@@ -23,17 +23,32 @@ public class ClaimMetadataServiceImpl implements ClaimMetadataService {
 
     @Override
     public @NotNull Optional<String> getName(@NotNull Claim claim) {
-        return dataStore.getCustomName(String.valueOf(claim.getID()));
+        return getName(String.valueOf(claim.getID()));
+    }
+
+    @Override
+    public @NotNull Optional<String> getName(@NotNull String claimId) {
+        return dataStore.getCustomName(claimId);
     }
 
     @Override
     public @NotNull Optional<String> getDescription(@NotNull Claim claim) {
-        return dataStore.getDescription(String.valueOf(claim.getID()));
+        return getDescription(String.valueOf(claim.getID()));
+    }
+
+    @Override
+    public @NotNull Optional<String> getDescription(@NotNull String claimId) {
+        return dataStore.getDescription(claimId);
     }
 
     @Override
     public @NotNull Optional<Material> getIcon(@NotNull Claim claim) {
-        return dataStore.getIcon(String.valueOf(claim.getID()));
+        return getIcon(String.valueOf(claim.getID()));
+    }
+
+    @Override
+    public @NotNull Optional<Material> getIcon(@NotNull String claimId) {
+        return dataStore.getIcon(claimId);
     }
 
     @Override

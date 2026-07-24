@@ -5,6 +5,8 @@ import org.bukkit.Material;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import codes.castled.gpexpansion.storage.ClaimDataStore;
+
 import java.util.Collection;
 import java.util.Optional;
 
@@ -19,12 +21,30 @@ import java.util.Optional;
 public interface ClaimMetadataService {
 
     /**
+     * Create an instance backed by the given data store.
+     * Intended for internal use; external consumers should use
+     * {@link codes.castled.gpexpansion.GPExpansionPlugin#getMetadataService()}.
+     */
+    static ClaimMetadataService create(ClaimDataStore dataStore) {
+        return new ClaimMetadataServiceImpl(dataStore);
+    }
+
+    /**
      * Get the custom name for a claim.
      *
      * @param claim the GP3D claim
      * @return the custom name, or empty if none set
      */
     @NotNull Optional<String> getName(@NotNull Claim claim);
+
+    /**
+     * Get the custom name for a claim by ID.
+     * Use this overload when you don't have the Claim object on the classpath.
+     *
+     * @param claimId the claim ID string
+     * @return the custom name, or empty if none set
+     */
+    @NotNull Optional<String> getName(@NotNull String claimId);
 
     /**
      * Get the description for a claim.
@@ -35,12 +55,28 @@ public interface ClaimMetadataService {
     @NotNull Optional<String> getDescription(@NotNull Claim claim);
 
     /**
+     * Get the description for a claim by ID.
+     *
+     * @param claimId the claim ID string
+     * @return the description, or empty if none set
+     */
+    @NotNull Optional<String> getDescription(@NotNull String claimId);
+
+    /**
      * Get the icon material for a claim.
      *
      * @param claim the GP3D claim
      * @return the icon material, or empty if none set
      */
     @NotNull Optional<Material> getIcon(@NotNull Claim claim);
+
+    /**
+     * Get the icon material for a claim by ID.
+     *
+     * @param claimId the claim ID string
+     * @return the icon material, or empty if none set
+     */
+    @NotNull Optional<Material> getIcon(@NotNull String claimId);
 
     /**
      * Get all metadata entries.

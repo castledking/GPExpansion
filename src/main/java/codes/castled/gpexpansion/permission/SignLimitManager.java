@@ -110,7 +110,8 @@ public class SignLimitManager {
         }
         UUID uuid = player.getUniqueId();
         
-        // Check if we have a cached value and no permission override
+        // An admin-set limit (/gpx max) wins; otherwise derive from permissions every time
+        // so limits granted or revoked while the player is online take effect immediately.
         if (sellLimits.containsKey(uuid) && !permissionOverride.getOrDefault(uuid, false)) {
             return sellLimits.get(uuid);
         }
@@ -141,8 +142,6 @@ public class SignLimitManager {
             permissionOverride.put(uuid, true);
         }
         
-        // Cache the result
-        sellLimits.put(uuid, limit);
         return limit;
     }
     
@@ -155,7 +154,8 @@ public class SignLimitManager {
         }
         UUID uuid = player.getUniqueId();
         
-        // Check if we have a cached value and no permission override
+        // An admin-set limit (/gpx max) wins; otherwise derive from permissions every time
+        // so limits granted or revoked while the player is online take effect immediately.
         if (rentLimits.containsKey(uuid) && !permissionOverride.getOrDefault(uuid, false)) {
             return rentLimits.get(uuid);
         }
@@ -186,8 +186,6 @@ public class SignLimitManager {
             permissionOverride.put(uuid, true);
         }
         
-        // Cache the result
-        rentLimits.put(uuid, limit);
         return limit;
     }
     
@@ -200,7 +198,8 @@ public class SignLimitManager {
         }
         UUID uuid = player.getUniqueId();
         
-        // Check if we have a cached value and no permission override
+        // An admin-set limit (/gpx max) wins; otherwise derive from permissions every time
+        // so limits granted or revoked while the player is online take effect immediately.
         if (mailboxLimits.containsKey(uuid) && !permissionOverride.getOrDefault(uuid, false)) {
             return mailboxLimits.get(uuid);
         }
@@ -231,8 +230,6 @@ public class SignLimitManager {
             permissionOverride.put(uuid, true);
         }
         
-        // Cache the result
-        mailboxLimits.put(uuid, limit);
         return limit;
     }
     
@@ -376,7 +373,8 @@ public class SignLimitManager {
         }
         UUID uuid = player.getUniqueId();
         
-        // Check if we have a cached value and no permission override
+        // An admin-set limit (/gpx max) wins; otherwise derive from permissions every time
+        // so limits granted or revoked while the player is online take effect immediately.
         if (globalClaimLimits.containsKey(uuid) && !permissionOverride.getOrDefault(uuid, false)) {
             return globalClaimLimits.get(uuid);
         }
@@ -407,8 +405,6 @@ public class SignLimitManager {
             permissionOverride.put(uuid, true);
         }
         
-        // Cache the result
-        globalClaimLimits.put(uuid, limit);
         return limit;
     }
     

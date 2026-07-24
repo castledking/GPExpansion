@@ -388,6 +388,14 @@ permissions:
     description: Bypasses mailbox sign limits
     default: op
 
+  griefprevention.sign.create.global:
+    description: Allows creating [global] claim signs
+    default: true
+
+  griefprevention.sign.use.global:
+    description: Allows using [global] claim signs
+    default: true
+
   griefprevention.sign.create.mailbox.1:
     description: Allows creating 1 mailbox sign
     default: false
