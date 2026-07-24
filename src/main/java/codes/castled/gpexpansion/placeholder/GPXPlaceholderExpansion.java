@@ -48,13 +48,13 @@ public class GPXPlaceholderExpansion extends PlaceholderExpansion {
 
         // --- claim fly placeholders (no player location needed) ---
 
-        if (params.equalsIgnoreCase("flight_time")) {
+        if (params.equalsIgnoreCase("claim_flight_time")) {
             ClaimFlyManager manager = plugin.getClaimFlyManager();
             if (manager == null) return "";
             return ClaimFlyManager.formatDuration(manager.getRemainingMillis(player.getUniqueId()));
         }
 
-        if (params.equalsIgnoreCase("flight")) {
+        if (params.equalsIgnoreCase("claim_flight")) {
             ClaimFlyManager manager = plugin.getClaimFlyManager();
             if (manager == null) return "";
             return manager.hasTime(player.getUniqueId()) ? "yes" : "no";
