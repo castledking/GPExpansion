@@ -1364,7 +1364,9 @@ public class ClaimDataStore {
         int count = 0;
         
         for (Map.Entry<String, ClaimData> entry : claimData.entrySet()) {
-            if (countUnlistedClaims || entry.getValue().publicListed || entry.getValue().globalApprovalPending) {
+            // Only claims that are actually global count toward the limit; countUnlistedClaims
+            // controls whether claims still awaiting approval are included.
+            if (entry.getValue().publicListed || (countUnlistedClaims && entry.getValue().globalApprovalPending)) {
                 String claimId = entry.getKey();
                 java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
                 if (claimOpt.isPresent()) {

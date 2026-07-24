@@ -64,7 +64,8 @@ public class SignListener implements Listener {
 
     public SignListener(GPExpansionPlugin plugin) {
         this.plugin = plugin;
-        this.signLimitManager = new SignLimitManager(plugin);
+        // Must share the plugin's instance so admin-set limits (/gpx max) apply to sign creation
+        this.signLimitManager = plugin.getSignLimitManager();
         plugin.getLogger().info("SignListener has been instantiated");
         @SuppressWarnings("deprecation")
         String version = plugin.getDescription().getVersion();
@@ -407,7 +408,7 @@ public class SignListener implements Listener {
                        (sell ? hasPermissionOrFullAccess(player, "griefprevention.sign.create.buy") :
                                (mailbox
                                    ? (hasPermissionOrFullAccess(player, "griefprevention.sign.create.mailbox") || hasPermissionOrFullAccess(player, "griefprevention.sign.create.self-mailbox"))
-                                   : hasPermissionOrFullAccess(player, "griefprevention.claim.toggleglobal")));
+                                   : hasPermissionOrFullAccess(player, "griefprevention.sign.create.global")));
         if (!hasPerm) {
             String signType = rent ? "rent" : (sell ? "sell" : (mailbox ? "mailbox" : "global"));
             plugin.getMessages().send(player, "permissions.create-sign-denied", "{signtype}", signType);
@@ -1638,6 +1639,15 @@ public class SignListener implements Listener {
         boolean wasPending = dataStore.isGlobalApprovalPending(claimId);
         boolean requestedPublic = !wasPublic && !wasPending;
         boolean allowSignToggle = plugin.getConfig().getBoolean("signs.global.allow-sign-toggle", true);
+
+        // Listing a claim via sign counts against the same limit as /claim global
+        if (allowSignToggle && requestedPublic && !signLimitManager.canMakeClaimGlobal(player)) {
+            plugin.getMessages().send(player, "claim.global-limit-reached",
+                "{current}", String.valueOf(signLimitManager.getCurrentGlobalClaims(player)),
+                "{max}", String.valueOf(signLimitManager.getGlobalClaimLimit(player)));
+            return;
+        }
+
         if (allowSignToggle) {
             if (requestedPublic
                     && plugin.getConfigManager().isGlobalClaimsApprovalRequired()

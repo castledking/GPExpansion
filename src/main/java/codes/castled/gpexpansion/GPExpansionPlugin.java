@@ -102,7 +102,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
         snapshotStore = new codes.castled.gpexpansion.storage.ClaimSnapshotStore(this);
 
         // Initialize metadata service
-        metadataService = new codes.castled.gpexpansion.api.ClaimMetadataServiceImpl(claimDataStore);
+        metadataService = codes.castled.gpexpansion.api.ClaimMetadataService.create(claimDataStore);
         
         // Initialize GUI manager
         guiManager = new codes.castled.gpexpansion.gui.GUIManager(this);
@@ -132,8 +132,8 @@ public final class GPExpansionPlugin extends JavaPlugin {
         registerPluginCommands();
 
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
-            new codes.castled.gpexpansion.claimfly.ClaimFlyPlaceholderExpansion(this).register();
-            getLogger().info("- Registered PlaceholderAPI claim flight placeholders");
+            new codes.castled.gpexpansion.placeholder.GPXPlaceholderExpansion(this).register();
+            getLogger().info("- Registered PlaceholderAPI placeholders (%griefprevention_*)");
         }
 
         // Register listeners
