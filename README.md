@@ -190,7 +190,7 @@ accruals:
 
 ### CrowBar Locator Bar Integration
 
-When [CrowBar](https://github.com/castledking/CrowBar), a Fabric client mod, is installed alongside GPExpansion, claim waypoints display the **claim owner's name** and a **bowtie marker** on the locator bar. CrowBar reads the same locator data GPExpansion sends and renders readable name tags above each waypoint.
+When [CrowBar](https://github.com/castledking/CrowBar), a Fabric client mod, is installed alongside GPExpansion, claim waypoints display the **claim name** and a **bowtie marker** on the locator bar to the claim owner and trusted players. CrowBar reads the same locator data GPExpansion sends and renders readable name tags above each waypoint.
 
 ![GPX-CrowBar](https://castled.codes/assets/gpx-crowbar.png)
 
