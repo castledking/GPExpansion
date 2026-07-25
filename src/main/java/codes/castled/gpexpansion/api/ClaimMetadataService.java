@@ -79,6 +79,22 @@ public interface ClaimMetadataService {
     @NotNull Optional<Material> getIcon(@NotNull String claimId);
 
     /**
+     * Get the claim's locator-bar waypoint colour.
+     *
+     * @param claim the GP3D claim
+     * @return a lowercase Adventure colour name (one of Minecraft's 16), or empty for the default
+     */
+    @NotNull Optional<String> getWaypointColor(@NotNull Claim claim);
+
+    /**
+     * Get the claim's locator-bar waypoint colour by ID.
+     *
+     * @param claimId the claim ID string
+     * @return a lowercase Adventure colour name (one of Minecraft's 16), or empty for the default
+     */
+    @NotNull Optional<String> getWaypointColor(@NotNull String claimId);
+
+    /**
      * Get all metadata entries.
      *
      * @return unmodifiable collection of all metadata

@@ -71,6 +71,16 @@ public class Config {
         DEFAULTS.put("global-claims.teleport-requires-safe-spawn", true);
         DEFAULTS.put("global-claims.public-signs-set-spawn", true);
 
+        // Claim waypoint settings
+        DEFAULTS.put("claim-waypoints.enabled", true);
+        DEFAULTS.put("claim-waypoints.crowbar-only", true);
+        DEFAULTS.put("claim-waypoints.transmit-range", 60000000);
+        DEFAULTS.put("claim-waypoints.include-subdivisions", false);
+        DEFAULTS.put("claim-waypoints.include-admin-claims", false);
+        DEFAULTS.put("claim-waypoints.resource-pack.url",
+            "https://download.mc-packs.net/pack/543f6d77112d5dde401dfc6a89a5c00714598033.zip");
+        DEFAULTS.put("claim-waypoints.resource-pack.sha1", "543f6d77112d5dde401dfc6a89a5c00714598033");
+
         // Claim customization settings
         DEFAULTS.put("claim-customization.names.max-length", 48);
         DEFAULTS.put("claim-customization.names.allow-colors", true);
@@ -970,6 +980,42 @@ public class Config {
 
     public int getClaimDescriptionMaxLength() {
         return Math.max(1, config.getInt("claim-customization.descriptions.max-length", getGlobalClaimsMaxDescriptionLength()));
+    }
+
+    /** Whether claim waypoints are published at all. */
+    public boolean areClaimWaypointsEnabled() {
+        return config.getBoolean("claim-waypoints.enabled", true);
+    }
+
+    /**
+     * Whether claim waypoints are delivered only to CrowBar clients.
+     *
+     * <p>When true no marker entities are spawned: CrowBar receives claim positions over a plugin
+     * channel and draws them itself, so there are no entities, no chunk tickets and no dependency
+     * on loaded terrain. When false, invisible marker entities are also spawned so unmodified
+     * clients see the claim on the vanilla locator bar.
+     */
+    public boolean areClaimWaypointsCrowbarOnly() {
+        return config.getBoolean("claim-waypoints.crowbar-only", true);
+    }
+
+    /**
+     * Maximum distance, in blocks, at which a claim waypoint is sent to a viewer. Evaluated on
+     * refresh events (join, world change, claim and trust changes), not continuously as players
+     * move. The default is effectively "anywhere in the world".
+     */
+    public int getClaimWaypointTransmitRange() {
+        return Math.max(1, config.getInt("claim-waypoints.transmit-range", 60000000));
+    }
+
+    /** Whether subdivisions get their own waypoint marker in addition to their parent claim. */
+    public boolean areClaimWaypointsShownForSubdivisions() {
+        return config.getBoolean("claim-waypoints.include-subdivisions", false);
+    }
+
+    /** Whether admin claims (claims with no owner) get a waypoint marker. */
+    public boolean areClaimWaypointsShownForAdminClaims() {
+        return config.getBoolean("claim-waypoints.include-admin-claims", false);
     }
 
     public boolean areClaimNameColorsAllowed() {

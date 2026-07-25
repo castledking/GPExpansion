@@ -52,6 +52,16 @@ class ClaimMetadataServiceImpl implements ClaimMetadataService {
     }
 
     @Override
+    public @NotNull Optional<String> getWaypointColor(@NotNull Claim claim) {
+        return getWaypointColor(String.valueOf(claim.getID()));
+    }
+
+    @Override
+    public @NotNull Optional<String> getWaypointColor(@NotNull String claimId) {
+        return dataStore.getWaypointColor(claimId);
+    }
+
+    @Override
     public @NotNull Collection<ClaimMetadata> getAllMetadata() {
         // Iterate all claims from GP3D's data store and build metadata snapshots
         if (GriefPrevention.instance == null || GriefPrevention.instance.dataStore == null) {
@@ -69,14 +79,16 @@ class ClaimMetadataServiceImpl implements ClaimMetadataService {
             Optional<String> name = dataStore.getCustomName(claimId);
             Optional<String> description = dataStore.getDescription(claimId);
             Optional<Material> icon = dataStore.getIcon(claimId);
+            Optional<String> waypointColor = dataStore.getWaypointColor(claimId);
 
             // Only include claims that have at least one metadata field set
-            if (name.isPresent() || description.isPresent() || icon.isPresent()) {
+            if (name.isPresent() || description.isPresent() || icon.isPresent() || waypointColor.isPresent()) {
                 result.add(new ClaimMetadata(
                     claim,
                     name.orElse(null),
                     description.orElse(null),
-                    icon.orElse(null)
+                    icon.orElse(null),
+                    waypointColor.orElse(null)
                 ));
             }
         }

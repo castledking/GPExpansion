@@ -216,9 +216,31 @@ public class GlobalClaimSettingsGUI extends BaseGUI {
             lore.add("&eClick to " + (isPublic ? "unlist" : (isPending ? "cancel approval request" : "list publicly")));
         }
         
+        appendWaypointLore(lore);
         return createItem(material, name, lore);
     }
-    
+
+    /**
+     * Appends the waypoint publishing line to the global toggle's lore.
+     *
+     * <p>Only shown to players holding a {@code griefprevention.claim.waypoint.create.<amount>}
+     * node. Publishing is deliberately a separate shift-click rather than part of the left-click
+     * listing toggle, so listing a claim globally never reveals its location on the locator bar as
+     * a side effect.
+     */
+    private void appendWaypointLore(List<String> lore) {
+        int limit = plugin.getSignLimitManager().getWaypointLimit(player);
+        if (limit <= 0) return;
+
+        boolean published = plugin.getClaimDataStore().isPublicWaypoint(claimId);
+        int used = plugin.getClaimDataStore().countPublicWaypoints(player.getUniqueId());
+
+        lore.add("");
+        lore.add("&7Waypoint: " + (published ? "&aShown to everyone" : "&7Owner and trusted only"));
+        lore.add("&7Used: &f" + used + "&7/&f" + (limit == Integer.MAX_VALUE ? "\u221e" : String.valueOf(limit)));
+        lore.add("&eShift-Click to " + (published ? "hide from everyone" : "show to everyone"));
+    }
+
     private ItemStack createSpawnPointItem() {
         boolean hasSpawn = plugin.getClaimDataStore().getSpawn(claimId).isPresent();
         boolean hasPermission = player.hasPermission("griefprevention.claim.setspawn");
@@ -363,6 +385,10 @@ public class GlobalClaimSettingsGUI extends BaseGUI {
             player.closeInventory();
             plugin.getDescriptionInputManager().begin(player, claimId, fromSign);
         } else if (slot == globalToggleSlot) {
+            if (event.isShiftClick()) {
+                handleWaypointPublishToggle();
+                return;
+            }
             if (!plugin.getConfigManager().isGlobalClaimsEnabled()) {
                 plugin.getMessages().send(player, "claim.global-disabled");
                 return;
@@ -405,5 +431,43 @@ public class GlobalClaimSettingsGUI extends BaseGUI {
                 manager.openClaimOptions(player, claim, claimId);
             }
         }
+    }
+
+    /**
+     * Publishes this claim's waypoint to every player, or withdraws it.
+     *
+     * <p>Gated by {@code griefprevention.claim.waypoint.create.<amount>}. The limit counts claims
+     * currently published by this player, so withdrawing one frees a slot. Unpublishing is always
+     * allowed even at or over the limit, otherwise a lowered permission would strand a player with
+     * claims they could not retract.
+     */
+    private void handleWaypointPublishToggle() {
+        if (!plugin.getConfigManager().areClaimWaypointsEnabled()) {
+            plugin.getMessages().send(player, "claim.waypoint-disabled");
+            return;
+        }
+
+        int limit = plugin.getSignLimitManager().getWaypointLimit(player);
+        if (limit <= 0) {
+            plugin.getMessages().send(player, "general.no-permission");
+            return;
+        }
+
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
+        boolean published = dataStore.isPublicWaypoint(claimId);
+        if (!published) {
+            if (!plugin.getSignLimitManager().canPublishWaypoint(player)) {
+                plugin.getMessages().send(player, "claim.waypoint-limit-reached",
+                    "{used}", String.valueOf(plugin.getSignLimitManager().getCurrentWaypoints(player)),
+                    "{max}", String.valueOf(limit));
+                return;
+            }
+        }
+
+        dataStore.setPublicWaypoint(claimId, !published, player);
+        dataStore.save();
+        plugin.getMessages().send(player,
+            published ? "claim.waypoint-hidden" : "claim.waypoint-published", "{id}", claimId);
+        inventory.setItem(globalToggleSlot, createGlobalToggleItem());
     }
 }

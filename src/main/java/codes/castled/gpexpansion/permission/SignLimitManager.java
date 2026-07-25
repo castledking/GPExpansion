@@ -21,6 +21,7 @@ public class SignLimitManager {
     private final Map<UUID, Integer> mailboxLimits = new ConcurrentHashMap<>();
     private final Map<UUID, Integer> selfMailboxLimits = new ConcurrentHashMap<>();
     private final Map<UUID, Integer> globalClaimLimits = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> waypointLimits = new ConcurrentHashMap<>();
     private final Map<UUID, Boolean> permissionOverride = new ConcurrentHashMap<>();
     private int defaultSellLimit;
     private int defaultRentLimit;
@@ -99,6 +100,7 @@ public class SignLimitManager {
         mailboxLimits.clear();
         selfMailboxLimits.clear();
         globalClaimLimits.clear();
+        waypointLimits.clear();
     }
     
     /**
@@ -440,6 +442,75 @@ public class SignLimitManager {
     }
     
     /**
+     * Maximum number of claim waypoints a player may publish to all players.
+     *
+     * <p>Mirrors {@link #getGlobalClaimLimit(Player)}: a wildcard grant means unlimited, an
+     * admin-set limit from {@code /gpx max waypoints} wins next, and otherwise the highest
+     * numbered permission applies. The wildcard check matters for setups that grant broad
+     * permissions through LuckPerms — {@code hasPermission} resolves a wildcard, but iterating
+     * effective permissions never sees a concrete numbered node to parse.
+     */
+    public int getWaypointLimit(Player player) {
+        if (player.hasPermission("griefprevention.claim.waypoint.create.*")
+                || player.hasPermission("griefprevention.admin")) {
+            return Integer.MAX_VALUE;
+        }
+        UUID uuid = player.getUniqueId();
+
+        if (waypointLimits.containsKey(uuid) && !permissionOverride.getOrDefault(uuid, false)) {
+            return waypointLimits.get(uuid);
+        }
+
+        int limit = 0;
+        for (PermissionAttachmentInfo info : player.getEffectivePermissions()) {
+            String perm = info.getPermission();
+            if (perm.startsWith("griefprevention.claim.waypoint.create.") && info.getValue()) {
+                try {
+                    int amount = Integer.parseInt(perm.substring(perm.lastIndexOf('.') + 1));
+                    if (amount > limit) {
+                        limit = amount;
+                    }
+                } catch (NumberFormatException ignored) {
+                    // A non-numeric suffix such as the wildcard is handled above.
+                }
+            }
+        }
+        return limit;
+    }
+
+    /** Set a player's claim waypoint limit directly (used for admin commands). */
+    public void setWaypointLimit(Player player, int limit) {
+        waypointLimits.put(player.getUniqueId(), Math.max(0, limit));
+    }
+
+    public void addWaypointLimit(Player player, int amount) {
+        setWaypointLimit(player, saturatingAdd(getWaypointLimit(player), amount));
+    }
+
+    public void takeWaypointLimit(Player player, int amount) {
+        setWaypointLimit(player, Math.max(0, saturatingAdd(getWaypointLimit(player), -amount)));
+    }
+
+    /**
+     * Adds without wrapping. A player on an unlimited grant reads as {@code Integer.MAX_VALUE}, and
+     * adding to that would otherwise flip negative and silently revoke their access.
+     */
+    private static int saturatingAdd(int current, int amount) {
+        long result = (long) current + amount;
+        return (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, result));
+    }
+
+    /** How many claims this player currently publishes a waypoint for. */
+    public int getCurrentWaypoints(Player player) {
+        return plugin.getClaimDataStore().countPublicWaypoints(player.getUniqueId());
+    }
+
+    /** Whether this player may publish another claim waypoint. */
+    public boolean canPublishWaypoint(Player player) {
+        return getCurrentWaypoints(player) < getWaypointLimit(player);
+    }
+
+    /**
      * Get the current number of global claims a player has
      */
     public int getCurrentGlobalClaims(Player player) {
@@ -474,6 +545,7 @@ public class SignLimitManager {
         rentLimits.remove(uuid);
         mailboxLimits.remove(uuid);
         globalClaimLimits.remove(uuid);
+        waypointLimits.remove(uuid);
         permissionOverride.remove(uuid);
     }
     
@@ -486,6 +558,7 @@ public class SignLimitManager {
         mailboxLimits.clear();
         selfMailboxLimits.clear();
         globalClaimLimits.clear();
+        waypointLimits.clear();
         permissionOverride.clear();
     }
     

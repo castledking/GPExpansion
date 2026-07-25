@@ -12,10 +12,13 @@ import org.jetbrains.annotations.Nullable;
  * @param name      custom name, or null if unset
  * @param description custom description, or null if unset
  * @param icon      icon material, or null if unset
+ * @param waypointColor lowercase Adventure colour name for the claim's locator-bar waypoint,
+ *                      or null to use the default colour
  */
 public record ClaimMetadata(
     @NotNull Claim claim,
     @Nullable String name,
     @Nullable String description,
-    @Nullable Material icon
+    @Nullable Material icon,
+    @Nullable String waypointColor
 ) {}

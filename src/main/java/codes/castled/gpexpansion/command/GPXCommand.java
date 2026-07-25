@@ -70,6 +70,10 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
+        if (subCommand.equals("waypoints")) {
+            return handleWaypointDiagnostics(sender);
+        }
+
         if (subCommand.equals("accruals")) {
             return handleAccruals(sender, args);
         }
@@ -89,7 +93,7 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         String action = args[2].toLowerCase();
         String playerName = args[3];
         
-        if (!type.equals("sell") && !type.equals("rent") && !type.equals("mailbox") && !type.equals("self-mailboxes") && !type.equals("globals")) {
+        if (!type.equals("sell") && !type.equals("rent") && !type.equals("mailbox") && !type.equals("self-mailboxes") && !type.equals("globals") && !type.equals("waypoints")) {
             sender.sendMessage(plugin.getMessages().get("commands.gpx-max-invalid-type"));
             return true;
         }
@@ -128,9 +132,10 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         boolean rent = type.equals("rent");
         boolean globals = type.equals("globals");
         boolean selfMailboxes = type.equals("self-mailboxes");
+        boolean waypoints = type.equals("waypoints");
         
         // Process the command
-        String limitType = sell ? "sell sign" : (rent ? "rent sign" : (globals ? "global claim" : (type.equals("self-mailboxes") ? "self mailbox" : "mailbox sign")));
+        String limitType = sell ? "sell sign" : (rent ? "rent sign" : (globals ? "global claim" : (waypoints ? "claim waypoint" : (type.equals("self-mailboxes") ? "self mailbox" : "mailbox sign"))));
         
         switch (action) {
             case "add":
@@ -140,6 +145,8 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                     signLimitManager.addRentLimit(target, amount);
                 } else if (globals) {
                     signLimitManager.addGlobalClaimLimit(target, amount);
+                } else if (waypoints) {
+                    signLimitManager.addWaypointLimit(target, amount);
                 } else if (selfMailboxes) {
                     signLimitManager.addSelfMailboxLimit(target, amount);
                 } else {
@@ -161,6 +168,8 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                     signLimitManager.takeRentLimit(target, amount);
                 } else if (globals) {
                     signLimitManager.takeGlobalClaimLimit(target, amount);
+                } else if (waypoints) {
+                    signLimitManager.takeWaypointLimit(target, amount);
                 } else if (selfMailboxes) {
                     signLimitManager.takeSelfMailboxLimit(target, amount);
                 } else {
@@ -182,6 +191,8 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                     signLimitManager.setRentLimit(target, amount);
                 } else if (globals) {
                     signLimitManager.setGlobalClaimLimit(target, amount);
+                } else if (waypoints) {
+                    signLimitManager.setWaypointLimit(target, amount);
                 } else if (selfMailboxes) {
                     signLimitManager.setSelfMailboxLimit(target, amount);
                 } else {
@@ -239,6 +250,79 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(plugin.getMessages().get("admin.gpx-debug"));
         sender.sendMessage(plugin.getMessages().get("admin.gpx-max"));
         sender.sendMessage(plugin.getMessages().get("admin.gpx-accruals"));
+    }
+
+    /**
+     * Reports why a claim waypoint is or is not reaching the sender.
+     *
+     * <p>Lists every claim the sender may see with its anchor, colour and distance, and whether it
+     * was actually sent as a vanilla waypoint packet — plus the delivery mode, the packet bridge's
+     * health, and the locatorBar game rule. Each is a condition the plugin applies before a claim
+     * reaches a locator bar, so a missing bowtie can be attributed rather than guessed at.
+     */
+    private boolean handleWaypointDiagnostics(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§cRun this in-game: the report is relative to your position.");
+            return true;
+        }
+
+        codes.castled.gpexpansion.waypoint.ClaimWaypointManager manager = plugin.getClaimWaypointManager();
+        if (manager == null || !plugin.getConfigManager().areClaimWaypointsEnabled()) {
+            player.sendMessage("§cClaim waypoints are disabled (claim-waypoints.enabled).");
+            return true;
+        }
+
+        boolean crowbarOnly = plugin.getConfigManager().areClaimWaypointsCrowbarOnly();
+        boolean packetsActive = manager.vanillaPacketsActive();
+        Object locatorBarRule = player.getWorld().getGameRuleValue(org.bukkit.GameRule.LOCATOR_BAR);
+
+        java.util.List<me.ryanhamshire.GriefPrevention.Claim> visible = manager.visibleClaimsFor(player);
+        java.util.Map<String, codes.castled.gpexpansion.waypoint.ClaimWaypointManager.SentWaypoint> sent =
+            manager.sentWaypoints(player.getUniqueId());
+
+        player.sendMessage("§6Claim waypoints §7— §fmode: §e" + (crowbarOnly ? "crowbar-only" : "crowbar + vanilla")
+            + " §7| vanilla packets: §e" + (packetsActive ? "active" : "off")
+            + " §7| locatorBar: §e" + locatorBarRule
+            + " §7| visible to you: §e" + visible.size());
+
+        if (visible.isEmpty()) {
+            player.sendMessage("§7You own no claims, hold trust on none, and none are published.");
+            return true;
+        }
+
+        for (me.ryanhamshire.GriefPrevention.Claim claim : visible) {
+            String claimId = String.valueOf(claim.getID());
+            codes.castled.gpexpansion.waypoint.ClaimWaypointManager.SentWaypoint waypoint = sent.get(claimId);
+
+            String position;
+            String distance;
+            if (waypoint != null) {
+                position = waypoint.x() + " " + waypoint.y() + " " + waypoint.z();
+                org.bukkit.Location loc = player.getLocation();
+                double dx = waypoint.x() - loc.getX();
+                double dy = waypoint.y() - loc.getY();
+                double dz = waypoint.z() - loc.getZ();
+                distance = String.format("%.0fm", Math.sqrt(dx * dx + dy * dy + dz * dz));
+            } else {
+                position = "?";
+                distance = "?";
+            }
+
+            String color = plugin.getClaimDataStore().getWaypointColor(claimId).orElse("default");
+            boolean published = plugin.getClaimDataStore().isPublicWaypoint(claimId);
+
+            player.sendMessage("§7- claim §f" + claimId
+                + " §7| pos §f" + position
+                + " §7| dist §f" + distance
+                + " §7| color §f" + color
+                + (published ? " §7| §apublic" : "")
+                + " §7| vanilla packet §" + (waypoint != null ? "asent" : (packetsActive ? "cnot sent" : "7n/a")));
+        }
+
+        if (!packetsActive && !crowbarOnly) {
+            player.sendMessage("§cVanilla packets are configured on but the packet bridge failed; see console.");
+        }
+        return true;
     }
 
     private boolean handleAccruals(CommandSender sender, String[] args) {
@@ -593,7 +677,7 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         
         if (args.length == 1) {
             // First argument: subcommands
-            for (String sub : Arrays.asList("reload", "debug", "max", "accruals")) {
+            for (String sub : Arrays.asList("reload", "debug", "max", "accruals", "waypoints")) {
                 if (sub.startsWith(args[0].toLowerCase())) {
                     completions.add(sub);
                 }
@@ -641,8 +725,8 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         } else if (args.length == 7 && args[0].equalsIgnoreCase("accruals") && "creategroup".equalsIgnoreCase(args[1])) {
             addMatching(completions, args[6], "[permission]");
         } else if (args.length == 2 && args[0].equalsIgnoreCase("max")) {
-            // Second argument: "sell", "rent", "mailbox", "self-mailboxes", or "globals"
-            for (String type : Arrays.asList("sell", "rent", "mailbox", "self-mailboxes", "globals")) {
+            // Second argument: "sell", "rent", "mailbox", "self-mailboxes", "globals", or "waypoints"
+            for (String type : Arrays.asList("sell", "rent", "mailbox", "self-mailboxes", "globals", "waypoints")) {
                 if (type.startsWith(args[1].toLowerCase())) {
                     completions.add(type);
                 }

@@ -1,0 +1,7 @@
+{
+  "pack": {
+    "description": "GPExpansion — full-size claim bowtie waypoints",
+    "pack_format": 88,
+    "supported_formats": { "min_inclusive": 75, "max_inclusive": 99 }
+  }
+}
