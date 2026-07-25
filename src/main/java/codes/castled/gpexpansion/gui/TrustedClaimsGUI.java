@@ -9,6 +9,7 @@ import org.bukkit.inventory.ItemStack;
 
 import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
+import codes.castled.gpexpansion.util.ClaimGeometryUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -98,9 +99,9 @@ public class TrustedClaimsGUI extends BaseGUI {
             
             // Get claim details
             info.name = plugin.getClaimDataStore().getCustomName(claimId).orElse("Claim #" + claimId);
-            info.ownerName = getOwnerName(claim);
-            info.area = getClaimArea(claim);
-            info.location = getClaimLocation(claim);
+            info.ownerName = ClaimGeometryUtil.getOwnerName(claim);
+            info.area = ClaimGeometryUtil.getClaimArea(claim);
+            info.location = ClaimGeometryUtil.getClaimLocation(claim);
             
             // Check if player can renew (is renter)
             if (info.isRented) {
@@ -129,41 +130,7 @@ public class TrustedClaimsGUI extends BaseGUI {
         return plugin.getClaimDataStore().isRented(claimId);
     }
     
-    private String getOwnerName(Object claim) {
-        try {
-            Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
-            if (ownerId instanceof UUID) {
-                return plugin.getServer().getOfflinePlayer((UUID) ownerId).getName();
-            }
-        } catch (Exception e) {
-            // Ignore
-        }
-        return "Unknown";
-    }
-    
-    private int getClaimArea(Object claim) {
-        try {
-            Object lesserCorner = claim.getClass().getMethod("getLesserBoundaryCorner").invoke(claim);
-            Object greaterCorner = claim.getClass().getMethod("getGreaterBoundaryCorner").invoke(claim);
-            
-            int width = Math.abs(((Location) greaterCorner).getBlockX() - ((Location) lesserCorner).getBlockX()) + 1;
-            int length = Math.abs(((Location) greaterCorner).getBlockZ() - ((Location) lesserCorner).getBlockZ()) + 1;
-            
-            return width * length;
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-    
-    private String getClaimLocation(Object claim) {
-        try {
-            Object lesserCorner = claim.getClass().getMethod("getLesserBoundaryCorner").invoke(claim);
-            Location loc = (Location) lesserCorner;
-            return loc.getWorld().getName() + " @ " + loc.getBlockX() + ", " + loc.getBlockZ();
-        } catch (Exception e) {
-            return "Unknown";
-        }
-    }
+
     
     @Override
     public Inventory createInventory() {
@@ -228,9 +195,9 @@ public class TrustedClaimsGUI extends BaseGUI {
         for (ClaimInfo info : filteredClaims) {
             if (info.claim == null || info.claimId == null) continue;
             if (!worldName.equals(gp.getClaimWorld(info.claim).orElse(null))) continue;
-            if (!containsLocation(info.claim, location)) continue;
+            if (!ClaimGeometryUtil.containsLocation(gp, info.claim, location)) continue;
 
-            long sizeMetric = getClaimSizeMetric(info.claim);
+            long sizeMetric = ClaimGeometryUtil.getClaimSizeMetric(gp, info.claim);
             if (sizeMetric < smallestContainingClaim) {
                 smallestContainingClaim = sizeMetric;
                 currentClaimId = info.claimId;
@@ -240,44 +207,7 @@ public class TrustedClaimsGUI extends BaseGUI {
         return currentClaimId;
     }
 
-    private boolean containsLocation(Object claim, Location location) {
-        GPBridge.ClaimCorners corners = gp.getClaimCorners(claim).orElse(null);
-        if (corners == null || location.getWorld() == null) return false;
 
-        String claimWorld = gp.getClaimWorld(claim).orElse(null);
-        if (claimWorld == null || !claimWorld.equals(location.getWorld().getName())) {
-            return false;
-        }
-
-        int x = location.getBlockX();
-        int y = location.getBlockY();
-        int z = location.getBlockZ();
-
-        if (x < corners.x1 || x > corners.x2 || z < corners.z1 || z > corners.z2) {
-            return false;
-        }
-
-        if (gp.is3DClaim(claim)) {
-            return y >= corners.y1 && y <= corners.y2;
-        }
-
-        return true;
-    }
-
-    private long getClaimSizeMetric(Object claim) {
-        GPBridge.ClaimCorners corners = gp.getClaimCorners(claim).orElse(null);
-        if (corners == null) return Long.MAX_VALUE;
-
-        long width = (long) corners.x2 - corners.x1 + 1L;
-        long length = (long) corners.z2 - corners.z1 + 1L;
-
-        if (gp.is3DClaim(claim)) {
-            long height = (long) corners.y2 - corners.y1 + 1L;
-            return width * length * height;
-        }
-
-        return width * length;
-    }
 
     private ItemStack createClaimItem(ClaimInfo info, String currentTrustedClaimId) {
         Material material = Material.GRASS_BLOCK;

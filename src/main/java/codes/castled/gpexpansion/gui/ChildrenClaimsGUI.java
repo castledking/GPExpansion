@@ -9,6 +9,7 @@ import org.bukkit.inventory.ItemStack;
 
 import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.util.ClaimCustomizationUtil;
+import codes.castled.gpexpansion.util.ClaimGeometryUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -86,8 +87,8 @@ public class ChildrenClaimsGUI extends BaseGUI {
             
             // Get claim details
             info.name = plugin.getClaimDataStore().getCustomName(claimId).orElse("Subdivision #" + claimId);
-            info.area = getClaimArea(child);
-            info.location = getClaimLocation(child);
+            info.area = ClaimGeometryUtil.getClaimArea(child);
+            info.location = ClaimGeometryUtil.getClaimLocation(child);
             info.hasChildren = !gp.getSubclaims(child).isEmpty();
             info.childCount = gp.getSubclaims(child).size();
             
@@ -122,29 +123,7 @@ public class ChildrenClaimsGUI extends BaseGUI {
         }
     }
     
-    private int getClaimArea(Object claim) {
-        try {
-            Object lesserCorner = claim.getClass().getMethod("getLesserBoundaryCorner").invoke(claim);
-            Object greaterCorner = claim.getClass().getMethod("getGreaterBoundaryCorner").invoke(claim);
-            
-            int width = Math.abs(((Location) greaterCorner).getBlockX() - ((Location) lesserCorner).getBlockX()) + 1;
-            int length = Math.abs(((Location) greaterCorner).getBlockZ() - ((Location) lesserCorner).getBlockZ()) + 1;
-            
-            return width * length;
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-    
-    private String getClaimLocation(Object claim) {
-        try {
-            Object lesserCorner = claim.getClass().getMethod("getLesserBoundaryCorner").invoke(claim);
-            Location loc = (Location) lesserCorner;
-            return loc.getWorld().getName() + " @ " + loc.getBlockX() + ", " + loc.getBlockZ();
-        } catch (Exception e) {
-            return "Unknown";
-        }
-    }
+
     
     @Override
     public Inventory createInventory() {
@@ -236,8 +215,8 @@ public class ChildrenClaimsGUI extends BaseGUI {
         int bestArea = Integer.MAX_VALUE;
 
         for (Object child : gp.getSubclaims(parentClaim)) {
-            if (!containsLocation(child, location)) continue;
-            int area = getClaimArea(child);
+            if (!ClaimGeometryUtil.containsLocation(gp, child, location)) continue;
+            int area = ClaimGeometryUtil.getClaimArea(child);
             if (bestMatch == null || area < bestArea) {
                 bestMatch = child;
                 bestArea = area;
@@ -248,24 +227,7 @@ public class ChildrenClaimsGUI extends BaseGUI {
         return gp.getClaimId(bestMatch).orElse(null);
     }
 
-    private boolean containsLocation(Object claim, Location location) {
-        GPBridge.ClaimCorners corners = gp.getClaimCorners(claim).orElse(null);
-        if (corners == null || location.getWorld() == null) return false;
 
-        int x = location.getBlockX();
-        int y = location.getBlockY();
-        int z = location.getBlockZ();
-
-        if (x < corners.x1 || x > corners.x2 || z < corners.z1 || z > corners.z2) {
-            return false;
-        }
-
-        if (gp.is3DClaim(claim)) {
-            return y >= corners.y1 && y <= corners.y2;
-        }
-
-        return true;
-    }
     
     @Override
     public void handleClick(InventoryClickEvent event) {
