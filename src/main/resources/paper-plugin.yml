@@ -143,6 +143,34 @@ permissions:
     description: Allows using /claim name on other claims
     default: op
 
+  griefprevention.claim.color:
+    description: Allows using /claim color to set the claim's locator-bar waypoint color
+    default: op
+
+  griefprevention.claim.waypoint.create.1:
+    description: Allows publishing 1 claim waypoint to all players (shift-click the global toggle)
+    default: false
+
+  griefprevention.claim.waypoint.create.5:
+    description: Allows publishing up to 5 claim waypoints to all players
+    default: false
+
+  griefprevention.claim.waypoint.create.*:
+    description: Allows publishing unlimited claim waypoints to all players
+    default: op
+
+  griefprevention.claim.waypoint.admin:
+    description: Shows admin claims on the locator bar (requires claim-waypoints.include-admin-claims)
+    default: op
+
+  griefprevention.claim.color.anywhere:
+    description: Allows using /claim color outside own claims
+    default: op
+
+  griefprevention.claim.color.other:
+    description: Allows using /claim color on other claims
+    default: op
+
   griefprevention.claim.name.color.*:
     description: Allows specific colors via & codes and MiniMessage tags
     default: op

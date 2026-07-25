@@ -179,7 +179,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     /** Subcommands we handle - used when sharing /claim with GP3D (only intercept these) */
     public static final java.util.Set<String> HANDLED_SUBCOMMANDS = java.util.Collections.unmodifiableSet(
             new java.util.HashSet<>(Arrays.asList(
-            "!", "gui", "menu", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly",
+            "!", "gui", "menu", "name", "color", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -207,7 +207,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBS = Arrays.asList(
             // Our features
-            "!", "gui", "menu", "name", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly",
+            "!", "gui", "menu", "name", "color", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -444,6 +444,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 return handleDispatch(sender, "claimexplosions", subArgs);
             case "name":
                 return handleName(sender, subArgs);
+            case "color":
+                return handleColor(sender, subArgs);
             case "create":
                 // Alias to GP's /createclaim [radius] to avoid recursion
                 return handleDispatch(sender, "createclaim", subArgs);
@@ -1208,6 +1210,62 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         return true;
     }
     
+    /** Minecraft's 16 named colours, which are exactly Adventure's named colours. */
+    static final List<String> WAYPOINT_COLOR_NAMES = List.copyOf(
+            net.kyori.adventure.text.format.NamedTextColor.NAMES.keys());
+
+    // /claim color <color|reset> [id] - Set the claim's locator-bar waypoint colour
+    private boolean handleColor(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        if (!sender.hasPermission("griefprevention.claim.color")) {
+            sender.sendMessage(plugin.getMessages().get("claim.color-no-permission"));
+            return true;
+        }
+
+        Player player = (Player) sender;
+        boolean allowOther = sender.hasPermission("griefprevention.claim.color.other");
+        boolean allowAnywhere = sender.hasPermission("griefprevention.claim.color.anywhere");
+
+        if (args.length == 0) {
+            sender.sendMessage(plugin.getMessages().get("claim.color-usage"));
+            return true;
+        }
+
+        String requested = args[0].trim().toLowerCase(Locale.ROOT);
+        boolean clearing = requested.equals("reset") || requested.equals("none") || requested.equals("default");
+        if (!clearing && !WAYPOINT_COLOR_NAMES.contains(requested)) {
+            sender.sendMessage(plugin.getMessages().get("claim.color-invalid",
+                "{colors}", String.join(", ", WAYPOINT_COLOR_NAMES)));
+            return true;
+        }
+
+        // Same trailing-ID convention as /claim name: only treat the last argument as a claim ID
+        // when it actually resolves, so a stray word does not silently retarget another claim.
+        Optional<Object> explicitClaim = Optional.empty();
+        String explicitId = null;
+        if (allowOther && args.length >= 2) {
+            String possibleId = args[args.length - 1];
+            Optional<Object> looked = gp.findClaimById(possibleId);
+            if (looked.isPresent()) {
+                explicitClaim = looked;
+                explicitId = possibleId;
+            }
+        }
+
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, allowAnywhere, "recolor this claim");
+        if (!ctxOpt.isPresent()) return true;
+
+        ClaimContext ctx = ctxOpt.get();
+        codes.castled.gpexpansion.storage.ClaimDataStore store = plugin.getClaimDataStore();
+        store.setWaypointColor(ctx.claimId, clearing ? null : requested, sender);
+        store.save();
+
+        String display = clearing ? "&7default" : "&f" + requested;
+        sender.sendMessage(parseColorCodes(
+            String.format("&aClaim %s waypoint color set to %s", ctx.claimId, display)));
+        return true;
+    }
+
     // /claim icon [id] - Set claim icon using held item
     private boolean handleIcon(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
@@ -3311,6 +3369,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             
             // Direct subcommand mappings
             if (sub.equals("name")) return "name";
+            if (sub.equals("color")) return "color";
             if (sub.equals("description")) return "desc";
             if (sub.equals("icon")) return "icon";
             if (sub.equals("ban")) return "ban";
@@ -3582,6 +3641,16 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             switch (sub) {
                 case "name":
                     return Collections.singletonList("<name...>");
+                case "color":
+                    if (args.length == 2) {
+                        List<String> colors = new ArrayList<>(WAYPOINT_COLOR_NAMES);
+                        colors.add("reset");
+                        return colors.stream()
+                            .filter(c -> c.startsWith(args[1].toLowerCase(Locale.ROOT)))
+                            .sorted()
+                            .collect(Collectors.toList());
+                    }
+                    return new ArrayList<>();
                 case "create":
                     return Collections.singletonList("<radius>");
                 case "resize":

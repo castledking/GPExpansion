@@ -398,6 +398,47 @@ claim-flight:
 # Claim Names, Descriptions, Icons, and Moderation
 # =============================================================================
 
+# Claim waypoints: shows a bowtie marker for a claim on the vanilla locator bar, visible only to
+# the claim owner and trusted players. Works on unmodified clients.
+#
+# Requires Paper (the per-player visibility relies on a Paper-only patch to the waypoint
+# transmitter) on 1.21.11 or newer.
+claim-waypoints:
+  enabled: true
+
+  # When true, claim waypoints are sent only to CrowBar clients, which draw them from claim data.
+  #
+  # Set to false to also send vanilla waypoint packets to unmodified clients, putting claims on
+  # their locator bar too. No entities are involved in either mode, and claims stay visible
+  # regardless of whether their terrain is loaded.
+  crowbar-only: true
+
+  # Resource pack for unmodified clients. Only used when crowbar-only is false.
+  #
+  # Sprite selection happens entirely on the client, so a bowtie shrinks to a plain dot past 64
+  # blocks and no server-side setting can change that. The bundled pack raises that threshold.
+  # ResourcePackManager is used automatically when installed; otherwise set a URL to a copy of
+  # plugins/GPExpansion/resourcepack.zip that you host yourself.
+  # Defaults point at the bundled pack hosted on mc-packs.net. Replace both if you host your own
+  # copy; the SHA-1 must match the file at the URL or clients reject it.
+  resource-pack:
+    url: "https://download.mc-packs.net/pack/543f6d77112d5dde401dfc6a89a5c00714598033.zip"
+    # Hex SHA-1 of the hosted file. Without it clients re-download the pack on every join.
+    sha1: "543f6d77112d5dde401dfc6a89a5c00714598033"
+
+  # Maximum distance, in blocks, at which a claim waypoint is sent to a viewer. Checked when
+  # waypoints refresh (join, world change, claim/trust changes), not continuously as players move.
+  # The default is effectively "anywhere in the world".
+  transmit-range: 60000000
+
+  # Give subdivisions their own marker in addition to their parent claim. Off by default: it
+  # multiplies the marker count for little benefit.
+  include-subdivisions: false
+
+  # Show admin claims (claims with no owner) to players holding
+  # griefprevention.claim.waypoint.admin.
+  include-admin-claims: false
+
 claim-customization:
   names:
     max-length: 48

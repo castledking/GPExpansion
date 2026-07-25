@@ -1,0 +1,7 @@
+{
+  "near_distance": 59999999,
+  "far_distance": 60000000,
+  "sprites": [
+    "minecraft:bowtie"
+  ]
+}

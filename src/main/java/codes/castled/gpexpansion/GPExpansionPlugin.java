@@ -58,6 +58,8 @@ public final class GPExpansionPlugin extends JavaPlugin {
     private codes.castled.gpexpansion.listener.SignDisplayListener signDisplayListener;
     private codes.castled.gpexpansion.scheduler.TaskHandle evictionDisplayTickTask;
     private ClaimFlyManager claimFlyManager;
+    private codes.castled.gpexpansion.waypoint.ClaimWaypointManager claimWaypointManager;
+    private codes.castled.gpexpansion.pack.ClaimWaypointPackService claimWaypointPackService;
     private codes.castled.gpexpansion.listener.ClaimFlyListener claimFlyListener;
     private codes.castled.gpexpansion.api.ClaimMetadataService metadataService;
 
@@ -110,7 +112,8 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Initialize sign limit manager
         signLimitManager = new codes.castled.gpexpansion.permission.SignLimitManager(this);
         claimFlyManager = new ClaimFlyManager(this);
-        
+        claimWaypointManager = new codes.castled.gpexpansion.waypoint.ClaimWaypointManager(this);
+
         // Initialize permission manager (handles dynamic gpx.player permissions)
         try {
             permissionManager = new codes.castled.gpexpansion.permission.PermissionManager(this);
@@ -171,6 +174,22 @@ public final class GPExpansionPlugin extends JavaPlugin {
         claimFlyListener = new codes.castled.gpexpansion.listener.ClaimFlyListener(this);
         Bukkit.getPluginManager().registerEvents(claimFlyListener, this);
         getLogger().info("- Registered ClaimFlyListener for claim flight feature");
+        // Claim waypoint markers (vanilla locator bar bowties)
+        if (configManager.areClaimWaypointsEnabled()) {
+            Bukkit.getPluginManager().registerEvents(
+                new codes.castled.gpexpansion.listener.ClaimWaypointListener(this), this);
+            getServer().getMessenger().registerOutgoingPluginChannel(this,
+                codes.castled.gpexpansion.waypoint.ClaimWaypointManager.CLAIM_DATA_CHANNEL);
+            // Only unmodified clients need the pack; CrowBar pins the bowtie sprite itself.
+            if (!configManager.areClaimWaypointsCrowbarOnly()) {
+                claimWaypointPackService = new codes.castled.gpexpansion.pack.ClaimWaypointPackService(this);
+                claimWaypointPackService.setup();
+            }
+            // Deferred so GP3D has finished loading its claim data before the first build.
+            codes.castled.gpexpansion.scheduler.SchedulerAdapter.runLaterGlobal(
+                this, claimWaypointManager::start, 40L);
+            getLogger().info("- Registered ClaimWaypointListener for claim locator-bar waypoints");
+        }
         // Claim teleport movement listener (cancels teleport if player moves during delay)
         if (configManager.isClaimTeleportCancelOnMove()) {
             Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.ClaimTeleportListener(this, claimCommand), this);
@@ -690,6 +709,9 @@ public final class GPExpansionPlugin extends JavaPlugin {
         if (reminderService != null) {
             reminderService.stop();
         }
+        if (claimWaypointManager != null) {
+            claimWaypointManager.shutdown();
+        }
         if (evictionDisplayTickTask != null) {
             evictionDisplayTickTask.cancel();
             evictionDisplayTickTask = null;
@@ -778,6 +800,15 @@ public final class GPExpansionPlugin extends JavaPlugin {
     
     public SignLimitManager getSignLimitManager() {
         return signLimitManager;
+    }
+
+    public codes.castled.gpexpansion.waypoint.ClaimWaypointManager getClaimWaypointManager() {
+        return claimWaypointManager;
+    }
+
+    /** Null when claim waypoints are CrowBar-only or disabled, since no pack is needed then. */
+    public codes.castled.gpexpansion.pack.ClaimWaypointPackService getClaimWaypointPackService() {
+        return claimWaypointPackService;
     }
 
     public ClaimFlyManager getClaimFlyManager() {

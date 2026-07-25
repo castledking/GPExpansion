@@ -59,7 +59,11 @@ public class ClaimDataStore {
         public final List<Material> iconHistory = new ArrayList<>();
         public String description = null;
         public String customName = null;
-        
+        /** Lowercase Adventure {@link net.kyori.adventure.text.format.NamedTextColor} name, or null for the default. */
+        public String waypointColor = null;
+        /** Whether this claim's waypoint is shown to everyone rather than only owner and trusted. */
+        public boolean publicWaypoint = false;
+
         // Ban data
         public BanData bans = new BanData();
 
@@ -209,6 +213,8 @@ public class ClaimDataStore {
         loadIconHistory(path, data);
         data.description = config.getString(path + "description");
         data.customName = truncateCustomName(config.getString(path + "name"));
+        data.waypointColor = normalizeWaypointColor(config.getString(path + "color"));
+        data.publicWaypoint = config.getBoolean(path + "publicWaypoint", false);
         int maxDescriptionLength = plugin.getConfigManager().getClaimDescriptionMaxLength();
         if (data.description != null && data.description.length() > maxDescriptionLength) {
             data.description = data.description.substring(0, maxDescriptionLength);
@@ -383,6 +389,12 @@ public class ClaimDataStore {
             }
             if (data.customName != null) {
                 config.set(path + "name", data.customName);
+            }
+            if (data.waypointColor != null) {
+                config.set(path + "color", data.waypointColor);
+            }
+            if (data.publicWaypoint) {
+                config.set(path + "publicWaypoint", true);
             }
             
             // Ban data
@@ -1018,6 +1030,80 @@ public class ClaimDataStore {
             Bukkit.getPluginManager().callEvent(
                 new codes.castled.gpexpansion.events.ClaimRenamedEvent(claim, oldName, name, actor));
         }
+    }
+
+    /**
+     * The claim's waypoint colour as a lowercase Adventure colour name, or empty for the default.
+     *
+     * <p>Stored by name rather than RGB so the value stays readable in {@code claimdata.yml} and
+     * matches what the player typed in {@code /claim color}.
+     */
+    public Optional<String> getWaypointColor(String claimId) {
+        ClaimData data = claimData.get(claimId);
+        return data != null ? Optional.ofNullable(data.waypointColor) : Optional.empty();
+    }
+
+    public void setWaypointColor(String claimId, String color) {
+        setWaypointColor(claimId, color, null);
+    }
+
+    public void setWaypointColor(String claimId, String color, @org.jetbrains.annotations.Nullable CommandSender actor) {
+        String oldColor = getWaypointColor(claimId).orElse(null);
+        get(claimId).waypointColor = normalizeWaypointColor(color);
+        Claim claim = resolveClaim(claimId);
+        if (claim != null) {
+            Bukkit.getPluginManager().callEvent(
+                new codes.castled.gpexpansion.events.ClaimColorChangedEvent(claim, oldColor, color, actor));
+        }
+    }
+
+    /**
+     * Accepts a colour name in any case and returns the canonical lowercase form, or null if it is
+     * not one of Minecraft's 16 named colours. Guards against a hand-edited YAML producing a value
+     * the waypoint layer cannot resolve.
+     */
+    private String normalizeWaypointColor(String color) {
+        if (color == null) return null;
+        return net.kyori.adventure.text.format.NamedTextColor.NAMES.value(
+            color.trim().toLowerCase(java.util.Locale.ROOT)) != null
+                ? color.trim().toLowerCase(java.util.Locale.ROOT)
+                : null;
+    }
+
+    /**
+     * Whether this claim's waypoint is published to every player rather than only to the owner and
+     * trusted players.
+     */
+    public boolean isPublicWaypoint(String claimId) {
+        ClaimData data = claimData.get(claimId);
+        return data != null && data.publicWaypoint;
+    }
+
+    public void setPublicWaypoint(String claimId, boolean publicWaypoint) {
+        setPublicWaypoint(claimId, publicWaypoint, null);
+    }
+
+    public void setPublicWaypoint(String claimId, boolean publicWaypoint, @org.jetbrains.annotations.Nullable CommandSender actor) {
+        boolean oldValue = isPublicWaypoint(claimId);
+        get(claimId).publicWaypoint = publicWaypoint;
+        Claim claim = resolveClaim(claimId);
+        if (claim != null) {
+            Bukkit.getPluginManager().callEvent(
+                new codes.castled.gpexpansion.events.ClaimPublicWaypointChangedEvent(claim, oldValue, publicWaypoint, actor));
+        }
+    }
+
+    /** Number of claims with a public waypoint owned by the given player. */
+    public int countPublicWaypoints(java.util.UUID owner) {
+        if (owner == null || GriefPrevention.instance == null || GriefPrevention.instance.dataStore == null) {
+            return 0;
+        }
+        int count = 0;
+        for (Claim claim : GriefPrevention.instance.dataStore.getClaims()) {
+            if (claim == null || !owner.equals(claim.getOwnerID())) continue;
+            if (isPublicWaypoint(String.valueOf(claim.getID()))) count++;
+        }
+        return count;
     }
 
     private String truncateCustomName(String name) {

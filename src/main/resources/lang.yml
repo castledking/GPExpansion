@@ -339,8 +339,8 @@ commands:
   sellclaim-cmd-hint: "&7(If no ID provided, uses current claim)"
   
   # GPX max command
-  gpx-max-usage: "&cUsage: /gpx max <sell|rent|mailbox|self-mailboxes|globals> <add|take|set> <player> <amount>"
-  gpx-max-invalid-type: "&cInvalid type. Use 'sell', 'rent', 'mailbox', 'self-mailboxes', or 'globals'."
+  gpx-max-usage: "&cUsage: /gpx max <sell|rent|mailbox|self-mailboxes|globals|waypoints> <add|take|set> <player> <amount>"
+  gpx-max-invalid-type: "&cInvalid type. Use 'sell', 'rent', 'mailbox', 'self-mailboxes', 'globals', or 'waypoints'."
   gpx-max-invalid-action: "&cInvalid action. Use 'add', 'take', or 'set'."
   gpx-max-amount-required: "&cPlease specify an amount."
   gpx-max-amount-positive: "&cAmount must be positive."
@@ -538,6 +538,15 @@ claim:
   name-invalid-chars: "&cClaim name contains invalid characters."
   name-no-permission: "&cYou lack permission: &egriefprevention.claim.name"
   name-usage: "&eUsage: /claim name <newName> [claimId]"
+
+  # Claim waypoint color
+  color-no-permission: "&cYou lack permission: &egriefprevention.claim.color"
+  color-usage: "&eUsage: /claim color <color|reset> [claimId]"
+  color-invalid: "&cUnknown color. Valid colors: &e{colors}&c, or &ereset&c."
+  waypoint-disabled: "&cClaim waypoints are disabled on this server."
+  waypoint-published: "&aClaim {id}'s waypoint is now shown to everyone."
+  waypoint-hidden: "&aClaim {id}'s waypoint is back to owner and trusted only."
+  waypoint-limit-reached: "&cYou already publish {used}/{max} claim waypoints. Hide one first."
   
   # Icon
   icon-no-permission: "&cYou lack permission: &egriefprevention.claim.icon"

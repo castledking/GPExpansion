@@ -7,17 +7,20 @@
 
   <groupId>codes.castled.gpexpansion</groupId>
   <artifactId>gpexpansion</artifactId>
-  <version>1.1.10</version>
+  <version>1.1.11</version>
   <name>GPExpansion</name>
   <description>GriefPrevention Expansion</description>
 
   <properties>
-    <maven.compiler.release>21</maven.compiler.release>
-    <maven.compiler.source>21</maven.compiler.source>
-    <maven.compiler.target>21</maven.compiler.target>
+    <maven.compiler.release>25</maven.compiler.release>
+    <maven.compiler.source>25</maven.compiler.source>
+    <maven.compiler.target>25</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <!-- Paper API version for 1.20.x server compatibility -->
-    <paper.version>1.20.6-R0.1-SNAPSHOT</paper.version>
+    <!--
+      Claim waypoints need a Paper API >= 1.21.11: LivingEntity#setWaypointStyle and
+      #setWaypointColor landed after 1.21.6, and Attribute.WAYPOINT_TRANSMIT_RANGE in 1.21.6.
+    -->
+    <paper.version>26.2.build.40-alpha</paper.version>
     <adventure.minimessage.version>4.17.0</adventure.minimessage.version>
     <vault.api.version>1.7</vault.api.version>
     <griefprevention3d.version>18.2.7</griefprevention3d.version>
@@ -105,6 +108,17 @@
       <resource>
         <directory>src/main/resources</directory>
         <filtering>true</filtering>
+        <!-- Filtering rewrites bytes, which corrupts a zip. -->
+        <excludes>
+          <exclude>resourcepack.zip</exclude>
+        </excludes>
+      </resource>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>false</filtering>
+        <includes>
+          <include>resourcepack.zip</include>
+        </includes>
       </resource>
     </resources>
     <plugins>
@@ -113,7 +127,7 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.11.0</version>
         <configuration>
-          <release>21</release>
+          <release>25</release>
         </configuration>
       </plugin>
       <plugin>
@@ -128,6 +142,18 @@
             </goals>
             <configuration>
               <createDependencyReducedPom>false</createDependencyReducedPom>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <!--
+                    The ResourcePackManager API stub is compile-only. Shipping it would shadow
+                    RSPM's real class at runtime and every call would throw.
+                  -->
+                  <excludes>
+                    <exclude>com/magmaguy/**</exclude>
+                  </excludes>
+                </filter>
+              </filters>
               <relocations>
                 <relocation>
                   <pattern>net.kyori.adventure.text.minimessage</pattern>
