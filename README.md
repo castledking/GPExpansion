@@ -188,6 +188,20 @@ accruals:
 - `/gpx accruals creategroup <name> [blocks-per-hour] [max-blocks] [max-claims] [permission]` – Create new group
 - `/gpx accruals deletegroup <name>` – Delete a group
 
+### CrowBar Locator Bar Integration
+
+When [CrowBar](https://github.com/castledking/CrowBar), a Fabric client mod, is installed alongside GPExpansion, claim waypoints display the **claim owner's name** and a **bowtie marker** on the locator bar. CrowBar reads the same locator data GPExpansion sends and renders readable name tags above each waypoint.
+
+![GPX-CrowBar](https://castled.codes/assets/gpx-crowbar.png)
+
+- Works automatically when both GPExpansion and CrowBar are installed — no extra configuration needed.
+- Claim names appear above the bowtie waypoint marker on the locator bar.
+- Compatible with Minecraft 1.21.6–1.21.11, 26.1.x, and 26.2.
+
+<p>
+  <a href="https://github.com/castledking/CrowBar"><img alt="Download CrowBar" src="https://img.shields.io/badge/Download%20CrowBar-GitHub-181717?style=for-the-badge&logo=github&logoColor=white"></a>
+</p>
+
 ### <span style="color:#555555;">Documentation</span>
 **Sign formats, configuration, permissions, and detailed guides**
 [All here](https://github.com/castledking/GPExpansion/blob/main/README.md)
