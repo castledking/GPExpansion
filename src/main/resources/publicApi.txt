@@ -259,13 +259,19 @@ Use ClaimRenamedEvent to invalidate any cached display name instead of polling.
 6. PLACEHOLDERS PROVIDED BY GPX
 --------------------------------------------------------------------------------
 
-Identifier: griefprevention   (do NOT reuse this id in your own expansion)
+Identifier: gpx   (do NOT reuse this id in your own expansion)
 
-  %griefprevention_in_claim%                   yes / no
-  %griefprevention_currentclaim_claimid%
-  %griefprevention_currentclaim_claimname%     custom name, "" if unset
-  %griefprevention_claim_flight%               yes / no
-  %griefprevention_claim_flight_time%          formatted remaining duration
+  %gpx_in_claim%                   yes / no
+  %gpx_currentclaim_claimid%
+  %gpx_currentclaim_claimname%     custom name, "" if unset
+  %gpx_claim_flight%               yes / no
+  %gpx_claim_flight_time%          formatted remaining duration
+
+NOTE: these were previously registered under the "griefprevention" identifier,
+which shadowed the eCloud GriefPrevention expansion. They now use "gpx" so both
+expansions can be installed side by side. Update any
+scoreboard/chat configs that still reference %griefprevention_currentclaim_*%
+and %griefprevention_claim_flight*%.
 
 The currentclaim_* placeholders resolve against the player's CURRENT LOCATION.
 They are intentionally location-scoped. If you want a persistent per-player
