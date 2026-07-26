@@ -24,7 +24,7 @@ public class GPXPlaceholderExpansion extends PlaceholderExpansion {
 
     @Override
     public @NotNull String getIdentifier() {
-        return "griefprevention";
+        return "gpx";
     }
 
     @Override

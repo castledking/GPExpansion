@@ -136,7 +136,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             new codes.castled.gpexpansion.placeholder.GPXPlaceholderExpansion(this).register();
-            getLogger().info("- Registered PlaceholderAPI placeholders (%griefprevention_*)");
+            getLogger().info("- Registered PlaceholderAPI placeholders (%gpx_*)");
         }
 
         // Register listeners
