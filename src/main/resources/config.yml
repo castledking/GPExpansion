@@ -375,6 +375,9 @@ claim-flight:
   # in owned/trusted claims without needing time in their flight bank.
   passive-mode: false
 
+  # Master switch. When false, the move/teleport/damage handlers return immediately
+  # and no claim lookups are performed, so the feature costs nothing at runtime.
+  # Can be flipped back on with a config reload; no restart needed.
   enabled: true
   require-toggle-command: true
   consume-time-while-hovering: true

@@ -62,11 +62,26 @@ public class ClaimFlyListener implements Listener {
         this.claimFlyManager = plugin.getClaimFlyManager();
     }
 
+    /**
+     * Master switch for the whole feature. Checked before any claim lookup so that
+     * disabling claim flight actually removes the per-move cost, not just the behaviour.
+     */
+    private boolean isFeatureEnabled() {
+        return plugin.getConfigManager().isClaimFlightEnabled();
+    }
+
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         UUID playerID = player.getUniqueId();
-        
+
+        if (!isFeatureEnabled()) {
+            // Still start the reconciler; it idles cheaply and picks the feature back up
+            // if claim-flight.enabled is flipped on by a config reload.
+            startFlightReconciler(player);
+            return;
+        }
+
         // Initialize flight state based on whether the login location is inside a claim.
         Object spawnClaim = gpBridge.getClaimAt(player.getLocation()).orElse(null);
         if (spawnClaim != null) {
@@ -106,6 +121,8 @@ public class ClaimFlyListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
+        if (!isFeatureEnabled()) return;
+
         // Only check if the player has moved a full block
         if (event.getFrom().getBlockX() == event.getTo().getBlockX() &&
                 event.getFrom().getBlockZ() == event.getTo().getBlockZ() &&
@@ -139,6 +156,8 @@ public class ClaimFlyListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerTeleport(PlayerTeleportEvent event) {
+        if (!isFeatureEnabled()) return;
+
         Player player = event.getPlayer();
         UUID playerID = player.getUniqueId();
 
@@ -162,6 +181,7 @@ public class ClaimFlyListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityDamage(EntityDamageEvent event) {
+        if (!isFeatureEnabled()) return;
         if (!(event.getEntity() instanceof Player player)) return;
         if (!claimFlightGranted.contains(player.getUniqueId())) return;
 
@@ -231,10 +251,21 @@ public class ClaimFlyListener implements Listener {
             return;
         }
 
+        // When the feature is off we still tick, but slowly and without any claim lookup,
+        // so a config reload can re-enable claim flight without requiring a restart.
+        long delay = isFeatureEnabled() ? 40L : 200L;
+
         TaskHandle handle = SchedulerAdapter.runLaterEntity(plugin, player, () -> {
             Player p = plugin.getServer().getPlayer(playerID);
             if (p == null || !p.isOnline()) {
                 flightReconcilerTasks.remove(playerID);
+                return;
+            }
+            if (!isFeatureEnabled()) {
+                // Undo any grant we made before the feature was switched off, then idle.
+                revokeClaimFlight(p);
+                playerLastClaim.remove(playerID);
+                scheduleFlightReconcilerTick(playerID);
                 return;
             }
             Object currentClaim = gpBridge.getClaimAt(p.getLocation()).orElse(null);
@@ -252,7 +283,7 @@ public class ClaimFlyListener implements Listener {
 
             // Reschedule the next tick.
             scheduleFlightReconcilerTick(playerID);
-        }, 40L);
+        }, delay);
 
         flightReconcilerTasks.put(playerID, handle);
     }
