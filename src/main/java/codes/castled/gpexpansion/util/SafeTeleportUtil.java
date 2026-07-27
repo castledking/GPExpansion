@@ -14,6 +14,10 @@ public final class SafeTeleportUtil {
 
     private static final int RADIUS = 16;
     private static final int MAX_Y_SEARCH = 10;
+    // Thickness of the bedrock slab that caps a ceilinged world (the nether roof
+    // band is y=123..127). Bedrock inside this band is never valid ground; the
+    // bedrock floor at the bottom of a world stays usable.
+    private static final int CEILING_BEDROCK_DEPTH = 8;
     private static volatile Vector3D[] volume;
 
     private static final EnumSet<Material> DAMAGING_TYPES = EnumSet.of(
@@ -110,8 +114,47 @@ public final class SafeTeleportUtil {
                name.contains("GATE");
     }
 
+    /** True for worlds capped by a bedrock roof (the nether), where playable space ends below max height. */
+    private static boolean hasCeiling(World world) {
+        return world.getLogicalHeight() < world.getMaxHeight();
+    }
+
+    /** True for bedrock belonging to a world's roof slab, as opposed to the bedrock floor. */
+    private static boolean isCeilingBedrock(World world, int y, Material mat) {
+        return mat == Material.BEDROCK
+            && hasCeiling(world)
+            && y >= world.getLogicalHeight() - CEILING_BEDROCK_DEPTH;
+    }
+
+    /** Highest Y a player may stand at in a ceilinged world; everything at or above is on top of the roof. */
+    private static int getCeilingLimit(World world) {
+        return hasCeiling(world) ? world.getLogicalHeight() - 1 : world.getMaxHeight() - 1;
+    }
+
+    /**
+     * Highest standable Y for a column, ignoring a world's bedrock roof and anything built on top of it.
+     * Replaces {@link World#getHighestBlockYAt(int, int)} for teleport destinations, which in the nether
+     * always resolves to the roof.
+     */
+    public static int getHighestTeleportY(World world, int x, int z) {
+        if (!hasCeiling(world)) {
+            return world.getHighestBlockYAt(x, z) + 1;
+        }
+        for (int y = getCeilingLimit(world); y >= world.getMinHeight(); y--) {
+            Material mat = world.getBlockAt(x, y, z).getType();
+            if (isCeilingBedrock(world, y, mat)) continue;
+            if (!isHollow(mat)) return y + 1;
+        }
+        return world.getHighestBlockYAt(x, z) + 1;
+    }
+
     public static boolean isBlockUnsafe(World world, int x, int y, int z) {
         if (y < world.getMinHeight()) {
+            return true;
+        }
+
+        // On top of (or above) the nether roof
+        if (y > getCeilingLimit(world)) {
             return true;
         }
 
@@ -119,8 +162,13 @@ public final class SafeTeleportUtil {
         Material below = world.getBlockAt(x, y - 1, z).getType();
         Material above = world.getBlockAt(x, y + 1, z).getType();
 
+        // Standing inside the roof bedrock slab
+        if (isCeilingBedrock(world, y - 1, below)) {
+            return true;
+        }
+
         // Block below must be solid (not hollow, not lava, not water-like)
-        if (LAVA_TYPES.contains(block) || LAVA_TYPES.contains(below) || DAMAGING_TYPES.contains(below) || 
+        if (LAVA_TYPES.contains(block) || LAVA_TYPES.contains(below) || DAMAGING_TYPES.contains(below) ||
             DAMAGING_TYPES.contains(block) || isBedBlock(below)) {
             return true;
         }
@@ -158,11 +206,17 @@ public final class SafeTeleportUtil {
         int y = (int) Math.round(loc.getY());
         int z = loc.getBlockZ();
 
+        // Never start the search on top of the nether roof - drop under it first
+        int ceilingLimit = getCeilingLimit(world);
+        if (y > ceilingLimit) {
+            y = ceilingLimit;
+        }
+
         final int origX = x;
         final int origY = y;
         final int origZ = z;
-        
-        int maxY = Math.min(origY + MAX_Y_SEARCH, worldMaxY);
+
+        int maxY = Math.min(origY + MAX_Y_SEARCH, Math.min(worldMaxY, ceilingLimit + 1));
         int minX = bounds != null ? bounds[0] : origX - 16;
         int maxX = bounds != null ? bounds[1] : origX + 16;
         int minZ = bounds != null ? bounds[2] : origZ - 16;
@@ -173,8 +227,12 @@ public final class SafeTeleportUtil {
         int safeGroundY = -1;
         for (int checkY = y - 1; checkY >= worldMinY; checkY--) {
             Material checkBlock = world.getBlockAt(x, checkY, z).getType();
+            // Roof bedrock is not ground - keep falling until the real terrain below it
+            if (isCeilingBedrock(world, checkY, checkBlock)) {
+                continue;
+            }
             // Must be solid (not hollow) AND not dangerous
-            if (!isHollow(checkBlock) && !LAVA_TYPES.contains(checkBlock) && 
+            if (!isHollow(checkBlock) && !LAVA_TYPES.contains(checkBlock) &&
                 !DAMAGING_TYPES.contains(checkBlock) && !checkBlock.name().contains("WATER") &&
                 !isBedBlock(checkBlock)) {
                 safeGroundY = checkY;
@@ -258,16 +316,22 @@ public final class SafeTeleportUtil {
         int x = loc.getBlockX();
         int y = loc.getBlockY();
         int z = loc.getBlockZ();
-        
+
+        // On top of (or above) the nether roof
+        if (y > getCeilingLimit(world)) {
+            return false;
+        }
+
         // Check the block at player position - should be air/hollow and not water
         Material block = world.getBlockAt(x, y, z).getType();
         if (!isHollow(block) || block.name().contains("WATER")) {
             return false;
         }
-        
+
         // Check the block below - must be solid (not hollow, not lava, not damaging)
         Material below = world.getBlockAt(x, y - 1, z).getType();
-        if (isHollow(below) || LAVA_TYPES.contains(below) || DAMAGING_TYPES.contains(below) || isBedBlock(below)) {
+        if (isHollow(below) || LAVA_TYPES.contains(below) || DAMAGING_TYPES.contains(below) || isBedBlock(below)
+            || isCeilingBedrock(world, y - 1, below)) {
             return false;
         }
         

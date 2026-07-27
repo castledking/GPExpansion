@@ -2917,7 +2917,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             
             // Schedule on target region to get highest Y and teleport
             codes.castled.gpexpansion.scheduler.SchedulerAdapter.runAtLocation(plugin, centerXZ, () -> {
-                int y = centerXZ.getWorld().getHighestBlockYAt(centerXZ.getBlockX(), centerXZ.getBlockZ()) + 1;
+                int y = SafeTeleportUtil.getHighestTeleportY(centerXZ.getWorld(), centerXZ.getBlockX(), centerXZ.getBlockZ());
                 Location teleportLoc = new Location(centerXZ.getWorld(), centerXZ.getX(), y, centerXZ.getZ());
                 queueResolvedClaimTeleport(finalSender, finalTarget, finalClaimId, finalClaim, teleportLoc, finalSearchRadius);
             });
