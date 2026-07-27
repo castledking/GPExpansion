@@ -131,21 +131,56 @@ public final class SafeTeleportUtil {
         return hasCeiling(world) ? world.getLogicalHeight() - 1 : world.getMaxHeight() - 1;
     }
 
+    /** Block a player can occupy: hollow, and not a fluid they would be standing in. */
+    private static boolean isOpenSpace(Material mat) {
+        return isHollow(mat) && !mat.name().contains("WATER") && !LAVA_TYPES.contains(mat);
+    }
+
+    /** Block a player can stand on top of. */
+    private static boolean isValidGround(World world, int y, Material mat) {
+        return !isHollow(mat)
+            && !LAVA_TYPES.contains(mat)
+            && !DAMAGING_TYPES.contains(mat)
+            && !mat.name().contains("WATER")
+            && !isBedBlock(mat)
+            && !isCeilingBedrock(world, y, mat);
+    }
+
     /**
      * Highest standable Y for a column, ignoring a world's bedrock roof and anything built on top of it.
      * Replaces {@link World#getHighestBlockYAt(int, int)} for teleport destinations, which in the nether
      * always resolves to the roof.
+     *
+     * <p>The returned Y is a gap with head room, not merely the block above the terrain - under a bedrock
+     * roof the ground is often packed straight up against the slab, and the space above it is solid.
      */
     public static int getHighestTeleportY(World world, int x, int z) {
         if (!hasCeiling(world)) {
             return world.getHighestBlockYAt(x, z) + 1;
         }
-        for (int y = getCeilingLimit(world); y >= world.getMinHeight(); y--) {
+
+        int limit = getCeilingLimit(world);
+        int minY = world.getMinHeight();
+        int firstGroundBelowRoof = Integer.MIN_VALUE;
+
+        for (int y = limit - 2; y >= minY; y--) {
             Material mat = world.getBlockAt(x, y, z).getType();
-            if (isCeilingBedrock(world, y, mat)) continue;
-            if (!isHollow(mat)) return y + 1;
+            if (!isValidGround(world, y, mat)) continue;
+            if (firstGroundBelowRoof == Integer.MIN_VALUE) {
+                firstGroundBelowRoof = y;
+            }
+            // Two open blocks above the ground, or the player ends up inside the roof slab
+            if (isOpenSpace(world.getBlockAt(x, y + 1, z).getType())
+                && isOpenSpace(world.getBlockAt(x, y + 2, z).getType())) {
+                return y + 1;
+            }
         }
-        return world.getHighestBlockYAt(x, z) + 1;
+
+        // Nothing open in the column - hand back the terrain surface and let the
+        // nearby search look for an opening around it
+        return firstGroundBelowRoof == Integer.MIN_VALUE
+            ? world.getHighestBlockYAt(x, z) + 1
+            : firstGroundBelowRoof + 1;
     }
 
     public static boolean isBlockUnsafe(World world, int x, int y, int z) {
@@ -206,10 +241,10 @@ public final class SafeTeleportUtil {
         int y = (int) Math.round(loc.getY());
         int z = loc.getBlockZ();
 
-        // Never start the search on top of the nether roof - drop under it first
+        // Never start the search on top of the nether roof - drop to the terrain under it first
         int ceilingLimit = getCeilingLimit(world);
         if (y > ceilingLimit) {
-            y = ceilingLimit;
+            y = Math.min(getHighestTeleportY(world, x, z), ceilingLimit);
         }
 
         final int origX = x;
@@ -227,14 +262,9 @@ public final class SafeTeleportUtil {
         int safeGroundY = -1;
         for (int checkY = y - 1; checkY >= worldMinY; checkY--) {
             Material checkBlock = world.getBlockAt(x, checkY, z).getType();
-            // Roof bedrock is not ground - keep falling until the real terrain below it
-            if (isCeilingBedrock(world, checkY, checkBlock)) {
-                continue;
-            }
-            // Must be solid (not hollow) AND not dangerous
-            if (!isHollow(checkBlock) && !LAVA_TYPES.contains(checkBlock) &&
-                !DAMAGING_TYPES.contains(checkBlock) && !checkBlock.name().contains("WATER") &&
-                !isBedBlock(checkBlock)) {
+            // Must be solid, not dangerous, and not part of the roof slab - roof bedrock
+            // is skipped so the scan keeps falling to the real terrain below it
+            if (isValidGround(world, checkY, checkBlock)) {
                 safeGroundY = checkY;
                 break;
             }
