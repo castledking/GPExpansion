@@ -1186,7 +1186,7 @@ public class GPBridge {
             int maxZ = Math.max(lesser.getBlockZ(), greater.getBlockZ());
             int cx = (minX + maxX) / 2;
             int cz = (minZ + maxZ) / 2;
-            int y = lesser.getWorld().getHighestBlockYAt(cx, cz) + 1;
+            int y = codes.castled.gpexpansion.util.SafeTeleportUtil.getHighestTeleportY(lesser.getWorld(), cx, cz);
             return Optional.of(new Location(lesser.getWorld(), cx + 0.5, y, cz + 0.5));
         } catch (ReflectiveOperationException e) {
             return Optional.empty();
