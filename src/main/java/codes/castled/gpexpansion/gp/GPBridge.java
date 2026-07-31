@@ -957,37 +957,27 @@ public class GPBridge {
             Object smallestClaim = null;
             Object smallest3DClaim = null;
 
-            Method contains = null;
-            Method is3D = null;
-            Method containsY = null;
-            Method getGreater = null;
-            Method getLesser = null;
-            Method getArea = null;
-            Method getBlockY = null;
+            // Resolve the accessors once, up front, from the cache. This used to sit inside the
+            // loop below behind `if (method == null)` guards: a method the claim class does not
+            // expose left its guard permanently unsatisfied, so getMethod was called again for
+            // every claim and every miss built a NoSuchMethodException — stack capture included.
+            // A single wilderness lookup could construct one exception per claim on the server.
+            Class<?> cc = claims.get(0).getClass();
+            Method contains = lookupMethod(cc, "contains", Location.class, boolean.class, boolean.class);
+            if (contains == null) return null;
+            Method is3D = lookupMethod(cc, "is3D");
+            Method containsY = lookupMethod(cc, "containsY", int.class);
+            Method getGreater = lookupMethod(cc, "getGreaterBoundaryCorner");
+            Method getLesser = lookupMethod(cc, "getLesserBoundaryCorner");
+            Method getArea = lookupMethod(cc, "getArea");
+            Method getBlockY = getGreater == null ? null : lookupMethod(getGreater.getReturnType(), "getBlockY");
+            if (getGreater == null || getLesser == null || getBlockY == null) {
+                getGreater = null;
+                getLesser = null;
+                getBlockY = null;
+            }
 
             for (Object claim : claims) {
-                Class<?> cc = claim.getClass();
-                if (contains == null) {
-                    contains = cc.getMethod("contains", Location.class, boolean.class, boolean.class);
-                }
-                if (is3D == null) {
-                    try { is3D = cc.getMethod("is3D"); } catch (NoSuchMethodException ignored) {}
-                }
-                if (containsY == null) {
-                    try { containsY = cc.getMethod("containsY", int.class); } catch (NoSuchMethodException ignored) {}
-                }
-                if (getGreater == null || getLesser == null) {
-                    try {
-                        getGreater = cc.getMethod("getGreaterBoundaryCorner");
-                        getLesser = cc.getMethod("getLesserBoundaryCorner");
-                        Class<?> cornerType = getGreater.getReturnType();
-                        getBlockY = cornerType.getMethod("getBlockY");
-                    } catch (NoSuchMethodException ignored) {}
-                }
-                if (getArea == null) {
-                    try { getArea = cc.getMethod("getArea"); } catch (NoSuchMethodException ignored) {}
-                }
-
                 Boolean containsLoc = (Boolean) contains.invoke(claim, location, ignoreHeight, false);
                 if (!containsLoc) continue;
 
