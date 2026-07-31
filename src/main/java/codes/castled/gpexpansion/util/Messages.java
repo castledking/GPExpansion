@@ -361,6 +361,7 @@ public class Messages {
         DEFAULTS.put("commands.accruals-group-deleted", "&aDeleted accrual group {group}.");
         DEFAULTS.put("commands.accruals-claim-limit", "&cYou have reached your claim limit ({max}) for accrual profile {profile}.");
         DEFAULTS.put("commands.accruals-cap-reached", "&eYour accrued claim blocks were capped at {max} for accrual profile {profile}.");
+        DEFAULTS.put("commands.accruals-received", "&aYou received {amount} bonus claim blocks from your {profile} profile.");
         DEFAULTS.put("commands.accruals-redundant-group-warning", "No 'permission:' section found for accrual group '{group}', and no matching Vault or LuckPerms group was found. This accrual config is redundant.");
         DEFAULTS.put("commands.accruals-invalid-group-entry-warning", "Skipping accruals.groups entry {index} because it has no name.");
         

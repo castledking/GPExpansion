@@ -408,6 +408,7 @@ commands:
   accruals-group-deleted: "&aDeleted accrual group {group}."
   accruals-claim-limit: "&cYou have reached your claim limit ({max}) for accrual profile {profile}."
   accruals-cap-reached: "&eYour accrued claim blocks were capped at {max} for accrual profile {profile}."
+  accruals-received: "&aYou received {amount} bonus claim blocks from your {profile} profile."
   accruals-redundant-group-warning: "No 'permission:' section found for accrual group '{group}', and no matching Vault or LuckPerms group was found. This accrual config is redundant."
   accruals-invalid-group-entry-warning: "Skipping accruals.groups entry {index} because it has no name."
 

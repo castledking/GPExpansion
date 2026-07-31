@@ -19,6 +19,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import org.bukkit.Chunk;
@@ -135,6 +136,69 @@ public class ClaimSnapshotStore {
      */
     private boolean createSnapshotSnap(World world, int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
             File claimDir, String id, Map<String, Object> entry) {
+        if (SchedulerAdapter.isFolia()) {
+            int chunkMinX = minX >> 4, chunkMaxX = maxX >> 4;
+            int chunkMinZ = minZ >> 4, chunkMaxZ = maxZ >> 4;
+            int totalChunks = (chunkMaxX - chunkMinX + 1) * (chunkMaxZ - chunkMinZ + 1);
+            List<Map<String, Object>> allBlocks = Collections.synchronizedList(new ArrayList<>());
+            AtomicInteger remaining = new AtomicInteger(totalChunks);
+
+            for (int chunkX = chunkMinX; chunkX <= chunkMaxX; chunkX++) {
+                for (int chunkZ = chunkMinZ; chunkZ <= chunkMaxZ; chunkZ++) {
+                    final int cx = chunkX, cz = chunkZ;
+                    int cMinX = Math.max(minX, cx << 4);
+                    int cMaxX = Math.min(maxX, (cx << 4) + 15);
+                    int cMinZ = Math.max(minZ, cz << 4);
+                    int cMaxZ = Math.min(maxZ, (cz << 4) + 15);
+                    Location chunkLoc = new Location(world, (cx << 4) + 8, 64, (cz << 4) + 8);
+
+                    Runnable readChunk = () -> {
+                        try {
+                            world.getChunkAt(cx, cz);
+                            for (int x = cMinX; x <= cMaxX; x++) {
+                                for (int y = minY; y <= maxY; y++) {
+                                    for (int z = cMinZ; z <= cMaxZ; z++) {
+                                        BlockData data = world.getBlockAt(x, y, z).getBlockData();
+                                        Map<String, Object> b = new LinkedHashMap<>();
+                                        b.put("x", x - minX);
+                                        b.put("y", y - minY);
+                                        b.put("z", z - minZ);
+                                        b.put("d", data.getAsString());
+                                        allBlocks.add(b);
+                                    }
+                                }
+                            }
+                        } catch (Throwable t) {
+                            plugin.getLogger().warning("Snapshot chunk read failed at " + cx + "," + cz + ": " + t.getMessage());
+                        } finally {
+                            if (remaining.decrementAndGet() <= 0) {
+                                entry.put("originX", minX);
+                                entry.put("originY", minY);
+                                entry.put("originZ", minZ);
+                                YamlConfiguration yaml = new YamlConfiguration();
+                                synchronized (allBlocks) {
+                                    yaml.set("blocks", new ArrayList<>(allBlocks));
+                                }
+                                File snapFile = new File(claimDir, id + ".snap");
+                                try {
+                                    yaml.save(snapFile);
+                                    plugin.getLogger().info("[Snapshot] Async snapshot " + id + " saved (" + allBlocks.size() + " blocks)");
+                                } catch (IOException e) {
+                                    plugin.getLogger().warning("Snapshot .snap save failed: " + e.getMessage());
+                                }
+                            }
+                        }
+                    };
+
+                    loadChunkAndRun(world, cx, cz, chunkLoc, readChunk);
+                }
+            }
+            entry.put("originX", minX);
+            entry.put("originY", minY);
+            entry.put("originZ", minZ);
+            return true;
+        }
+
         try {
             List<Map<String, Object>> blocks = new ArrayList<>();
             for (int x = minX; x <= maxX; x++) {
@@ -257,6 +321,28 @@ public class ClaimSnapshotStore {
         } catch (Throwable t) {
             plugin.getLogger().warning("Chunk load for restore failed: " + t.getMessage());
             SchedulerAdapter.runAtLocation(plugin, chunkLoc, setBlocks);
+        }
+    }
+
+    /**
+     * Generic version of loadChunkAndRestoreBlocks for any chunk-scoped task.
+     * Loads chunk via getChunkAtAsync (reflection for Folia API), then schedules
+     * the task on the correct region thread via runAtLocation.
+     */
+    private void loadChunkAndRun(World world, int chunkX, int chunkZ, Location chunkLoc, Runnable task) {
+        try {
+            java.lang.reflect.Method m = world.getClass().getMethod("getChunkAtAsync", int.class, int.class, java.util.function.Consumer.class);
+            m.invoke(world, chunkX, chunkZ, (Consumer<Chunk>) chunk -> SchedulerAdapter.runAtLocation(plugin, chunkLoc, task));
+        } catch (NoSuchMethodException e) {
+            try {
+                java.lang.reflect.Method m4 = world.getClass().getMethod("getChunkAtAsync", int.class, int.class, boolean.class, java.util.function.Consumer.class);
+                m4.invoke(world, chunkX, chunkZ, true, (Consumer<Chunk>) chunk -> SchedulerAdapter.runAtLocation(plugin, chunkLoc, task));
+            } catch (ReflectiveOperationException e2) {
+                SchedulerAdapter.runAtLocation(plugin, chunkLoc, task);
+            }
+        } catch (Throwable t) {
+            plugin.getLogger().warning("Chunk load failed: " + t.getMessage());
+            SchedulerAdapter.runAtLocation(plugin, chunkLoc, task);
         }
     }
 
@@ -442,14 +528,7 @@ public class ClaimSnapshotStore {
                 plugin.getLogger().warning("Palette has no blocks.");
                 return false;
             }
-            int maxX = ox + size.getBlockX() - 1;
-            int maxZ = oz + size.getBlockZ() - 1;
-            for (int cx = ox >> 4; cx <= maxX >> 4; cx++) {
-                for (int cz = oz >> 4; cz <= maxZ >> 4; cz++) {
-                    world.getChunkAt(cx, cz);
-                }
-            }
-            int placed = 0;
+            List<BlockToPlace> allBlocks = new ArrayList<>();
             for (BlockState bs : blocks) {
                 if (bs == null) continue;
                 org.bukkit.Location offLoc = bs.getLocation();
@@ -459,7 +538,39 @@ public class ClaimSnapshotStore {
                 int wz = oz + offLoc.getBlockZ();
                 BlockData data = bs.getBlockData();
                 if (data == null) continue;
-                world.getBlockAt(wx, wy, wz).setBlockData(data);
+                allBlocks.add(new BlockToPlace(wx, wy, wz, data));
+            }
+
+            if (allBlocks.isEmpty()) return false;
+
+            final String fid = claimId;
+
+            if (SchedulerAdapter.isFolia()) {
+                Map<String, List<BlockToPlace>> byChunk = new HashMap<>();
+                for (BlockToPlace b : allBlocks) {
+                    byChunk.computeIfAbsent((b.x >> 4) + "," + (b.z >> 4), k -> new ArrayList<>()).add(b);
+                }
+                SchedulerAdapter.runGlobal(plugin, () -> {
+                    for (Map.Entry<String, List<BlockToPlace>> e : byChunk.entrySet()) {
+                        String[] parts = e.getKey().split(",");
+                        loadChunkAndRestoreBlocks(world, Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), new ArrayList<>(e.getValue()));
+                    }
+                    plugin.getLogger().info("[Snapshot] Scheduled " + allBlocks.size() + " blocks for NBT Folia restore (claim " + fid + ")");
+                    restoringClaims.remove(fid);
+                });
+                return true;
+            }
+
+            int maxX = ox + size.getBlockX() - 1;
+            int maxZ = oz + size.getBlockZ() - 1;
+            for (int cx = ox >> 4; cx <= maxX >> 4; cx++) {
+                for (int cz = oz >> 4; cz <= maxZ >> 4; cz++) {
+                    world.getChunkAt(cx, cz);
+                }
+            }
+            int placed = 0;
+            for (BlockToPlace b : allBlocks) {
+                world.getBlockAt(b.x, b.y, b.z).setBlockData(b.data);
                 placed++;
             }
             if (plugin.getConfigManager().isDebugEnabled()) {
@@ -601,8 +712,8 @@ public class ClaimSnapshotStore {
             if (nbtFile.exists()) {
                 plugin.getLogger().info("[Snapshot] Using legacy .nbt (create new snapshot with /claim snapshot for .snap)");
                 boolean success = restoreSnapshotStructureNbt(claimId, snapshotId, world, claimDir, nbtFile);
-                // NBT restore is synchronous, clear flag immediately
-                restoringClaims.remove(claimId);
+                // NBT restore is synchronous on non-Folia; on Folia it's async
+                if (!SchedulerAdapter.isFolia() || !success) restoringClaims.remove(claimId);
                 return success;
             }
             plugin.getLogger().warning("[Snapshot] No .snap or .nbt found for " + snapshotId + " in claim " + claimId);
