@@ -33,6 +33,9 @@ public class ClaimDataStore {
     // In-memory cache
     private final Map<String, ClaimData> claimData = new HashMap<>();
 
+    // Incremented on every ban mutation so ban enforcement can invalidate its claim index.
+    private volatile int banRevision;
+
     /**
      * Resolve a claim ID string to a GP3D Claim object.
      *
@@ -187,8 +190,9 @@ public class ClaimDataStore {
             }
         }
         
+        banRevision++;
         plugin.getLogger().info("Loaded " + claimData.size() + " claim data entries.");
-        
+
         // Always check for old files and show safe-to-delete messages
         checkForOldFiles();
         
@@ -608,6 +612,7 @@ public class ClaimDataStore {
                     migratedCount++;
                 }
                 if (migratedCount > 0) {
+                    banRevision++;
                     plugin.getLogger().info("Migrated bans from bans.yml");
                     return true;
                 }
@@ -833,10 +838,12 @@ public class ClaimDataStore {
     
     public void set(String claimId, ClaimData data) {
         claimData.put(claimId, data);
+        banRevision++;
     }
-    
+
     public void remove(String claimId) {
         claimData.remove(claimId);
+        banRevision++;
     }
     
     // Basic claim data methods
@@ -1161,15 +1168,38 @@ public class ClaimDataStore {
     public BanData getBans(String claimId) {
         return get(claimId).bans;
     }
-    
-    public boolean isPublicBanned(String claimId) {
-        return get(claimId).bans.publicBanned;
+
+    /**
+     * Bumped whenever any ban changes. Ban enforcement keeps a spatial index of the claims
+     * that ban somebody so it can reject most player moves without a claim lookup; comparing
+     * this counter tells it when that index has to be rebuilt.
+     */
+    public int getBanRevision() {
+        return banRevision;
     }
-    
+
+    /** Claim IDs that ban at least one player or the public, for ban enforcement. */
+    public Set<String> getClaimIdsWithBans() {
+        Set<String> ids = new HashSet<>();
+        for (Map.Entry<String, ClaimData> entry : claimData.entrySet()) {
+            BanData bans = entry.getValue().bans;
+            if (bans.publicBanned || !bans.bannedPlayers.isEmpty()) {
+                ids.add(entry.getKey());
+            }
+        }
+        return ids;
+    }
+
+    public boolean isPublicBanned(String claimId) {
+        ClaimData data = claimData.get(claimId);
+        return data != null && data.bans.publicBanned;
+    }
+
     public void setPublicBanned(String claimId, boolean banned) {
         get(claimId).bans.publicBanned = banned;
+        banRevision++;
     }
-    
+
     public void addBannedPlayer(String claimId, UUID player) {
         addBannedPlayer(claimId, player, null);
     }
@@ -1177,6 +1207,7 @@ public class ClaimDataStore {
     public void addBannedPlayer(String claimId, UUID player, @org.jetbrains.annotations.Nullable CommandSender actor) {
         BanData bans = get(claimId).bans;
         bans.bannedPlayers.add(player);
+        banRevision++;
         try {
             String name = Bukkit.getOfflinePlayer(player).getName();
             if (name != null) {
@@ -1198,6 +1229,7 @@ public class ClaimDataStore {
         BanData bans = get(claimId).bans;
         bans.bannedPlayers.remove(player);
         bans.playerNames.remove(player);
+        banRevision++;
         Claim claim = resolveClaim(claimId);
         if (claim != null) {
             Bukkit.getPluginManager().callEvent(
@@ -1206,7 +1238,8 @@ public class ClaimDataStore {
     }
     
     public Set<UUID> getBannedPlayers(String claimId) {
-        return Collections.unmodifiableSet(get(claimId).bans.bannedPlayers);
+        ClaimData data = claimData.get(claimId);
+        return data == null ? Collections.emptySet() : Collections.unmodifiableSet(data.bans.bannedPlayers);
     }
 
     public Set<UUID> getTrustedPlayers(String claimId) {

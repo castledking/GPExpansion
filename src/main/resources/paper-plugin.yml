@@ -29,10 +29,6 @@ dependencies:
       load: BEFORE
       required: false
       join-classpath: true
-    DiscordSRV:
-      load: BEFORE
-      required: false
-      join-classpath: false
     ItemsAdder:
       load: BEFORE
       required: false
@@ -44,6 +40,12 @@ dependencies:
     # Nexo omitted from load order to avoid circular dependency:
     # GriefPrevention -> GPExpansion -> Nexo -> Vulcan -> GSit -> GriefPrevention
     # Nexo is still used at runtime (glyph parsing in GUIs) via reflection when present.
+    #
+    # DiscordSRV omitted from load order to avoid circular dependency:
+    # GPExpansion -> DiscordSRV -> Skript -> GriefPrevention -> GPExpansion
+    # (we load BEFORE GriefPrevention so our /claim wins the unprefixed label).
+    # DiscordSRV is still used at runtime via reflection through
+    # DiscordSRVChatCaptureBridge, which hooks whenever DiscordSRV enables.
 
 # Register our listeners
 listeners:

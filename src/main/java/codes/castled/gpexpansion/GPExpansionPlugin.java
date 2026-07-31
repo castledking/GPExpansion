@@ -490,6 +490,12 @@ public final class GPExpansionPlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.gui.DescriptionChatListener(this, descriptionInputManager), this);
         getLogger().info("- Registered DescriptionChatListener for claim descriptions");
 
+        // Chat we capture for wizards/description input must not leak into Discord relay.
+        new codes.castled.gpexpansion.listener.DiscordSRVChatCaptureBridge(this, player -> {
+            java.util.UUID playerId = player.getUniqueId();
+            return setupWizardManager.hasActiveSession(playerId) || descriptionInputManager.hasPending(playerId);
+        }).register();
+
         MailboxCommand mailboxCommand = new MailboxCommand(this);
         mailboxCommand.setWizardManager(setupWizardManager);
         Command mailboxWrapper = new PaperCommandWrapper(

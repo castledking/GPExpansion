@@ -19,6 +19,7 @@ import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
 import codes.castled.gpexpansion.scheduler.TaskHandle;
 
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -36,13 +37,107 @@ public class BanEnforcementListener implements Listener {
     private static final double KNOCKBACK_Y = 0.3;
     private static final long BAN_VISUALIZATION_TICKS = 200L;
     private static final long BAN_ENTER_MESSAGE_COOLDOWN_MS = 10_000L;
+    /** How often the ban index is rebuilt to pick up claim creation, resizing and deletion. */
+    private static final long BAN_INDEX_REBUILD_TICKS = 100L;
 
     private final Map<UUID, TaskHandle> visualizationClearTasks = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastEnterMessageAt = new ConcurrentHashMap<>();
 
+    /**
+     * Flat X/Z footprints of the top-level claims that ban somebody, used to reject the vast
+     * majority of movements without touching GriefPrevention.
+     */
+    private volatile List<BanBox> banBoxes = List.of();
+    /**
+     * False while claim data is unreachable, in which case the index says nothing and every
+     * move has to be checked the slow way rather than silently waved through.
+     */
+    private volatile boolean banIndexComplete = true;
+    private volatile int indexedBanRevision = Integer.MIN_VALUE;
+    private final Object banIndexLock = new Object();
+
     public BanEnforcementListener(GPExpansionPlugin plugin) {
         this.plugin = plugin;
         scheduleInitialEjectionCheck();
+        // Claim geometry changes without touching ban data, so refresh on a timer as well as
+        // on ban revision changes.
+        SchedulerAdapter.runRepeatingGlobal(plugin, this::rebuildBanIndex,
+                BAN_INDEX_REBUILD_TICKS, BAN_INDEX_REBUILD_TICKS);
+    }
+
+    /** X/Z footprint of a claim that bans at least one player, or the public. */
+    private record BanBox(String worldName, int minX, int maxX, int minZ, int maxZ) {
+        boolean contains(String world, int x, int z) {
+            return worldName.equals(world) && x >= minX && x <= maxX && z >= minZ && z <= maxZ;
+        }
+    }
+
+    /**
+     * True when the location could be inside a claim that bans somebody. This is only a
+     * pre-filter: {@link #checkBanned} still decides whether the player in particular is
+     * banned. Returns true whenever the index is unusable so enforcement never silently stops.
+     */
+    private boolean nearBannedClaim(Location location) {
+        if (plugin.getClaimDataStore().getBanRevision() != indexedBanRevision) {
+            rebuildBanIndex();
+        }
+        if (!banIndexComplete) return true;
+
+        List<BanBox> boxes = banBoxes;
+        if (boxes.isEmpty()) return false;
+        if (location == null || location.getWorld() == null) return false;
+
+        String worldName = location.getWorld().getName();
+        int x = location.getBlockX();
+        int z = location.getBlockZ();
+        for (BanBox box : boxes) {
+            if (box.contains(worldName, x, z)) return true;
+        }
+        return false;
+    }
+
+    private void rebuildBanIndex() {
+        synchronized (banIndexLock) {
+            int revision = plugin.getClaimDataStore().getBanRevision();
+            java.util.Set<String> bannedClaimIds = plugin.getClaimDataStore().getClaimIdsWithBans();
+            if (bannedClaimIds.isEmpty()) {
+                banBoxes = List.of();
+                banIndexComplete = true;
+                indexedBanRevision = revision;
+                return;
+            }
+
+            List<Object> claims = gp.getAllClaims();
+            if (claims.isEmpty()) {
+                // Claim data is not reachable (GriefPrevention still loading, or no claims at
+                // all). Check every move until it is rather than assume nobody is banned.
+                banBoxes = List.of();
+                banIndexComplete = false;
+                indexedBanRevision = revision;
+                return;
+            }
+
+            List<BanBox> boxes = new java.util.ArrayList<>(bannedClaimIds.size());
+            for (Object claim : claims) {
+                String claimId = gp.getClaimId(claim).orElse(null);
+                if (claimId == null || !bannedClaimIds.contains(claimId)) continue;
+                String worldName = gp.getClaimWorld(claim).orElse(null);
+                GPBridge.ClaimCorners corners = gp.getClaimCorners(claim).orElse(null);
+                if (worldName == null || corners == null) continue;
+                boxes.add(new BanBox(
+                        worldName,
+                        Math.min(corners.x1, corners.x2),
+                        Math.max(corners.x1, corners.x2),
+                        Math.min(corners.z1, corners.z2),
+                        Math.max(corners.z1, corners.z2)));
+            }
+
+            // Ban data can outlive its claim, so resolving fewer footprints than banned IDs is
+            // expected and does not invalidate the index.
+            banBoxes = List.copyOf(boxes);
+            banIndexComplete = true;
+            indexedBanRevision = revision;
+        }
     }
 
     private void scheduleInitialEjectionCheck() {
@@ -69,19 +164,24 @@ public class BanEnforcementListener implements Listener {
         Player player = e.getPlayer();
         
         // Block all movement if player is being ejected via teleport
-        if (beingEjected.contains(player.getUniqueId())) {
+        if (!beingEjected.isEmpty() && beingEjected.contains(player.getUniqueId())) {
             e.setCancelled(true);
             return;
         }
-        if (!plugin.getConfigManager().isClaimBanEntryPreventionEnabled()) {
-            return;
-        }
-        
+
         // Only act when changing block coordinates to reduce spam
         Location from = e.getFrom();
         Location to = e.getTo();
         if (from.getBlockX() == to.getBlockX() && from.getBlockZ() == to.getBlockZ() && from.getWorld() == to.getWorld()) return;
-        
+
+        // This runs for every block every player walks, so reject the common case (nowhere
+        // near a claim that bans anyone) before doing any claim lookup or config read.
+        if (!nearBannedClaim(to)) return;
+
+        if (!plugin.getConfigManager().isClaimBanEntryPreventionEnabled()) {
+            return;
+        }
+
         // Check if destination is in a banned claim
         BanCheckResult result = checkBanned(player, to);
         if (result == null) return;
@@ -125,10 +225,14 @@ public class BanEnforcementListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInteract(PlayerInteractEvent e) {
         Player p = e.getPlayer();
+        Location location = p.getLocation();
+        if (!nearBannedClaim(location)) {
+            return;
+        }
         if (!plugin.getConfigManager().isClaimBanEntryPreventionEnabled()) {
             return;
         }
-        BanCheckResult result = checkBanned(p, p.getLocation());
+        BanCheckResult result = checkBanned(p, location);
         if (result != null) {
             e.setCancelled(true);
             showBanVisualization(p, result.claim);
