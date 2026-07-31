@@ -4,8 +4,11 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.EventException;
+import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
+import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
+import org.bukkit.event.server.PluginEnableEvent;
 import org.bukkit.plugin.EventExecutor;
 import org.bukkit.plugin.Plugin;
 
@@ -30,10 +33,33 @@ public final class DiscordSRVChatCaptureBridge {
         this.shouldCapture = shouldCapture;
     }
 
-    public void registerIfAvailable() {
+    /**
+     * Hooks DiscordSRV now if it is already enabled, otherwise waits for it to enable.
+     * <p>
+     * GPExpansion is not allowed to declare a load-order dependency on DiscordSRV (that
+     * would close the load cycle GPExpansion -> DiscordSRV -> Skript -> GriefPrevention ->
+     * GPExpansion), so the hook has to tolerate DiscordSRV enabling after us.
+     */
+    public void register() {
+        if (registerIfAvailable()) {
+            return;
+        }
+        Bukkit.getPluginManager().registerEvents(new Listener() {
+            @EventHandler
+            public void onPluginEnable(PluginEnableEvent event) {
+                if (!DISCORDSRV_PLUGIN_NAME.equals(event.getPlugin().getName())) {
+                    return;
+                }
+                registerIfAvailable();
+                HandlerList.unregisterAll(this);
+            }
+        }, plugin);
+    }
+
+    private boolean registerIfAvailable() {
         Plugin discordSrv = Bukkit.getPluginManager().getPlugin(DISCORDSRV_PLUGIN_NAME);
         if (discordSrv == null || !discordSrv.isEnabled()) {
-            return;
+            return false;
         }
 
         try {
@@ -41,7 +67,7 @@ public final class DiscordSRVChatCaptureBridge {
             Class<?> eventClass = Class.forName(PRE_PROCESS_EVENT_CLASS, true, discordSrvClassLoader);
             if (!Event.class.isAssignableFrom(eventClass)) {
                 plugin.getLogger().warning("DiscordSRV pre-process event is not a Bukkit event on this version; skipping captured-chat bridge");
-                return;
+                return true;
             }
             Method getPlayer = eventClass.getMethod("getPlayer");
             Method setCancelled = eventClass.getMethod("setCancelled", boolean.class);
@@ -62,6 +88,7 @@ public final class DiscordSRVChatCaptureBridge {
         } catch (ReflectiveOperationException | LinkageError | ClassCastException e) {
             plugin.getLogger().warning("Failed to register DiscordSRV captured-chat bridge: " + e.getMessage());
         }
+        return true;
     }
 
     private void handleDiscordSrvEvent(Class<?> eventClass, Method getPlayer, Method setCancelled, Event event)

@@ -16,12 +16,41 @@ import java.util.*;
  */
 public class GPBridge {
     private static final double DOMINANT_CELL_COVERAGE_THRESHOLD = 0.50D;
+    /**
+     * Upper bound on probes per axis when resolving the dominant claim of a map cell.
+     * A 200x200 cell would otherwise be sampled 40,000 times, once per rendered tile.
+     */
+    private static final int DOMINANT_CELL_MAX_SAMPLES_PER_AXIS = 7;
+    /**
+     * Above this many blocks, shaped-claim cell coverage is estimated from a strided
+     * sample instead of counted block by block.
+     */
+    private static final int COVERAGE_EXACT_AREA_LIMIT = 4096;
+    /** Same idea as {@link #COVERAGE_EXACT_AREA_LIMIT}, for the reflective probe fallback. */
+    private static final int COVERAGE_PROBE_AREA_LIMIT = 1024;
     private static final int GET_CLAIM_AT_MODE_UNRESOLVED = 0;
     private static final int GET_CLAIM_AT_MODE_TWO_ARG = 1;
     private static final int GET_CLAIM_AT_MODE_THREE_ARG_PLAYER = 2;
     private static final int GET_CLAIM_AT_MODE_THREE_ARG_PLAYER_DATA = 3;
     private static final int GET_CLAIM_AT_MODE_THREE_ARG_CACHED_CLAIM = 4;
     private static final int GET_CLAIM_AT_MODE_FOUR_ARG = 5;
+
+    /**
+     * Per-class cache of resolved reflective accessors, hits and misses alike.
+     * <p>
+     * Paper's reflection remapper makes {@link Class#getMethod} expensive, and this bridge
+     * resolves the same handful of handles from tight loops: once per rendered map cell in
+     * the claim map editor, and once per block moved in ban enforcement. {@link ClassValue}
+     * keeps the entries tied to the GriefPrevention class loader so a plugin reload does
+     * not pin the old one.
+     */
+    private static final ClassValue<Map<String, Method>> METHOD_CACHE = new ClassValue<>() {
+        @Override
+        protected Map<String, Method> computeValue(Class<?> type) {
+            return new java.util.concurrent.ConcurrentHashMap<>();
+        }
+    };
+    private static final Method ABSENT_METHOD = absentMethodSentinel();
 
     // Debug logging toggle (verbose). Defaults to false.
     private static volatile boolean DEBUG = false;
@@ -273,21 +302,59 @@ public class GPBridge {
         return null;
     }
 
+    private static Method absentMethodSentinel() {
+        try {
+            return GPBridge.class.getDeclaredMethod("absentMethodSentinel");
+        } catch (NoSuchMethodException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    /**
+     * Resolve a public method, caching the result per owning class. Returns null when the
+     * method does not exist, which is also cached so repeated misses stay cheap.
+     */
+    private static Method lookupMethod(Class<?> owner, String name, Class<?>... params) {
+        if (owner == null) return null;
+        String key;
+        if (params.length == 0) {
+            key = name;
+        } else {
+            StringBuilder builder = new StringBuilder(name);
+            for (Class<?> param : params) {
+                builder.append('|').append(param.getName());
+            }
+            key = builder.toString();
+        }
+        Method cached = METHOD_CACHE.get(owner).computeIfAbsent(key, ignored -> {
+            try {
+                return owner.getMethod(name, params);
+            } catch (NoSuchMethodException e) {
+                return ABSENT_METHOD;
+            }
+        });
+        return cached == ABSENT_METHOD ? null : cached;
+    }
+
     @SuppressWarnings("all")
     public int getClaimAreaSafe(Object claim) {
         if (claim == null) return 0;
+        Method getArea = lookupMethod(claim.getClass(), "getArea");
+        if (getArea != null) {
+            try {
+                Object val = getArea.invoke(claim);
+                if (val instanceof Number) return ((Number) val).intValue();
+            } catch (ReflectiveOperationException ignored) {}
+        }
         try {
-            Method getArea = claim.getClass().getMethod("getArea");
-            Object val = getArea.invoke(claim);
-            if (val instanceof Number) return ((Number) val).intValue();
-        } catch (ReflectiveOperationException ignored) {}
-        try {
-            Method getLesser = claim.getClass().getMethod("getLesserBoundaryCorner");
-            Method getGreater = claim.getClass().getMethod("getGreaterBoundaryCorner");
+            Method getLesser = lookupMethod(claim.getClass(), "getLesserBoundaryCorner");
+            Method getGreater = lookupMethod(claim.getClass(), "getGreaterBoundaryCorner");
+            if (getLesser == null || getGreater == null) return 0;
             Object lesser = getLesser.invoke(claim);
             Object greater = getGreater.invoke(claim);
-            Method getBlockX = lesser.getClass().getMethod("getBlockX");
-            Method getBlockZ = lesser.getClass().getMethod("getBlockZ");
+            Method getBlockX = lookupMethod(lesser.getClass(), "getBlockX");
+            Method getBlockZ = lookupMethod(lesser.getClass(), "getBlockZ");
+            if (getBlockX == null || getBlockZ == null) return 0;
             int x1 = (Integer) getBlockX.invoke(lesser);
             int z1 = (Integer) getBlockZ.invoke(lesser);
             int x2 = (Integer) getBlockX.invoke(greater);
@@ -370,29 +437,22 @@ public class GPBridge {
         }
 
         Location probe = new Location(world, x + 0.5D, y, z + 0.5D);
+        Class<?> runtimeClass = claim.getClass();
         try {
-            for (Method method : claim.getClass().getMethods()) {
-                if (!method.getName().equals("contains")) continue;
-                Class<?>[] params = method.getParameterTypes();
-
-                Object result = null;
-                if (params.length == 3
-                        && Location.class.isAssignableFrom(params[0])
-                        && params[1] == boolean.class
-                        && params[2] == boolean.class) {
-                    result = method.invoke(claim, probe, true, false);
-                } else if (params.length == 2
-                        && Location.class.isAssignableFrom(params[0])
-                        && params[1] == boolean.class) {
-                    result = method.invoke(claim, probe, true);
-                } else if (params.length == 1
-                        && Location.class.isAssignableFrom(params[0])) {
-                    result = method.invoke(claim, probe);
-                }
-
-                if (result instanceof Boolean b) {
-                    return b;
-                }
+            Method contains = lookupMethod(runtimeClass, "contains", Location.class, boolean.class, boolean.class);
+            if (contains != null) {
+                Object result = contains.invoke(claim, probe, true, false);
+                if (result instanceof Boolean b) return b;
+            }
+            contains = lookupMethod(runtimeClass, "contains", Location.class, boolean.class);
+            if (contains != null) {
+                Object result = contains.invoke(claim, probe, true);
+                if (result instanceof Boolean b) return b;
+            }
+            contains = lookupMethod(runtimeClass, "contains", Location.class);
+            if (contains != null) {
+                Object result = contains.invoke(claim, probe);
+                if (result instanceof Boolean b) return b;
             }
         } catch (ReflectiveOperationException e) {
             if (DEBUG) e.printStackTrace();
@@ -450,16 +510,27 @@ public class GPBridge {
             return (overlapMaxX - overlapMinX + 1) * (overlapMaxZ - overlapMinZ + 1);
         }
 
+        // No polygon exposed: fall back to probing the claim. Each probe is a reflective
+        // call, so stride over large tiles and scale the result rather than testing every
+        // block in a 200x200 cell.
         int sampleY = world.getMinHeight() + 1;
-        int covered = 0;
-        for (int x = lowX; x <= highX; x++) {
-            for (int z = lowZ; z <= highZ; z++) {
+        int overlapArea = (highX - lowX + 1) * (highZ - lowZ + 1);
+        int stride = overlapArea <= COVERAGE_PROBE_AREA_LIMIT
+                ? 1
+                : (int) Math.ceil(Math.sqrt(overlapArea / (double) COVERAGE_PROBE_AREA_LIMIT));
+        int sampled = 0;
+        int hits = 0;
+        for (int x = lowX; x <= highX; x += stride) {
+            for (int z = lowZ; z <= highZ; z += stride) {
+                sampled++;
                 if (claimContains(claim, world, x, sampleY, z)) {
-                    covered++;
+                    hits++;
                 }
             }
         }
-        return covered;
+        if (sampled == 0) return 0;
+        if (stride == 1) return hits;
+        return (int) Math.min(overlapArea, Math.round(overlapArea * (hits / (double) sampled)));
     }
 
     public int getCellArea(int minX, int maxX, int minZ, int maxZ) {
@@ -580,6 +651,12 @@ public class GPBridge {
         return getClaimAt(location, null);
     }
 
+    /** Stride that keeps a cell axis under {@link #DOMINANT_CELL_MAX_SAMPLES_PER_AXIS} probes. */
+    private static int sampleStep(int length) {
+        if (length <= DOMINANT_CELL_MAX_SAMPLES_PER_AXIS) return 1;
+        return (length + DOMINANT_CELL_MAX_SAMPLES_PER_AXIS - 1) / DOMINANT_CELL_MAX_SAMPLES_PER_AXIS;
+    }
+
     /**
      * Resolve the most representative claim within a map cell rectangle by sampling
      * multiple points across the cell (instead of only center point lookups).
@@ -602,8 +679,8 @@ public class GPBridge {
         int highZ = Math.max(minZ, maxZ);
         int width = highX - lowX + 1;
         int depth = highZ - lowZ + 1;
-        int stepX = width <= 20 ? 1 : Math.max(1, width / 10);
-        int stepZ = depth <= 20 ? 1 : Math.max(1, depth / 10);
+        int stepX = sampleStep(width);
+        int stepZ = sampleStep(depth);
         int sampleY = world.getMinHeight() + 1;
 
         Set<Long> samplePoints = new LinkedHashSet<>();
@@ -694,12 +771,9 @@ public class GPBridge {
                 default -> null;
             };
 
-            // Try ignoreHeight = true first, then false
-            if (DEBUG) {
-                try {
-                    // Debug logging removed
-                } catch (Throwable ignored) {}
-            }
+            // ignoreHeight = true matches a strict superset of ignoreHeight = false, so a
+            // null result here means there is genuinely no claim at this location; retrying
+            // with false would scan again for nothing.
             Object claim;
             if (cachedGetClaimAtMode == GET_CLAIM_AT_MODE_FOUR_ARG) {
                 // Signature: (Location, boolean ignoreHeight, boolean ignoreSubclaims, Claim cached)
@@ -709,36 +783,12 @@ public class GPBridge {
             } else {
                 claim = target.invoke(dataStore, location, true);
             }
-            if (claim == null) {
-                if (cachedGetClaimAtMode == GET_CLAIM_AT_MODE_FOUR_ARG) {
-                    claim = target.invoke(dataStore, location, false, false, null);
-                } else if (cachedGetClaimAtMode != GET_CLAIM_AT_MODE_TWO_ARG) {
-                    claim = target.invoke(dataStore, location, false, thirdArg);
-                } else {
-                    claim = target.invoke(dataStore, location, false);
-                }
-            }
-            if (DEBUG) {
-                try {
-                    // Debug logging removed
-                } catch (Throwable ignored) {}
-            }
-            if (claim == null) {
-                // Fallback: brute-force scan with 3D-aware selection
-                if (DEBUG) {
-                    try {
-                        // Debug logging removed
-                    } catch (Throwable ignored) {}
-                }
+
+            // Only the legacy two-arg signature (which cannot express subclaim selection)
+            // needs the brute-force sweep. Running it whenever a lookup misses walks every
+            // claim on the server, which is ruinous from move events and the claim map.
+            if (claim == null && cachedGetClaimAtMode == GET_CLAIM_AT_MODE_TWO_ARG) {
                 claim = bruteForceFindClaim(location, true);
-                if (claim == null) {
-                    claim = bruteForceFindClaim(location, false);
-                }
-                if (DEBUG) {
-                    try {
-                        // Debug logging removed
-                    } catch (Throwable ignored) {}
-                }
             }
             return Optional.ofNullable(claim);
         } catch (ReflectiveOperationException e) {
@@ -1037,21 +1087,31 @@ public class GPBridge {
 
     public Optional<String> getClaimId(Object claim) {
         if (claim == null) return Optional.empty();
+        Class<?> runtimeClass = claim.getClass();
         try {
             // Newer GP forks expose a numeric id
-            Object id = claim.getClass().getMethod("getID").invoke(claim);
-            return Optional.ofNullable(id).map(Object::toString);
-        } catch (ReflectiveOperationException ignored) {
-            // Fallback: synthesize from owner + corners if IDs aren't available
-            try {
-                Object owner = claim.getClass().getMethod("getOwnerID").invoke(claim);
-                Object lesser = claim.getClass().getMethod("getLesserBoundaryCorner").invoke(claim);
-                Object greater = claim.getClass().getMethod("getGreaterBoundaryCorner").invoke(claim);
-                String synthetic = owner + ":" + lesser.getClass().getMethod("toVector").invoke(lesser) + ":" + greater.getClass().getMethod("toVector").invoke(greater);
-                return Optional.of(synthetic);
-            } catch (ReflectiveOperationException e) {
-                return Optional.empty();
+            Method getId = lookupMethod(runtimeClass, "getID");
+            if (getId != null) {
+                Object id = getId.invoke(claim);
+                return Optional.ofNullable(id).map(Object::toString);
             }
+        } catch (ReflectiveOperationException ignored) {
+        }
+        // Fallback: synthesize from owner + corners if IDs aren't available
+        try {
+            Method getOwner = lookupMethod(runtimeClass, "getOwnerID");
+            Method getLesser = lookupMethod(runtimeClass, "getLesserBoundaryCorner");
+            Method getGreater = lookupMethod(runtimeClass, "getGreaterBoundaryCorner");
+            if (getOwner == null || getLesser == null || getGreater == null) return Optional.empty();
+            Object owner = getOwner.invoke(claim);
+            Object lesser = getLesser.invoke(claim);
+            Object greater = getGreater.invoke(claim);
+            Method toVector = lookupMethod(lesser.getClass(), "toVector");
+            if (toVector == null) return Optional.empty();
+            String synthetic = owner + ":" + toVector.invoke(lesser) + ":" + toVector.invoke(greater);
+            return Optional.of(synthetic);
+        } catch (ReflectiveOperationException e) {
+            return Optional.empty();
         }
     }
 
@@ -1749,8 +1809,9 @@ public class GPBridge {
     
     public boolean isOwner(Object claim, UUID playerId) {
         if (claim == null || playerId == null) return false;
+        Method getOwnerID = lookupMethod(claim.getClass(), "getOwnerID");
+        if (getOwnerID == null) return false;
         try {
-            Method getOwnerID = claim.getClass().getMethod("getOwnerID");
             UUID ownerId = (UUID) getOwnerID.invoke(claim);
             return playerId.equals(ownerId);
         } catch (ReflectiveOperationException e) {
@@ -1761,11 +1822,14 @@ public class GPBridge {
     public Optional<String> getClaimWorld(Object claim) {
         if (claim == null) return Optional.empty();
         try {
-            Method getLesser = claim.getClass().getMethod("getLesserBoundaryCorner");
+            Method getLesser = lookupMethod(claim.getClass(), "getLesserBoundaryCorner");
+            if (getLesser == null) return Optional.empty();
             Object loc = getLesser.invoke(claim);
-            Method getWorld = loc.getClass().getMethod("getWorld");
+            Method getWorld = lookupMethod(loc.getClass(), "getWorld");
+            if (getWorld == null) return Optional.empty();
             Object world = getWorld.invoke(loc);
-            Method getName = world.getClass().getMethod("getName");
+            Method getName = lookupMethod(world.getClass(), "getName");
+            if (getName == null) return Optional.empty();
             return Optional.of((String) getName.invoke(world));
         } catch (Exception e) {
             return Optional.empty();
@@ -2965,15 +3029,36 @@ public class GPBridge {
         if (view.isRectangle) {
             return (highX - lowX + 1) * (highZ - lowZ + 1);
         }
-        int covered = 0;
-        for (int x = lowX; x <= highX; x++) {
-            for (int z = lowZ; z <= highZ; z++) {
+
+        int overlapArea = (highX - lowX + 1) * (highZ - lowZ + 1);
+        if (overlapArea <= COVERAGE_EXACT_AREA_LIMIT) {
+            int covered = 0;
+            for (int x = lowX; x <= highX; x++) {
+                for (int z = lowZ; z <= highZ; z++) {
+                    if (view.containsCell(x, z)) {
+                        covered++;
+                    }
+                }
+            }
+            return covered;
+        }
+
+        // Zoomed-out tiles can span tens of thousands of blocks; an exact per-block count
+        // would run a ray cast for each one, on each of the 45 rendered tiles. Estimate from
+        // a strided sample instead, which is precise enough for the fill/partial classification.
+        int stride = (int) Math.ceil(Math.sqrt(overlapArea / (double) COVERAGE_EXACT_AREA_LIMIT));
+        int sampled = 0;
+        int hits = 0;
+        for (int x = lowX; x <= highX; x += stride) {
+            for (int z = lowZ; z <= highZ; z += stride) {
+                sampled++;
                 if (view.containsCell(x, z)) {
-                    covered++;
+                    hits++;
                 }
             }
         }
-        return covered;
+        if (sampled == 0) return 0;
+        return (int) Math.min(overlapArea, Math.round(overlapArea * (hits / (double) sampled)));
     }
 
     private Object buildPolygonFromOccupiedPoints(ClassLoader loader, Set<GridPoint> occupied)
@@ -3744,8 +3829,9 @@ public class GPBridge {
     }
 
     private Object resolveClaimBoundaryPolygon(Object claim) {
+        Method getBoundaryPolygon = lookupMethod(claim.getClass(), "getBoundaryPolygon");
+        if (getBoundaryPolygon == null) return null;
         try {
-            Method getBoundaryPolygon = claim.getClass().getMethod("getBoundaryPolygon");
             return getBoundaryPolygon.invoke(claim);
         } catch (ReflectiveOperationException e) {
             if (DEBUG) e.printStackTrace();
@@ -4137,15 +4223,17 @@ public class GPBridge {
     public Optional<ClaimCorners> getClaimCorners(Object claim) {
         if (claim == null) return Optional.empty();
         try {
-            Method getLesser = claim.getClass().getMethod("getLesserBoundaryCorner");
-            Method getGreater = claim.getClass().getMethod("getGreaterBoundaryCorner");
-            
+            Method getLesser = lookupMethod(claim.getClass(), "getLesserBoundaryCorner");
+            Method getGreater = lookupMethod(claim.getClass(), "getGreaterBoundaryCorner");
+            if (getLesser == null || getGreater == null) return Optional.empty();
+
             Object lesser = getLesser.invoke(claim);
             Object greater = getGreater.invoke(claim);
-            
-            Method getX = lesser.getClass().getMethod("getX");
-            Method getZ = lesser.getClass().getMethod("getZ");
-            
+
+            Method getX = lookupMethod(lesser.getClass(), "getX");
+            Method getZ = lookupMethod(lesser.getClass(), "getZ");
+            if (getX == null || getZ == null) return Optional.empty();
+
             int x1 = ((Number) getX.invoke(lesser)).intValue();
             int z1 = ((Number) getZ.invoke(lesser)).intValue();
             
@@ -4872,12 +4960,12 @@ public class GPBridge {
     private int getClaimY(Object claim, String primary, String alt1, String alt2, int fallback) {
         if (!isAvailable() || claim == null) return fallback;
         for (String name : new String[]{primary, alt1, alt2}) {
+            Method m = lookupMethod(claim.getClass(), name);
+            if (m == null) continue;
             try {
-                Method m = claim.getClass().getMethod(name);
                 Object val = m.invoke(claim);
                 if (val instanceof Integer) return (Integer) val;
                 if (val instanceof Number) return ((Number) val).intValue();
-            } catch (NoSuchMethodException ignored) {
             } catch (ReflectiveOperationException e) {
                 if (DEBUG) e.printStackTrace();
             }
@@ -4890,14 +4978,15 @@ public class GPBridge {
      */
     public boolean isShapedClaim(Object claim) {
         if (!isAvailable() || claim == null) return false;
+        // Older GP builds may not expose shaped geometry.
+        Method isShaped = lookupMethod(claim.getClass(), "isShaped");
+        if (isShaped == null) return false;
         try {
-            Method isShaped = claim.getClass().getMethod("isShaped");
             Object result = isShaped.invoke(claim);
             if (result instanceof Boolean) {
                 return (Boolean) result;
             }
         } catch (ReflectiveOperationException ignored) {
-            // Older GP builds may not expose shaped geometry.
         }
         return false;
     }
