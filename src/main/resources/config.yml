@@ -28,6 +28,7 @@ accruals:
   pause-while-vanished: true
   require-survival-mode: false
   notify-on-cap: true
+  notify-on-accrue: true
   # Claim block accrual profiles.
   #
   # Permission nodes:

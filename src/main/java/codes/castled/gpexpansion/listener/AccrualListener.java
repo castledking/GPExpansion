@@ -44,6 +44,12 @@ public final class AccrualListener implements Listener {
         PermissionManager.AccrualProfile profile = permissionManager.resolveAccrualProfile(player);
         event.setBlocksToAccruePerHour(applyWorldMultiplier(player, profile.getBlocksPerHour()));
         applyMaxBlocks(player, profile);
+
+        if (event.getBlocksToAccrue() > 0 && plugin.getConfigManager().shouldNotifyOnAccrue()) {
+            player.sendMessage(plugin.getMessages().get("commands.accruals-received",
+                "{amount}", String.valueOf(event.getBlocksToAccrue()),
+                "{profile}", profile.getName()));
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)

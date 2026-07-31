@@ -45,6 +45,7 @@ public class Config {
         DEFAULTS.put("accruals.world-multipliers.world_nether", 0.5D);
         DEFAULTS.put("accruals.world-multipliers.world_the_end", 0.5D);
         DEFAULTS.put("accruals.notify-on-cap", true);
+        DEFAULTS.put("accruals.notify-on-accrue", true);
         
         // Default limits
         DEFAULTS.put("defaults.max-global-claims", 1);
@@ -939,6 +940,10 @@ public class Config {
 
     public boolean shouldNotifyAccrualCap() {
         return config.getBoolean("accruals.notify-on-cap", true);
+    }
+
+    public boolean shouldNotifyOnAccrue() {
+        return config.getBoolean("accruals.notify-on-accrue", true);
     }
     
     public boolean isGUIEnabled() {
