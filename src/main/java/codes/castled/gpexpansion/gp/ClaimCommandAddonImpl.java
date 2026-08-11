@@ -94,11 +94,7 @@ public class ClaimCommandAddonImpl {
         fullArgs[0] = "snapshot";
         if (subcommandArgs != null && subcommandArgs.length > 0)
             System.arraycopy(subcommandArgs, 0, fullArgs, 1, subcommandArgs.length);
-        org.bukkit.command.Command stub = new org.bukkit.command.Command("claim") {
-            @Override
-            public boolean execute(org.bukkit.command.CommandSender s, String label, String[] a) { return false; }
-        };
-        cmd.onCommand(sender, stub, "claim", fullArgs);
+        cmd.run(sender, "claim", "claim", fullArgs);
         return Boolean.TRUE;
     }
 

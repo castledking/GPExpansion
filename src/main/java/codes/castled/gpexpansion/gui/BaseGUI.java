@@ -629,13 +629,7 @@ public abstract class BaseGUI {
             return;
         }
 
-        org.bukkit.command.Command stub = new org.bukkit.command.Command("claim") {
-            @Override
-            public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] commandArgs) {
-                return false;
-            }
-        };
-        claimCmd.onCommand(player, stub, "claim", args);
+        claimCmd.run(player, "claim", "claim", args);
     }
 
     /**
@@ -652,12 +646,6 @@ public abstract class BaseGUI {
         args[0] = normalizedRoot;
         System.arraycopy(tailArgs, 0, args, 1, tailArgs.length);
 
-        org.bukkit.command.Command stub = new org.bukkit.command.Command(normalizedRoot) {
-            @Override
-            public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] commandArgs) {
-                return false;
-            }
-        };
-        claimCmd.onCommand(player, stub, normalizedRoot, args);
+        claimCmd.run(player, normalizedRoot, normalizedRoot, args);
     }
 }

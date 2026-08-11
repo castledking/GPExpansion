@@ -334,69 +334,77 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
+        return run(sender, command.getName(), label, args);
+    }
+
+    /**
+     * Execute the command by name, for callers that have no Bukkit {@link Command} instance
+     * (GUI buttons, command interception). Only the command's name is ever needed.
+     */
+    public boolean run(@NotNull CommandSender sender, @NotNull String commandName, @NotNull String label, @NotNull String[] args) {
         // Run on the main thread if this is a player
         if (sender instanceof Player) {
             Player player = (Player) sender;
             if (isFolia()) {
-                player.getScheduler().execute(plugin, () -> executeCommand(sender, command, label, args), null, 1L);
+                player.getScheduler().execute(plugin, () -> executeCommand(sender, commandName, label, args), null, 1L);
             } else {
-                Bukkit.getScheduler().runTask(plugin, () -> executeCommand(sender, command, label, args));
+                Bukkit.getScheduler().runTask(plugin, () -> executeCommand(sender, commandName, label, args));
             }
             return true;
         }
         // Console or command block - execute directly
-        return executeCommand(sender, command, label, args);
+        return executeCommand(sender, commandName, label, args);
     }
-    
-    private boolean executeCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
+
+    private boolean executeCommand(@NotNull CommandSender sender, @NotNull String commandName, @NotNull String label, @NotNull String[] args) {
         // Support standalone /adminclaimlist command routed through this executor (including alias adminclaimslist)
-        if (command.getName().equalsIgnoreCase("adminclaimlist") || label.equalsIgnoreCase("adminclaimlist") || label.equalsIgnoreCase("adminclaimslist")) {
+        if (commandName.equalsIgnoreCase("adminclaimlist") || label.equalsIgnoreCase("adminclaimlist") || label.equalsIgnoreCase("adminclaimslist")) {
             return handleAdminClaimsList(sender, args);
         }
         // Support standalone /claimslist command routed through this executor (including alias claimlist)
-        if (command.getName().equalsIgnoreCase("claimslist") || label.equalsIgnoreCase("claimslist") || label.equalsIgnoreCase("claimlist")) {
+        if (commandName.equalsIgnoreCase("claimslist") || label.equalsIgnoreCase("claimslist") || label.equalsIgnoreCase("claimlist")) {
             return handleList(sender, args);
         }
         // Support standalone /claimtp command
-        if (command.getName().equalsIgnoreCase("claimtp") || label.equalsIgnoreCase("claimtp")) {
+        if (commandName.equalsIgnoreCase("claimtp") || label.equalsIgnoreCase("claimtp")) {
             return handleTeleport(sender, args);
         }
         // Support standalone /resizeclaim and GP-native aliases /expandclaim, /extendclaim
-        if (command.getName().equalsIgnoreCase("resizeclaim")
+        if (commandName.equalsIgnoreCase("resizeclaim")
             || label.equalsIgnoreCase("resizeclaim")
-            || command.getName().equalsIgnoreCase("expandclaim")
+            || commandName.equalsIgnoreCase("expandclaim")
             || label.equalsIgnoreCase("expandclaim")
-            || command.getName().equalsIgnoreCase("extendclaim")
+            || commandName.equalsIgnoreCase("extendclaim")
             || label.equalsIgnoreCase("extendclaim")) {
             return handleResizeCommand(sender, args);
         }
         // Support standalone /claimmap
-        if (command.getName().equalsIgnoreCase("claimmap")
+        if (commandName.equalsIgnoreCase("claimmap")
             || label.equalsIgnoreCase("claimmap")) {
             return handleMapCommand(sender, args);
         }
         // Support standalone /setclaimspawn command
-        if (command.getName().equalsIgnoreCase("setclaimspawn") || label.equalsIgnoreCase("setclaimspawn")) {
+        if (commandName.equalsIgnoreCase("setclaimspawn") || label.equalsIgnoreCase("setclaimspawn")) {
             return handleSetSpawn(sender, args);
         }
         // Support standalone /globalclaimlist and /globalclaimslist commands
-        if (command.getName().equalsIgnoreCase("globalclaimlist")
-                || command.getName().equalsIgnoreCase("globalclaimslist")
+        if (commandName.equalsIgnoreCase("globalclaimlist")
+                || commandName.equalsIgnoreCase("globalclaimslist")
                 || label.equalsIgnoreCase("globalclaimlist")
                 || label.equalsIgnoreCase("globalclaimslist")) {
             return handleGlobalList(sender);
         }
         // Support standalone /globalclaim [true|false] [claimId] command (toggle when no args)
-        if (command.getName().equalsIgnoreCase("globalclaim") || label.equalsIgnoreCase("globalclaim")) {
+        if (commandName.equalsIgnoreCase("globalclaim") || label.equalsIgnoreCase("globalclaim")) {
             return handleGlobalClaim(sender, args);
         }
-        if (command.getName().equalsIgnoreCase("approveclaim")
-                || command.getName().equalsIgnoreCase("aclaim")
+        if (commandName.equalsIgnoreCase("approveclaim")
+                || commandName.equalsIgnoreCase("aclaim")
                 || label.equalsIgnoreCase("approveclaim")
                 || label.equalsIgnoreCase("aclaim")) {
             return handleApproveClaim(sender, args);
         }
-        if (command.getName().equalsIgnoreCase("cancelrent") || label.equalsIgnoreCase("cancelrent")) {
+        if (commandName.equalsIgnoreCase("cancelrent") || label.equalsIgnoreCase("cancelrent")) {
             return handleCancelRent(sender, args);
         }
         if (args.length == 0) {
@@ -455,7 +463,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             case "map":
                 return handleMapCommand(sender, subArgs);
             case "fly":
-                return new ClaimFlyCommand(plugin).onCommand(sender, command, label, subArgs);
+                return new ClaimFlyCommand(plugin).run(sender, label, subArgs);
             case "ban":
                 return handleBan(sender, subArgs);
             case "unban":
@@ -498,7 +506,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 return handleClaimOptions(sender, subArgs);
             default:
                 // Try to delegate to GP3D's UnifiedClaimCommand if available
-                if (tryDelegateToGP3D(sender, command, label, args)) {
+                if (tryDelegateToGP3D(sender, args)) {
                     return true;
                 }
                 // Otherwise show help message
@@ -1429,6 +1437,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 return true;
             }
             claim = claimOpt.get();
+            // Some GP forks hand back the parent claim even when the player is standing
+            // inside a subdivision, and flags are stored per claim ID - narrow to the
+            // subdivision so its own flags are edited instead of the parent's.
+            Optional<Object> subclaim = findSubclaimAt(claim, player.getLocation());
+            if (subclaim.isPresent()) {
+                claim = subclaim.get();
+            }
             claimId = gp.getClaimId(claim).orElse(null);
             if (claimId == null) {
                 sender.sendMessage(plugin.getMessages().get("general.error"));
@@ -1741,11 +1756,14 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
     private static class ClaimContext {
         final Object mainClaim;
+        /** The claim that was actually resolved - a subdivision when the player is standing in (or named) one. */
+        final Object claim;
         final String claimId;
         final String mainClaimId;
 
-        ClaimContext(Object mainClaim, String claimId, String mainClaimId) {
+        ClaimContext(Object mainClaim, Object claim, String claimId, String mainClaimId) {
             this.mainClaim = mainClaim;
+            this.claim = claim;
             this.claimId = claimId;
             this.mainClaimId = mainClaimId;
         }
@@ -1805,13 +1823,19 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
         String mainClaimId = mainIdOpt.get();
 
-        boolean isOwner = gp.isOwner(mainClaim, player.getUniqueId());
+        // Admin claims have no owner - anyone allowed to make admin claims may manage them
+        boolean isOwner = gp.isOwner(mainClaim, player.getUniqueId()) || canManageAdminClaim(player, mainClaim);
         if (requireOwnership && !isOwner && !allowOther) {
             sender.sendMessage(plugin.getMessages().get("claim.must-own-action", "{action}", actionDescription));
             return Optional.empty();
         }
 
-        return Optional.of(new ClaimContext(mainClaim, claimId, mainClaimId));
+        return Optional.of(new ClaimContext(mainClaim, claim, claimId, mainClaimId));
+    }
+
+    /** Admin claims are ownerless, so treat holders of griefprevention.adminclaims as their owner. */
+    private boolean canManageAdminClaim(Player player, Object claim) {
+        return gp.isAdminClaim(claim) && player.hasPermission("griefprevention.adminclaims");
     }
 
     private Optional<Object> findSubclaimAt(Object parentClaim, Location location) {
@@ -2537,15 +2561,16 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 }
                 return true;
             }
-            explicitClaim = atLoc;
-            explicitId = gp.getClaimId(atLoc.get()).orElse(null);
+            // Standing in a claim: let resolveClaimContext resolve it (it also narrows to a subdivision)
         }
 
         Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, false, true, false, "manage snapshots for");
         if (!ctxOpt.isPresent()) return true;
         ClaimContext ctx = ctxOpt.get();
-        String claimId = ctx.mainClaimId;
-        Object claim = ctx.mainClaim;
+        // Snapshots are keyed by the claim they cover, and rentals can target a subdivision,
+        // so snapshot the resolved claim rather than collapsing to its parent.
+        String claimId = ctx.claimId;
+        Object claim = ctx.claim != null ? ctx.claim : ctx.mainClaim;
 
         if ("list".equals(action)) {
             List<codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry> list = plugin.getSnapshotStore().listSnapshots(claimId);
@@ -2611,7 +2636,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
         // Tab completion already runs on the correct thread (entity's region thread on Folia)
         // Do NOT use blocking operations like CompletableFuture.join() here
-        return completeTab(sender, command, alias, args);
+        return completeTab(sender, command.getName(), alias, args);
     }
 
     private long getClaimTeleportCooldownRemaining(Player player) {
@@ -3316,7 +3341,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
      * Try to delegate unknown subcommands to GP3D's claim command via namespaced dispatch
      * Returns true if delegation was attempted
      */
-    private boolean tryDelegateToGP3D(CommandSender sender, Command command, String label, String[] args) {
+    private boolean tryDelegateToGP3D(CommandSender sender, String[] args) {
         if (!gp.isGP3D()) {
             return false;
         }
@@ -3407,9 +3432,10 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     }
     
     @SuppressWarnings("all")
-    private List<String> completeTab(CommandSender sender, Command command, String alias, String[] args) {
+    /** Tab completions by command name, for callers with no Bukkit {@link Command} instance. */
+    public List<String> completeTab(CommandSender sender, String commandName, String alias, String[] args) {
         // Standalone /claimlist and /claimslist: optional player target for console or claimslistother permission
-        if (command.getName().equalsIgnoreCase("claimslist") || alias.equalsIgnoreCase("claimslist") || alias.equalsIgnoreCase("claimlist")) {
+        if (commandName.equalsIgnoreCase("claimslist") || alias.equalsIgnoreCase("claimslist") || alias.equalsIgnoreCase("claimlist")) {
             if (args.length == 1 && canListOtherClaims(sender)) {
                 return Bukkit.getOnlinePlayers().stream()
                     .map(Player::getName)
@@ -3420,11 +3446,11 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             return Collections.emptyList();
         }
         // Standalone /adminclaimlist and /adminclaimslist: no args; return empty
-        if (command.getName().equalsIgnoreCase("adminclaimlist") || alias.equalsIgnoreCase("adminclaimlist") || alias.equalsIgnoreCase("adminclaimslist")) {
+        if (commandName.equalsIgnoreCase("adminclaimlist") || alias.equalsIgnoreCase("adminclaimlist") || alias.equalsIgnoreCase("adminclaimslist")) {
             return Collections.emptyList();
         }
         // Tab completion for /claimtp <claimId> [player] - must come before /claim logic
-        if (command.getName().equalsIgnoreCase("claimtp") || alias.equalsIgnoreCase("claimtp")) {
+        if (commandName.equalsIgnoreCase("claimtp") || alias.equalsIgnoreCase("claimtp")) {
             if (!sender.hasPermission("griefprevention.claim.teleport")) return Collections.emptyList();
             if (args.length <= 1) {
                 String prefix = args.length == 1 ? args[0] : "";
@@ -3467,7 +3493,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             return Collections.emptyList();
         }
         // Tab completion for /resizeclaim
-        if (command.getName().equalsIgnoreCase("resizeclaim")
+        if (commandName.equalsIgnoreCase("resizeclaim")
             || alias.equalsIgnoreCase("resizeclaim")) {
             if (args.length == 1) {
                 return Arrays.asList("1", "5", "10").stream()
@@ -3477,12 +3503,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             return Collections.emptyList();
         }
         // Tab completion for /claimmap
-        if (command.getName().equalsIgnoreCase("claimmap")
+        if (commandName.equalsIgnoreCase("claimmap")
             || alias.equalsIgnoreCase("claimmap")) {
             return Collections.emptyList();
         }
         // Tab completion for /globalclaim [true|false] [claimId]
-        if (command.getName().equalsIgnoreCase("globalclaim") || alias.equalsIgnoreCase("globalclaim")) {
+        if (commandName.equalsIgnoreCase("globalclaim") || alias.equalsIgnoreCase("globalclaim")) {
             if (!plugin.getConfigManager().isGlobalClaimsEnabled()) return Collections.emptyList();
             if (!sender.hasPermission("griefprevention.claim.toggleglobal")) return Collections.emptyList();
             if (args.length == 1) {
@@ -3502,13 +3528,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             }
             return Collections.emptyList();
         }
-        if (command.getName().equalsIgnoreCase("approveclaim")
-                || command.getName().equalsIgnoreCase("aclaim")
+        if (commandName.equalsIgnoreCase("approveclaim")
+                || commandName.equalsIgnoreCase("aclaim")
                 || alias.equalsIgnoreCase("approveclaim")
                 || alias.equalsIgnoreCase("aclaim")) {
             if (!sender.hasPermission("griefprevention.approveclaim")) return Collections.emptyList();
             if (!plugin.getConfigManager().isGlobalClaimsEnabled()) return Collections.emptyList();
-            if (command.getName().equalsIgnoreCase("aclaim") || alias.equalsIgnoreCase("aclaim")) {
+            if (commandName.equalsIgnoreCase("aclaim") || alias.equalsIgnoreCase("aclaim")) {
                 if (args.length == 1) {
                     List<String> options = new ArrayList<>();
                     options.add("approve");
@@ -3534,7 +3560,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             }
             return Collections.emptyList();
         }
-        if (command.getName().equalsIgnoreCase("cancelrent") || alias.equalsIgnoreCase("cancelrent")) {
+        if (commandName.equalsIgnoreCase("cancelrent") || alias.equalsIgnoreCase("cancelrent")) {
             if (!sender.hasPermission("griefprevention.claim.cancelrent")) return Collections.emptyList();
             if (args.length == 1
                     && (sender.hasPermission("griefprevention.claim.cancelrent.anywhere")
@@ -3543,8 +3569,8 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             }
             return Collections.emptyList();
         }
-        if (command.getName().equalsIgnoreCase("globalclaimlist")
-                || command.getName().equalsIgnoreCase("globalclaimslist")
+        if (commandName.equalsIgnoreCase("globalclaimlist")
+                || commandName.equalsIgnoreCase("globalclaimslist")
                 || alias.equalsIgnoreCase("globalclaimlist")
                 || alias.equalsIgnoreCase("globalclaimslist")) {
             return Collections.emptyList();
@@ -3626,8 +3652,8 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 if (!allCommands.contains("options")) allCommands.add("options");
             }
             if (!plugin.getConfigManager().isGlobalClaimsEnabled()) {
-                allCommands.removeIf(commandName ->
-                    commandName.equalsIgnoreCase("global") || commandName.equalsIgnoreCase("globallist"));
+                allCommands.removeIf(sub ->
+                    sub.equalsIgnoreCase("global") || sub.equalsIgnoreCase("globallist"));
             }
             
             // Filter by input and return

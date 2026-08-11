@@ -73,6 +73,10 @@ public final class ClaimWaypointManager {
     /** One waypoint as last sent to a viewer. Equality is the resend check. */
     public record SentWaypoint(UUID waypointId, int x, int y, int z, @Nullable Integer color) {}
 
+    /** Claim metadata shared by the CrowBar payload and the optional vanilla packet path. */
+    private record PreparedClaim(String id, Claim claim, Location anchor, String name,
+                                 @Nullable Integer color, UUID waypointId) {}
+
     public ClaimWaypointManager(GPExpansionPlugin plugin) {
         this.plugin = plugin;
         this.markerKey = new NamespacedKey(plugin, "claim_waypoint");
@@ -145,45 +149,96 @@ public final class ClaimWaypointManager {
      * Recomputes every viewer's claim set, resends the CrowBar payload, and diffs the vanilla
      * waypoint packets against what each viewer already has.
      *
-     * <p>Cost is proportional to (online players x claims each player may see) rather than to the
-     * total claim count, so it stays cheap enough to run on every trigger event.
+     * <p>Claims are walked once and their display metadata is prepared once per rebuild. Visibility
+     * still has to be checked for each online viewer, but serialization and packet syncing operate
+     * directly on that viewer's final list instead of repeatedly walking the union of all claims.
      */
     public void rebuildAll() {
         if (!enabled()) return;
 
         List<Player> viewers = new ArrayList<>(Bukkit.getOnlinePlayers());
-        Map<String, Claim> wanted = new HashMap<>();
-        Map<String, Set<UUID>> viewersByClaimId = new HashMap<>();
-
-        for (Player viewer : viewers) {
-            for (Claim claim : visibleClaimsFor(viewer)) {
-                String claimId = String.valueOf(claim.getID());
-                wanted.put(claimId, claim);
-                viewersByClaimId.computeIfAbsent(claimId, k -> new HashSet<>()).add(viewer.getUniqueId());
-            }
-        }
-
         boolean sendPackets = vanillaPacketsActive();
-        broadcastClaimData(wanted, viewersByClaimId, viewers, sendPackets);
-
-        if (!sendPackets) {
-            // Mode can flip at runtime via /gpx reload: withdraw anything previously sent.
-            for (Player viewer : viewers) {
-                withdrawAll(viewer);
-            }
-            return;
-        }
+        Map<UUID, List<PreparedClaim>> claimsByViewer = prepareClaimsFor(viewers);
 
         Set<UUID> online = new HashSet<>();
         for (Player viewer : viewers) {
             online.add(viewer.getUniqueId());
-            syncViewer(viewer, wanted, viewersByClaimId);
+            applyViewer(viewer, claimsByViewer.getOrDefault(viewer.getUniqueId(), List.of()), sendPackets);
         }
         sentByPlayer.keySet().retainAll(online);
     }
 
+    /**
+     * Refreshes one player without rebuilding every other online player's snapshot. This is the
+     * normal path for joins, plugin-channel registration, and world changes.
+     */
+    public void rebuildViewer(Player viewer) {
+        if (!enabled() || viewer == null || !viewer.isOnline()) return;
+
+        boolean sendPackets = vanillaPacketsActive();
+        List<PreparedClaim> claims = prepareClaimsFor(List.of(viewer))
+            .getOrDefault(viewer.getUniqueId(), List.of());
+        applyViewer(viewer, claims, sendPackets);
+    }
+
+    private void applyViewer(Player viewer, List<PreparedClaim> claims, boolean sendPackets) {
+        sendClaimData(viewer, claims, sendPackets);
+        if (sendPackets) {
+            syncViewer(viewer, claims);
+        } else {
+            // Mode can flip at runtime via /gpx reload: withdraw anything previously sent.
+            withdrawAll(viewer);
+        }
+    }
+
+    /** Walks GP3D's in-memory claims once and prepares each visible claim only once. */
+    private Map<UUID, List<PreparedClaim>> prepareClaimsFor(List<Player> viewers) {
+        Map<UUID, List<PreparedClaim>> result = new HashMap<>();
+        for (Player viewer : viewers) {
+            result.put(viewer.getUniqueId(), new ArrayList<>());
+        }
+        if (viewers.isEmpty() || GriefPrevention.instance == null
+            || GriefPrevention.instance.dataStore == null) {
+            return result;
+        }
+
+        boolean includeSubdivisions = plugin.getConfigManager().areClaimWaypointsShownForSubdivisions();
+        boolean includeAdminClaims = plugin.getConfigManager().areClaimWaypointsShownForAdminClaims();
+
+        for (Claim claim : GriefPrevention.instance.dataStore.getClaims()) {
+            if (claim == null || !claim.inDataStore) continue;
+            if (!includeSubdivisions && claim.parent != null) continue;
+
+            String claimId = String.valueOf(claim.getID());
+            boolean publicWaypoint = plugin.getClaimDataStore().isPublicWaypoint(claimId);
+            List<Player> eligible = new ArrayList<>();
+            for (Player viewer : viewers) {
+                if (canViewClaim(viewer, claim, publicWaypoint, includeAdminClaims)) {
+                    eligible.add(viewer);
+                }
+            }
+            if (eligible.isEmpty()) continue;
+
+            PreparedClaim prepared = prepareClaim(claimId, claim);
+            if (prepared == null) continue;
+            for (Player viewer : eligible) {
+                result.get(viewer.getUniqueId()).add(prepared);
+            }
+        }
+        return result;
+    }
+
+    private @Nullable PreparedClaim prepareClaim(String claimId, Claim claim) {
+        Location anchor = anchorFor(claimId, claim);
+        if (anchor == null || anchor.getWorld() == null) return null;
+
+        Color color = resolveColor(plugin.getClaimDataStore().getWaypointColor(claimId).orElse(null));
+        return new PreparedClaim(claimId, claim, anchor, displayNameFor(claimId, claim),
+            color == null ? null : color.asRGB(), waypointUuid(claimId));
+    }
+
     /** Diffs one viewer's desired waypoint set against what they were already sent. */
-    private void syncViewer(Player viewer, Map<String, Claim> wanted, Map<String, Set<UUID>> viewersByClaimId) {
+    private void syncViewer(Player viewer, List<PreparedClaim> claims) {
         Map<String, SentWaypoint> desired = new HashMap<>();
 
         // The locatorBar game rule gates the vanilla pipeline server-side; sending packets past it
@@ -192,20 +247,15 @@ public final class ClaimWaypointManager {
         long range = plugin.getConfigManager().getClaimWaypointTransmitRange();
 
         if (barEnabled) {
-            for (Map.Entry<String, Claim> entry : wanted.entrySet()) {
-                String claimId = entry.getKey();
-                if (!viewersByClaimId.getOrDefault(claimId, Set.of()).contains(viewer.getUniqueId())) continue;
-
-                Location anchor = anchorFor(claimId, entry.getValue());
-                if (anchor == null || anchor.getWorld() == null) continue;
+            for (PreparedClaim claim : claims) {
+                Location anchor = claim.anchor();
                 if (!anchor.getWorld().equals(viewer.getWorld())) continue;
                 if (anchor.distanceSquared(viewer.getLocation()) > (double) range * range) continue;
 
-                Color color = resolveColor(plugin.getClaimDataStore().getWaypointColor(claimId).orElse(null));
-                desired.put(claimId, new SentWaypoint(
-                    waypointUuid(claimId),
+                desired.put(claim.id(), new SentWaypoint(
+                    claim.waypointId(),
                     anchor.getBlockX(), anchor.getBlockY(), anchor.getBlockZ(),
-                    color == null ? null : color.asRGB()));
+                    claim.color()));
             }
         }
 
@@ -279,30 +329,32 @@ public final class ClaimWaypointManager {
 
         boolean includeSubdivisions = plugin.getConfigManager().areClaimWaypointsShownForSubdivisions();
         boolean includeAdminClaims = plugin.getConfigManager().areClaimWaypointsShownForAdminClaims();
-        UUID viewerId = viewer.getUniqueId();
-
         for (Claim claim : GriefPrevention.instance.dataStore.getClaims()) {
             if (claim == null || !claim.inDataStore) continue;
             if (!includeSubdivisions && claim.parent != null) continue;
 
-            // A published claim is visible to every player, not just its owner and trusted.
-            if (plugin.getClaimDataStore().isPublicWaypoint(String.valueOf(claim.getID()))) {
-                result.add(claim);
-                continue;
-            }
-
-            UUID owner = claim.getOwnerID();
-            if (owner == null) {
-                if (includeAdminClaims && viewer.hasPermission("griefprevention.claim.waypoint.admin")) {
-                    result.add(claim);
-                }
-                continue;
-            }
-            if (owner.equals(viewerId) || claim.hasExplicitPermission(viewerId, ClaimPermission.Access)) {
+            boolean publicWaypoint = plugin.getClaimDataStore()
+                .isPublicWaypoint(String.valueOf(claim.getID()));
+            if (canViewClaim(viewer, claim, publicWaypoint, includeAdminClaims)) {
                 result.add(claim);
             }
         }
         return result;
+    }
+
+    private boolean canViewClaim(Player viewer, Claim claim, boolean publicWaypoint,
+                                 boolean includeAdminClaims) {
+        // A published claim is visible to every player, not just its owner and trusted.
+        if (publicWaypoint) return true;
+
+        UUID owner = claim.getOwnerID();
+        if (owner == null) {
+            return includeAdminClaims
+                && viewer.hasPermission("griefprevention.claim.waypoint.admin");
+        }
+        UUID viewerId = viewer.getUniqueId();
+        return owner.equals(viewerId)
+            || claim.hasExplicitPermission(viewerId, ClaimPermission.Access);
     }
 
     /**
@@ -342,49 +394,40 @@ public final class ClaimWaypointManager {
      * entity, so a claim keeps rendering when its terrain is unloaded. Clients without CrowBar
      * ignore the channel.
      */
-    private void broadcastClaimData(Map<String, Claim> claims, Map<String, Set<UUID>> viewersByClaimId,
-                                    List<Player> viewers, boolean vanillaPackets) {
-        for (Player viewer : viewers) {
-            com.google.gson.JsonArray entries = new com.google.gson.JsonArray();
+    private void sendClaimData(Player viewer, List<PreparedClaim> claims, boolean vanillaPackets) {
+        com.google.gson.JsonArray entries = new com.google.gson.JsonArray();
 
-            for (Map.Entry<String, Claim> entry : claims.entrySet()) {
-                String claimId = entry.getKey();
-                if (!viewersByClaimId.getOrDefault(claimId, Set.of()).contains(viewer.getUniqueId())) continue;
+        for (PreparedClaim claim : claims) {
+            Location anchor = claim.anchor();
+            // Cross-world claims cannot be drawn on a bar that is relative to the viewer.
+            if (!anchor.getWorld().equals(viewer.getWorld())) continue;
 
-                Claim claim = entry.getValue();
-                Location anchor = anchorFor(claimId, claim);
-                if (anchor == null || anchor.getWorld() == null) continue;
-                // Cross-world claims cannot be drawn on a bar that is relative to the viewer.
-                if (!anchor.getWorld().equals(viewer.getWorld())) continue;
+            com.google.gson.JsonObject json = new com.google.gson.JsonObject();
+            json.addProperty("id", claim.id());
+            json.addProperty("name", claim.name());
+            json.addProperty("owned", viewer.getUniqueId().equals(claim.claim().getOwnerID()));
+            json.addProperty("x", anchor.getX());
+            json.addProperty("y", anchor.getY());
+            json.addProperty("z", anchor.getZ());
 
-                com.google.gson.JsonObject json = new com.google.gson.JsonObject();
-                json.addProperty("id", claimId);
-                json.addProperty("name", displayNameFor(claimId, claim));
-                json.addProperty("owned", viewer.getUniqueId().equals(claim.getOwnerID()));
-                json.addProperty("x", anchor.getX());
-                json.addProperty("y", anchor.getY());
-                json.addProperty("z", anchor.getZ());
+            if (claim.color() != null) json.addProperty("color", claim.color());
 
-                Color color = resolveColor(plugin.getClaimDataStore().getWaypointColor(claimId).orElse(null));
-                if (color != null) json.addProperty("color", color.asRGB());
-
-                // Present only when this claim is also sent as a vanilla waypoint packet. CrowBar
-                // uses it to suppress that duplicate so the claim is not drawn twice.
-                if (vanillaPackets) {
-                    json.addProperty("uuid", waypointUuid(claimId).toString());
-                }
-
-                entries.add(json);
+            // Present only when this claim is also sent as a vanilla waypoint packet. CrowBar
+            // uses it to suppress that duplicate so the claim is not drawn twice.
+            if (vanillaPackets) {
+                json.addProperty("uuid", claim.waypointId().toString());
             }
 
-            com.google.gson.JsonObject root = new com.google.gson.JsonObject();
-            root.add("claims", entries);
-            try {
-                viewer.sendPluginMessage(plugin, CLAIM_DATA_CHANNEL,
-                    root.toString().getBytes(StandardCharsets.UTF_8));
-            } catch (Exception ignored) {
-                // A client that never registered the channel is normal, not an error.
-            }
+            entries.add(json);
+        }
+
+        com.google.gson.JsonObject root = new com.google.gson.JsonObject();
+        root.add("claims", entries);
+        try {
+            viewer.sendPluginMessage(plugin, CLAIM_DATA_CHANNEL,
+                root.toString().getBytes(StandardCharsets.UTF_8));
+        } catch (Exception ignored) {
+            // A client that never registered the channel is normal, not an error.
         }
     }
 

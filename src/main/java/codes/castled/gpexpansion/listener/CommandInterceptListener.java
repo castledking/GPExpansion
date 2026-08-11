@@ -2,7 +2,6 @@ package codes.castled.gpexpansion.listener;
 
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
-import org.bukkit.command.Command;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -48,14 +47,8 @@ public class CommandInterceptListener implements Listener {
                     ClaimCommand claimCmd = plugin.getClaimCommand();
                     if (claimCmd != null) {
                         String[] args = noSlash.length() > 5 ? noSlash.substring(5).trim().split("\\s+", -1) : new String[0];
-                        Command stub = new Command("claim") {
-                            @Override
-                            public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] args) {
-                                return false;
-                            }
-                        };
                         event.setCancelled(true);
-                        claimCmd.onCommand(event.getPlayer(), stub, "claim", args);
+                        claimCmd.run(event.getPlayer(), "claim", "claim", args);
                     }
                 }
             } else {
@@ -76,18 +69,12 @@ public class CommandInterceptListener implements Listener {
             if (claimCmd != null) {
                 event.setCancelled(true);
                 String[] args = noSlash.trim().split("\\s+", -1);
-                Command stub = new Command(args[0].toLowerCase(Locale.ROOT)) {
-                    @Override
-                    public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] a) {
-                        return false;
-                    }
-                };
                 String[] claimArgs = new String[args.length];
                 claimArgs[0] = args[0].toLowerCase(Locale.ROOT);
                 if (args.length > 1) {
                     System.arraycopy(args, 1, claimArgs, 1, args.length - 1);
                 }
-                claimCmd.onCommand(event.getPlayer(), stub, args[0].toLowerCase(Locale.ROOT), claimArgs);
+                claimCmd.run(event.getPlayer(), args[0].toLowerCase(Locale.ROOT), args[0].toLowerCase(Locale.ROOT), claimArgs);
             }
             return;
         }
@@ -96,13 +83,7 @@ public class CommandInterceptListener implements Listener {
             ClaimCommand claimCmd = plugin.getClaimCommand();
             if (claimCmd != null) {
                 event.setCancelled(true);
-                Command stub = new Command("resizeclaim") {
-                    @Override
-                    public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] a) {
-                        return false;
-                    }
-                };
-                claimCmd.onCommand(event.getPlayer(), stub, "resizeclaim", new String[0]);
+                claimCmd.run(event.getPlayer(), "resizeclaim", "resizeclaim", new String[0]);
                 return;
             }
         }
@@ -115,13 +96,7 @@ public class CommandInterceptListener implements Listener {
                 event.setCancelled(true);
                 String rest = noSlash.length() > prefixLen ? noSlash.substring(prefixLen).trim() : "";
                 String[] args = rest.isEmpty() ? new String[]{"list"} : ("list " + rest).split("\\s+", -1);
-                Command stub = new Command("claimlist") {
-                    @Override
-                    public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] a) {
-                        return false;
-                    }
-                };
-                claimCmd.onCommand(event.getPlayer(), stub, "claimlist", args);
+                claimCmd.run(event.getPlayer(), "claimlist", "claimlist", args);
             } else if (!plugin.isGp3dClaimMode()) {
                 // GPExpansion owns /claim: reroute to namespaced handler
                 event.setCancelled(true);
@@ -139,13 +114,7 @@ public class CommandInterceptListener implements Listener {
                 event.setCancelled(true);
                 String rest = noSlash.length() > prefixLen ? noSlash.substring(prefixLen).trim() : "";
                 String[] args = rest.isEmpty() ? new String[0] : rest.split("\\s+", -1);
-                Command stub = new Command("adminclaimlist") {
-                    @Override
-                    public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] a) {
-                        return false;
-                    }
-                };
-                claimCmd.onCommand(event.getPlayer(), stub, "adminclaimlist", args);
+                claimCmd.run(event.getPlayer(), "adminclaimlist", "adminclaimlist", args);
             }
             return;
         }
@@ -193,13 +162,7 @@ public class CommandInterceptListener implements Listener {
         if (!"snapshot".equals(first) && !"evict".equals(first)) return;
         ClaimCommand claimCmd = plugin.getClaimCommand();
         if (claimCmd == null) return;
-        org.bukkit.command.Command stub = new org.bukkit.command.Command("claim") {
-            @Override
-            public boolean execute(org.bukkit.command.CommandSender sender, String commandLabel, String[] a) {
-                return false;
-            }
-        };
-        List<String> ours = claimCmd.onTabComplete(event.getSender(), stub, "claim", args);
+        List<String> ours = claimCmd.completeTab(event.getSender(), "claim", "claim", args);
         if (ours != null && !ours.isEmpty()) {
             List<String> current = event.getCompletions();
             for (String s : ours) {

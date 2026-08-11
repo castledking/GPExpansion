@@ -29,8 +29,8 @@ public class SetupWizardManager {
     
     // Duration pattern: number followed by s/m/h/d/w
     private static final Pattern DURATION_PATTERN = Pattern.compile("^\\d+[smhdw]$", Pattern.CASE_INSENSITIVE);
-    // Number pattern for prices
-    private static final Pattern NUMBER_PATTERN = Pattern.compile("^\\d+(\\.\\d+)?[Ll]?$");
+    // Number pattern for prices - accepts k/m/b shorthand, which the sign parser expands
+    private static final Pattern NUMBER_PATTERN = Pattern.compile("^\\d+(\\.\\d+)?[kmb]?[Ll]?$", Pattern.CASE_INSENSITIVE);
     
     /**
      * Holds data for auto-pasting sign format when player places a sign.
@@ -67,14 +67,14 @@ public class SetupWizardManager {
                         configuredInput(plugin, "rent", hanging, hanging ? "[rent]" : "[rent claim]"),
                         claimId,
                         getEconomyToken(ecoKind),
-                        price + ";" + renewalTime + ";" + maxTime
+                        compactPrice(price) + ";" + renewalTime + ";" + maxTime
                     };
                 case SELL:
                     return new String[] {
                         configuredInput(plugin, "sell", hanging, hanging ? "[sell]" : "[sell claim]"),
                         claimId,
                         getEconomyToken(ecoKind),
-                        price
+                        compactPrice(price)
                     };
                 case MAILBOX:
                     String mailboxHeader = configuredInput(plugin, "mailbox", hanging, "[Mailbox]");
@@ -83,7 +83,7 @@ public class SetupWizardManager {
                     }
                     return new String[] {
                         mailboxHeader,
-                        (ecoKind != null ? getEconomyToken(ecoKind) : "money") + ";" + (price != null ? price : "100"),
+                        (ecoKind != null ? getEconomyToken(ecoKind) : "money") + ";" + (price != null ? compactPrice(price) : "100"),
                         "",
                         ""
                     };
@@ -94,6 +94,24 @@ public class SetupWizardManager {
 
         public String[] getSignLines() {
             return getSignLines(false);
+        }
+
+        /**
+         * Shorten a round price so the suggested line fits on a sign: 1000000 -> 1m.
+         * The sign parser expands k/m/b back into the full amount.
+         */
+        static String compactPrice(String price) {
+            if (price == null || !price.matches("^\\d+$")) return price;
+            long value;
+            try {
+                value = Long.parseLong(price);
+            } catch (NumberFormatException e) {
+                return price;
+            }
+            if (value >= 1_000_000_000L && value % 1_000_000_000L == 0) return (value / 1_000_000_000L) + "b";
+            if (value >= 1_000_000L && value % 1_000_000L == 0) return (value / 1_000_000L) + "m";
+            if (value >= 1_000L && value % 1_000L == 0) return (value / 1_000L) + "k";
+            return price;
         }
 
         private String configuredInput(GPExpansionPlugin plugin, String type, boolean hanging, String fallback) {
@@ -639,7 +657,7 @@ public class SetupWizardManager {
                 plugin.getMessages().send(player, "wizard." + typePrefix + "-enter-amount");
                 switch (session.getEcoKind()) {
                     case MONEY:
-                        sendMessage(player, "&7Enter the amount (e.g., &e100&7, &e1000&7)");
+                        sendMessage(player, "&7Enter the amount (e.g., &e100&7, &e1000&7, &e1m&7)");
                         break;
                     case EXPERIENCE:
                         sendMessage(player, "&7Enter XP amount, add &eL&7 for levels (e.g., &e500&7, &e30L&7)");

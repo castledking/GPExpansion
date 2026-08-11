@@ -35,6 +35,11 @@ public class ClaimFlyCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
+        return run(sender, label, args);
+    }
+
+    /** Entry point for callers that have no Bukkit {@link Command} instance; this command never uses it. */
+    public boolean run(@NotNull CommandSender sender, @NotNull String label, @NotNull String[] args) {
         if (args.length > 0 && ADMIN_ACTIONS.contains(args[0].toLowerCase(Locale.ROOT))) {
             return handleAdmin(sender, args);
         }

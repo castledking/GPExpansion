@@ -218,15 +218,15 @@ public class SignListener implements Listener {
             throw new IllegalArgumentException("Invalid renewal format. Expected: <ecoAmount>;<perClick>;<maxCap>");
         }
         
-        String amount = parts[0].trim();
+        String amount = normalizeEcoAmount(parts[0].trim());
         String perClick = parts[1].trim();
         String maxCap = parts[2].trim();
-        
+
         // Validate the amount is a positive number
         if (!amount.matches("^\\d+$")) {
-            throw new IllegalArgumentException("Amount must be a positive number");
+            throw new IllegalArgumentException("Amount must be a positive number (shorthand like 1k, 1m, 1b is allowed)");
         }
-        
+
         // Validate durations have valid format (e.g., 7d, 10w, 24h)
         if (!perClick.matches("^\\d+[dhmsw]$")) {
             throw new IllegalArgumentException("Per-click duration must be a number followed by d (days), h (hours), m (minutes), s (seconds), or w (weeks)");
@@ -245,7 +245,66 @@ public class SignListener implements Listener {
         // Match integers or decimals, optionally with L suffix for levels
         return input.matches("^\\d+(\\.\\d+)?[Ll]?$");
     }
-    
+
+    // Amounts may be written in shorthand so they fit on a sign line: 1k, 2.5m, 1b
+    private static final java.util.regex.Pattern SHORTHAND_AMOUNT =
+        java.util.regex.Pattern.compile("^(\\d+(?:\\.\\d+)?)([kmb])$", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    // Largest amount the payment handlers can process (item/claim-block counts are ints)
+    private static final double MAX_ECO_AMOUNT_VALUE = 2_000_000_000d;
+    private static final java.math.BigDecimal MAX_ECO_AMOUNT = new java.math.BigDecimal("2000000000");
+
+    // Used where a line is either an amount or an economy type - no duration to confuse it with
+    private boolean looksLikeAmount(String input) {
+        return looksLikeNumber(input) || looksLikeShorthandAmount(input);
+    }
+
+    private boolean looksLikeShorthandAmount(String input) {
+        if (input == null || input.isEmpty()) return false;
+        String value = input.endsWith("L") || input.endsWith("l") ? input.substring(0, input.length() - 1) : input;
+        return SHORTHAND_AMOUNT.matcher(value).matches();
+    }
+
+    private boolean looksLikeDuration(String input) {
+        return input != null && input.matches("^\\d+[dhmswDHMSW]$");
+    }
+
+    /**
+     * Expand a shorthand amount (1k / 2.5m / 1b) into plain digits so every downstream
+     * consumer keeps seeing a normal number. Inputs that aren't shorthand are returned
+     * unchanged; the trailing L used for XP levels is preserved.
+     */
+    private String normalizeEcoAmount(String raw) {
+        if (raw == null) return null;
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) return trimmed;
+
+        boolean levels = trimmed.endsWith("L") || trimmed.endsWith("l");
+        String numeric = levels ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
+
+        java.math.BigDecimal value;
+        java.util.regex.Matcher shorthand = SHORTHAND_AMOUNT.matcher(numeric);
+        if (shorthand.matches()) {
+            java.math.BigDecimal multiplier = switch (Character.toLowerCase(shorthand.group(2).charAt(0))) {
+                case 'k' -> new java.math.BigDecimal("1000");
+                case 'm' -> new java.math.BigDecimal("1000000");
+                default -> new java.math.BigDecimal("1000000000");
+            };
+            value = new java.math.BigDecimal(shorthand.group(1)).multiply(multiplier);
+        } else if (numeric.matches("^\\d+$")) {
+            value = new java.math.BigDecimal(numeric);
+        } else {
+            // Not a number we understand - leave it for the caller's own validation
+            return trimmed;
+        }
+
+        if (value.compareTo(MAX_ECO_AMOUNT) > 0) {
+            throw new IllegalArgumentException("Amount cannot exceed 2b.");
+        }
+        String expanded = value.setScale(0, java.math.RoundingMode.DOWN).toPlainString();
+        return levels ? expanded + "L" : expanded;
+    }
+
     // Parse duration string (e.g., "7d", "1w", "24h") to milliseconds
     private long parseDurationToMillis(String s) {
         if (s == null || s.isEmpty()) return 0L;
@@ -585,7 +644,7 @@ public class SignListener implements Listener {
                         String part1 = parts[0].trim();
                         String part2 = parts[1].trim();
                         
-                        if (looksLikeNumber(part1)) {
+                        if (looksLikeNumber(part1) || (looksLikeShorthandAmount(part1) && looksLikeDuration(part2))) {
                             // <ecoAmt>;<renewTime>
                             ecoAmt = part1;
                             renewTime = part2;
@@ -602,7 +661,7 @@ public class SignListener implements Listener {
                         String part2 = parts[1].trim();
                         String part3 = parts[2].trim();
                         
-                        if (looksLikeNumber(part1)) {
+                        if (looksLikeNumber(part1) || (looksLikeShorthandAmount(part1) && looksLikeDuration(part2))) {
                             // <ecoAmt>;<renewTime>;<maxTime>
                             ecoAmt = part1;
                             renewTime = part2;
@@ -620,7 +679,7 @@ public class SignListener implements Listener {
                     }
                     
                     // Check if line2 contains ecoType
-                    if (!line2.isEmpty() && !looksLikeNumber(line2)) {
+                    if (!line2.isEmpty() && !looksLikeAmount(line2)) {
                         ecoKindStr = line2;
                     } else {
                         ecoKindStr = "money";
@@ -635,7 +694,7 @@ public class SignListener implements Listener {
                     maxTime = durations.length > 1 ? durations[1].trim() : renewTime; // Default maxTime to renewTime if not specified
                     
                     // Check if line2 looks like a number (ecoAmt with default money type)
-                    if (looksLikeNumber(line2)) {
+                    if (looksLikeAmount(line2)) {
                         ecoKindStr = "money";
                         renewalSpecStr = line2 + ";" + renewTime + ";" + maxTime;
                     } else if (!line2.isEmpty()) {
@@ -655,11 +714,11 @@ public class SignListener implements Listener {
                 // Line 1: empty or ignored (claim from location)
                 // Line 2: [ecoType] | <ecoAmt>
                 // Line 3: [ecoAmt] (if line 2 is ecoType)
-                if (looksLikeNumber(line1) && line2.isEmpty()) {
+                if (looksLikeAmount(line1) && line2.isEmpty()) {
                     // Just amount on line 1
                     ecoKindStr = "money";
                     renewalSpecStr = line1;
-                } else if (looksLikeNumber(line2)) {
+                } else if (looksLikeAmount(line2)) {
                     ecoKindStr = "money";
                     renewalSpecStr = line2;
                 } else {
@@ -730,7 +789,7 @@ public class SignListener implements Listener {
             claimId = line1;
             
             // Check if line2 looks like a number (ecoAmt with default money type)
-            if (looksLikeNumber(line2)) {
+            if (looksLikeAmount(line2)) {
                 ecoKindStr = "money";
                 if (rent) {
                     // For rent, we need durations - check if line3 has them
@@ -873,7 +932,7 @@ public class SignListener implements Listener {
         try {
             if (sell || mailbox) {
                 // For sell and mailbox signs, just validate the economy amount
-                renewal = new RenewalSpec(renewalSpecStr, "1", "1"); // dummy values for perClick and maxCap
+                renewal = new RenewalSpec(normalizeEcoAmount(renewalSpecStr), "1", "1"); // dummy values for perClick and maxCap
             } else {
                 renewal = parseRenewal(renewalSpecStr, kind);
                 validateRentDurationLimits(renewal);
@@ -1374,7 +1433,7 @@ public class SignListener implements Listener {
                     return false;
                 }
                 double amount = Double.parseDouble(ecoAmtRaw);
-                amount = Math.min(amount, 9_999_999.99);
+                amount = Math.min(amount, MAX_ECO_AMOUNT_VALUE);
                 if (!plugin.getEconomyManager().hasMoney(player, amount)) {
                     player.sendMessage(Component.text("You don't have enough money.", NamedTextColor.RED));
                     return false;

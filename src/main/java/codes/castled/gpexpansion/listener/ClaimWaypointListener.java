@@ -14,6 +14,9 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerRegisterChannelEvent;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Drives {@link ClaimWaypointManager} from claim and trust changes.
@@ -28,6 +31,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 public final class ClaimWaypointListener implements Listener {
 
     private final GPExpansionPlugin plugin;
+    private final AtomicBoolean globalRebuildQueued = new AtomicBoolean();
 
     public ClaimWaypointListener(GPExpansionPlugin plugin) {
         this.plugin = plugin;
@@ -43,13 +47,33 @@ public final class ClaimWaypointListener implements Listener {
     }
 
     private void rebuildNextTick() {
-        codes.castled.gpexpansion.scheduler.SchedulerAdapter.runLaterGlobal(plugin, this::rebuild, 1L);
+        // Bulk claim operations can fire many events in one tick. One rebuild sees their final state.
+        if (!globalRebuildQueued.compareAndSet(false, true)) return;
+        codes.castled.gpexpansion.scheduler.SchedulerAdapter.runLaterGlobal(plugin, () -> {
+            globalRebuildQueued.set(false);
+            rebuild();
+        }, 1L);
+    }
+
+    private void rebuildNextTick(org.bukkit.entity.Player player) {
+        codes.castled.gpexpansion.scheduler.SchedulerAdapter.runLaterGlobal(plugin, () -> {
+            ClaimWaypointManager manager = manager();
+            if (manager != null && player.isOnline()) manager.rebuildViewer(player);
+        }, 1L);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onJoin(PlayerJoinEvent event) {
-        // Deferred: the player is not yet a valid hideEntity target during the join event itself.
-        rebuildNextTick();
+        // The first send is fast, while the delayed retry covers clients whose plugin-channel
+        // registration arrives after the join event. Both refresh only this player.
+        rebuildNextTick(event.getPlayer());
+        codes.castled.gpexpansion.scheduler.SchedulerAdapter.runLaterGlobal(
+            plugin, () -> {
+                ClaimWaypointManager manager = manager();
+                if (manager != null && event.getPlayer().isOnline()) {
+                    manager.rebuildViewer(event.getPlayer());
+                }
+            }, 60L);
 
         codes.castled.gpexpansion.pack.ClaimWaypointPackService packService =
             plugin.getClaimWaypointPackService();
@@ -68,14 +92,21 @@ public final class ClaimWaypointListener implements Listener {
     public void onQuit(PlayerQuitEvent event) {
         ClaimWaypointManager manager = manager();
         if (manager != null) manager.handleQuit(event.getPlayer());
-        rebuildNextTick();
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onChannelRegistered(PlayerRegisterChannelEvent event) {
+        if (ClaimWaypointManager.CLAIM_DATA_CHANNEL.equals(event.getChannel())) {
+            // This is the earliest reliable point at which CrowBar has advertised its receiver.
+            rebuildNextTick(event.getPlayer());
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChangedWorld(org.bukkit.event.player.PlayerChangedWorldEvent event) {
         // The claim set is per-world, and vanilla removes a player's waypoints on dimension
         // change — the diff resends the ones valid for the new world.
-        rebuildNextTick();
+        rebuildNextTick(event.getPlayer());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

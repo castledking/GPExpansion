@@ -65,22 +65,25 @@ public class ClaimFlagsGUI extends BaseGUI {
         // Get all claim flag definitions
         List<GPFlagsBridge.FlagInfo> allFlags = GPFlagsBridge.getClaimFlagDefinitions();
         
-        // Get current flag states for this claim
-        Map<String, GPFlagsBridge.ClaimFlagState> currentStates = GPFlagsBridge.getAllFlagStates(claimId);
-        
+        // Get current EFFECTIVE flag states for this claim (resolves inheritance from
+        // parent/default/world/server flags, same as what's actually enforced in-game --
+        // a raw-only lookup would show "Disabled" for flags a world/server flag enforces)
+        Map<String, GPFlagsBridge.ClaimFlagState> currentStates = GPFlagsBridge.getAllEffectiveFlagStates(claim);
+
         // Build display info for each flag the player has permission for
         for (GPFlagsBridge.FlagInfo flag : allFlags) {
             String flagName = flag.getName();
             String permissionNode = "gpflags.flag." + flagName.toLowerCase();
-            
+
             // Check if player has permission for this flag
             if (!player.hasPermission(permissionNode)) continue;
-            
+
             GPFlagsBridge.ClaimFlagState state = currentStates.get(flagName.toLowerCase());
             boolean isEnabled = state != null && state.isEnabled();
+            boolean isExplicit = state == null || state.isExplicit();
             String params = state != null ? state.getParameters() : "";
-            
-            displayFlags.add(new FlagDisplayInfo(flagName, isEnabled, params));
+
+            displayFlags.add(new FlagDisplayInfo(flagName, isEnabled, params, isExplicit));
         }
         
         // Sort alphabetically
@@ -157,7 +160,10 @@ public class ClaimFlagsGUI extends BaseGUI {
         
         List<String> lore = new ArrayList<>();
         lore.add(flag.enabled ? "&aEnabled" : "&cDisabled");
-        
+        if (!flag.explicit) {
+            lore.add("&7(inherited from world/server, not set on this claim)");
+        }
+
         // Add description from config if available
         String description = getFlagDescription(flag.name);
         if (description != null && !description.isEmpty()) {
@@ -341,11 +347,14 @@ public class ClaimFlagsGUI extends BaseGUI {
             return;
         }
         
-        // Toggle the flag
-        Boolean newState = GPFlagsBridge.toggleFlag(claimId, flag.name);
-        
+        // Toggle based on the effective (enforced) state and always write an explicit
+        // override, so this reliably beats any inherited parent/default/world/server flag
+        // -- see GPFlagsBridge#toggleEffectiveFlag for why the plain unset path can't.
+        Boolean newState = GPFlagsBridge.toggleEffectiveFlag(claim, claimId, flag.name);
+
         if (newState != null) {
             flag.enabled = newState;
+            flag.explicit = true;
             String stateText = newState ? "enabled" : "disabled";
             plugin.getMessages().send(player, "flags.toggled",
                 "{flag}", flag.name,
@@ -393,11 +402,14 @@ public class ClaimFlagsGUI extends BaseGUI {
         String name;
         boolean enabled;
         String parameters;
+        /** False when this state comes from a parent/default/world/server flag, not this claim's own override. */
+        boolean explicit;
 
-        FlagDisplayInfo(String name, boolean enabled, String parameters) {
+        FlagDisplayInfo(String name, boolean enabled, String parameters, boolean explicit) {
             this.name = name;
             this.enabled = enabled;
             this.parameters = parameters;
+            this.explicit = explicit;
         }
     }
 }
