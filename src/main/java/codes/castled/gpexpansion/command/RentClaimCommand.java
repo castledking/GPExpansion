@@ -65,8 +65,8 @@ public class RentClaimCommand implements CommandExecutor, TabCompleter {
             Optional<Object> claimAtLocation = gp.getClaimAt(player.getLocation());
             if (claimAtLocation.isPresent()) {
                 Object claim = claimAtLocation.get();
-                // Check if player owns this claim
-                if (gp.isOwner(claim, player.getUniqueId()) || player.hasPermission("griefprevention.admin")) {
+                // Admin-claim managers may prepare signs for ownerless admin claims.
+                if (wizardManager.canManageClaimForSignCreation(player, claim)) {
                     claimId = gp.getClaimId(claim).orElse(null);
                 }
             }
@@ -84,11 +84,16 @@ public class RentClaimCommand implements CommandExecutor, TabCompleter {
         }
         
         if (args.length == 1) {
-            // Suggest claim IDs owned by the player
-            return gp.getClaimsFor(player).stream()
+            // Suggest owned claims plus admin claims the player is allowed to manage.
+            java.util.stream.Stream<Object> claims = gp.getClaimsFor(player).stream();
+            if (player.hasPermission("griefprevention.adminclaims")) {
+                claims = java.util.stream.Stream.concat(claims, gp.getAdminClaims().stream());
+            }
+            return claims
                 .map(claim -> gp.getClaimId(claim).orElse(""))
                 .filter(id -> !id.isEmpty())
                 .filter(id -> id.startsWith(args[0]))
+                .distinct()
                 .collect(Collectors.toList());
         }
         

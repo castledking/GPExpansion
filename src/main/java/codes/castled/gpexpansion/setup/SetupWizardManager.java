@@ -143,6 +143,13 @@ public class SetupWizardManager {
         return plugin;
     }
 
+    /** Ownership equivalent used by every sign-setup entry point. */
+    public boolean canManageClaimForSignCreation(Player player, Object claim) {
+        return gp.isOwner(claim, player.getUniqueId())
+            || player.hasPermission("griefprevention.admin")
+            || (player.hasPermission("griefprevention.adminclaims") && gp.isWithinAdminClaim(claim));
+    }
+
     /**
      * Returns true only if the player is allowed to create this sign type at this location.
      * Used by auto-paste to prevent placing/injecting signs in claims the player doesn't own or rent.
@@ -158,18 +165,17 @@ public class SetupWizardManager {
             return false;
         }
         java.util.UUID playerId = player.getUniqueId();
-        boolean admin = player.hasPermission("griefprevention.admin");
         if (data.type == SetupType.RENT || data.type == SetupType.SELL) {
-            return gp.isOwner(claim, playerId) || admin;
+            return canManageClaimForSignCreation(player, claim);
         }
         if (data.type == SetupType.MAILBOX) {
             if (data.mailboxSelf) {
-                if (gp.isOwner(claim, playerId) || admin) return true;
+                if (canManageClaimForSignCreation(player, claim)) return true;
                 return plugin.getClaimDataStore().getRental(claimId)
                     .filter(r -> r.renter != null && r.renter.equals(playerId))
                     .isPresent();
             }
-            return gp.isOwner(claim, playerId) || admin;
+            return canManageClaimForSignCreation(player, claim);
         }
         return false;
     }
@@ -234,7 +240,7 @@ public class SetupWizardManager {
 
             // Validate ownership
             Object claim = claimOpt.get();
-            if (!gp.isOwner(claim, playerId) && !player.hasPermission("griefprevention.admin")) {
+            if (!canManageClaimForSignCreation(player, claim)) {
                 plugin.getMessages().send(player, "wizard.not-claim-owner");
                 return false;
             }
@@ -370,7 +376,7 @@ public class SetupWizardManager {
         
         // Validate ownership
         Object claim = claimOpt.get();
-        if (!gp.isOwner(claim, player.getUniqueId()) && !player.hasPermission("griefprevention.admin")) {
+        if (!canManageClaimForSignCreation(player, claim)) {
             plugin.getMessages().send(player, "wizard.not-claim-owner");
             return true;
         }

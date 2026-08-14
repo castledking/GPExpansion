@@ -51,6 +51,15 @@ public class MailboxListener implements Listener {
     private NamespacedKey keyItemB64() { return new NamespacedKey(plugin, "item-b64"); }
     private NamespacedKey keyEcoKind() { return new NamespacedKey(plugin, "sign.ecoKind"); }
 
+    private boolean canManageAdminClaim(Player player, Object claim) {
+        return player.hasPermission("griefprevention.adminclaims") && gp.isWithinAdminClaim(claim);
+    }
+
+    /** Preserve ownerless admin-claim lineage when a real mailbox creates its 1x1 child. */
+    private UUID mailboxSubdivisionOwner(Object parentClaim, UUID creator) {
+        return gp.isWithinAdminClaim(parentClaim) ? gp.getClaimOwner(parentClaim) : creator;
+    }
+
     private String stripColorCodes(String input) {
         if (input == null || input.isEmpty()) return "";
         return input.replaceAll("(?i)[§&][0-9A-FK-OR]", "");
@@ -143,7 +152,7 @@ public class MailboxListener implements Listener {
         String parentClaimId = gp.getClaimId(parentClaim).orElse(null);
         if (parentClaimId == null) return;
 
-        // Buyable mailbox: line 1 = kind;amount (e.g. money;100) — claim owner only, no mailbox created yet
+        // Buyable mailbox: line 1 = kind;amount (e.g. money;100) — claim owner/admin-claim manager only
         ParsedBuyable parsed = parseBuyableLine(line1);
         if (parsed != null) {
             if (!player.hasPermission("griefprevention.sign.create.mailbox")) {
@@ -151,7 +160,7 @@ public class MailboxListener implements Listener {
                 return;
             }
             UUID playerId = player.getUniqueId();
-            if (!gp.isOwner(parentClaim, playerId)) {
+            if (!gp.isOwner(parentClaim, playerId) && !canManageAdminClaim(player, parentClaim)) {
                 plugin.getMessages().send(player, "sign-creation.not-in-claim");
                 return;
             }
@@ -184,9 +193,10 @@ public class MailboxListener implements Listener {
                 claimDataStore.save();
             } else {
                 // Real: create subdivision (3D if GP3D, 2D otherwise) and container-trust public
+                UUID subdivisionOwner = mailboxSubdivisionOwner(parentClaim, playerId);
                 java.util.Optional<String> newClaimIdOpt = gp.isGP3D()
-                    ? gp.create1x1SubdivisionAt(containerBlock.getLocation(), playerId, parentClaim)
-                    : gp.create1x1Subdivision2DAt(containerBlock.getLocation(), playerId, parentClaim);
+                    ? gp.create1x1SubdivisionAt(containerBlock.getLocation(), subdivisionOwner, parentClaim)
+                    : gp.create1x1Subdivision2DAt(containerBlock.getLocation(), subdivisionOwner, parentClaim);
                 if (newClaimIdOpt.isEmpty()) {
                     if (debug) plugin.getLogger().info("[mailbox-buyable] Fail: create subdivision returned empty");
                     plugin.getMessages().send(player, "mailbox.create-failed");
@@ -253,8 +263,9 @@ public class MailboxListener implements Listener {
 
         UUID playerId = player.getUniqueId();
         boolean isOwner = gp.isOwner(parentClaim, playerId);
+        boolean isAdminClaimManager = canManageAdminClaim(player, parentClaim);
         boolean isRenter = false;
-        if (!isOwner) {
+        if (!isOwner && !isAdminClaimManager) {
             Object topClaim = parentClaim;
             while (true) {
                 java.util.Optional<Object> parent = gp.getParentClaim(topClaim);
@@ -297,9 +308,10 @@ public class MailboxListener implements Listener {
             claimDataStore.save();
         } else {
             // Real: create subdivision (3D if GP3D, 2D otherwise) and container-trust public
+            UUID subdivisionOwner = mailboxSubdivisionOwner(parentClaim, playerId);
             java.util.Optional<String> newClaimIdOpt = gp.isGP3D()
-                ? gp.create1x1SubdivisionAt(containerBlock.getLocation(), playerId, parentClaim)
-                : gp.create1x1Subdivision2DAt(containerBlock.getLocation(), playerId, parentClaim);
+                ? gp.create1x1SubdivisionAt(containerBlock.getLocation(), subdivisionOwner, parentClaim)
+                : gp.create1x1Subdivision2DAt(containerBlock.getLocation(), subdivisionOwner, parentClaim);
             if (newClaimIdOpt.isEmpty()) {
                 if (debug) plugin.getLogger().info("[mailbox-instant] Fail: create subdivision returned empty");
                 return;

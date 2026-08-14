@@ -7,7 +7,7 @@
 
   <groupId>codes.castled.gpexpansion</groupId>
   <artifactId>gpexpansion</artifactId>
-  <version>1.2.0</version>
+  <version>1.2.1</version>
   <name>GPExpansion</name>
   <description>GriefPrevention Expansion</description>
 
@@ -24,6 +24,7 @@
     <adventure.minimessage.version>4.17.0</adventure.minimessage.version>
     <vault.api.version>1.7</vault.api.version>
     <griefprevention3d.version>18.2.7</griefprevention3d.version>
+    <junit.version>5.11.4</junit.version>
   </properties>
 
   <repositories>
@@ -99,6 +100,12 @@
       <artifactId>GriefPrevention3D</artifactId>
       <version>${griefprevention3d.version}</version>
       <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 

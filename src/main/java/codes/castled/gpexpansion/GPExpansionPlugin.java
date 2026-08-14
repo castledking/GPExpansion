@@ -99,6 +99,10 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Initialize version manager and check for migrations
         versionManager = new VersionManager(this);
         versionManager.checkAndMigrateConfiguration();
+        // VersionManager writes through JavaPlugin's FileConfiguration. Refresh the
+        // dedicated config wrapper so first-start defaults and migrations apply now,
+        // rather than only after the next server restart.
+        configManager.reload();
 
         // Load stores
         claimDataStore = new codes.castled.gpexpansion.storage.ClaimDataStore(this);

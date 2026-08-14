@@ -2,7 +2,6 @@ package codes.castled.gpexpansion.listener;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import org.apache.commons.lang.StringUtils;
@@ -52,6 +51,16 @@ public class SignListener implements Listener {
     /** True if player has the permission, or has full access (op or wildcard *). Ensures server owners with * aren't blocked. */
     private static boolean hasPermissionOrFullAccess(Player player, String permission) {
         return player.hasPermission(permission) || player.isOp() || player.hasPermission("*");
+    }
+
+    private boolean canManageAdminClaim(Player player, Object claim) {
+        return player.hasPermission("griefprevention.adminclaims") && gp.isWithinAdminClaim(claim);
+    }
+
+    private boolean canCreateSignForClaim(Player player, Object claim) {
+        return gp.isOwner(claim, player.getUniqueId())
+            || canManageAdminClaim(player, claim)
+            || hasPermissionOrFullAccess(player, "griefprevention.admin");
     }
 
     // PDC keys
@@ -419,13 +428,6 @@ public class SignListener implements Listener {
         boolean globalClaim = matchesAnyHeader(strippedLine0, "global",
             List.of("[Global Claim]", "[Global]"),
             List.of("[Global]"));
-        boolean invalid = normalizeHeader(strippedLine0).equals(normalizeHeader("[Invalid Rental]"))
-            || normalizeHeader(strippedLine0).equals(normalizeHeader("[Invalid Listing]"));
-
-        if (invalid) {
-            return;
-        }
-
         if (!rent && !sell && !mailbox && !globalClaim) {
             return; // Not a rent/sell/mailbox/global claim sign, ignore
         }
@@ -556,8 +558,8 @@ public class SignListener implements Listener {
                 }
             }
             
-            // Verify player owns the claim (or has admin / full access)
-            if (!gp.isOwner(targetClaim, player.getUniqueId()) && !hasPermissionOrFullAccess(player, "griefprevention.admin")) {
+            // Admin claims are ownerless; griefprevention.adminclaims is their ownership equivalent.
+            if (!canCreateSignForClaim(player, targetClaim)) {
                 plugin.getMessages().send(player, "sign-creation.not-claim-owner");
                 return;
             }
@@ -873,8 +875,14 @@ public class SignListener implements Listener {
         try {
             kind = parseEcoKind(ecoKindStr);
         } catch (IllegalArgumentException e) {
-            formatInvalidSign(event, rent, claimId, ecoKindStr, renewalSpecStr);
-            plugin.getMessages().send(player, "sign-creation.invalid-economy-type", "{type}", ecoKindStr);
+            if (ecoKindStr == null || ecoKindStr.isBlank()) {
+                String details = sell
+                    ? "Sell signs require a payment amount (for example: 100 or $100)."
+                    : "A payment type and amount are required.";
+                plugin.getMessages().send(player, "sign-creation.invalid-format", "{details}", details);
+            } else {
+                plugin.getMessages().send(player, "sign-creation.invalid-economy-type", "{type}", ecoKindStr);
+            }
             return;
         }
         if (sell && !isSellPaymentKindAllowed(kind)) {
@@ -1055,13 +1063,6 @@ public class SignListener implements Listener {
         if (missingItem) {
             plugin.getMessages().send(player, "sign-creation.item-setup-reminder");
         }
-    }
-
-    private void formatInvalidSign(SignChangeEvent event, boolean rent, String claimId, String ecoKindStr, String renewalSpecStr) {
-        event.line(0, Component.text(rent ? "[Invalid Rental]" : "[Invalid Listing]", NamedTextColor.DARK_GRAY, TextDecoration.BOLD));
-        event.line(1, Component.text(claimId != null ? claimId : "", NamedTextColor.DARK_GRAY));
-        event.line(2, Component.text(ecoKindStr != null ? ecoKindStr : "", NamedTextColor.DARK_GRAY));
-        event.line(3, Component.text(renewalSpecStr != null ? renewalSpecStr : "", NamedTextColor.DARK_GRAY));
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -1682,8 +1683,7 @@ public class SignListener implements Listener {
 
         // Verify player owns the claim
         if (plugin.getConfig().getBoolean("signs.global.require-claim-owner", true)
-                && !gp.isOwner(claim, player.getUniqueId())
-                && !player.hasPermission("griefprevention.admin")) {
+                && !canCreateSignForClaim(player, claim)) {
             plugin.getMessages().send(player, "sign-creation.not-claim-owner");
             return;
         }

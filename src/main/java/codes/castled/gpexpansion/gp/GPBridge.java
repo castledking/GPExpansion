@@ -1796,6 +1796,26 @@ public class GPBridge {
             return false;
         }
     }
+
+    /**
+     * Return whether this claim is an admin claim or is nested beneath one.
+     *
+     * <p>Some GriefPrevention forks expose the admin flag only on the top-level
+     * claim, while others report it for ownerless subdivisions too. Walking the
+     * parent chain keeps permission checks consistent across both models.</p>
+     */
+    public boolean isWithinAdminClaim(Object claim) {
+        if (claim == null) return false;
+        Set<Object> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        Object current = claim;
+        while (current != null && visited.add(current)) {
+            if (isAdminClaim(current)) return true;
+            Object parent = getParentClaim(current).orElse(null);
+            if (parent == null || parent == current) break;
+            current = parent;
+        }
+        return false;
+    }
     
     public boolean isOwner(Object claim, UUID playerId) {
         if (claim == null || playerId == null) return false;
@@ -4460,6 +4480,7 @@ public class GPBridge {
 
     /**
      * Create a 1x1x1 subdivision at the given location (GP3D).
+     * The owner ID may be null when the parent belongs to an admin claim.
      * Returns the new claim ID if successful, empty otherwise.
      */
     public Optional<String> create1x1SubdivisionAt(Location loc, UUID ownerId, Object parentClaim) {
@@ -4523,13 +4544,13 @@ public class GPBridge {
                     } else if (params.length >= 8 && params[0] == org.bukkit.World.class) {
                         if (params[7] == UUID.class) {
                             newClaim = m.invoke(dataStore, world, x, y, z, x, y, z, ownerId);
-                        } else {
+                        } else if (ownerId != null) {
                             newClaim = m.invoke(dataStore, world, x, y, z, x, y, z, ownerId.toString(), parentClaim);
                         }
                     } else if (params.length >= 7 && params[0] == org.bukkit.World.class) {
                         if (params[6] == UUID.class) {
                             newClaim = m.invoke(dataStore, world, x, y, z, x, y, z, ownerId);
-                        } else {
+                        } else if (ownerId != null) {
                             newClaim = m.invoke(dataStore, world, x, y, z, x, y, z, ownerId.toString());
                         }
                     }
@@ -4565,6 +4586,7 @@ public class GPBridge {
 
     /**
      * Create a 1x1 (one block XZ) 2D subdivision at the given location for regular (non-GP3D) GP.
+     * The owner ID may be null when the parent belongs to an admin claim.
      * Returns the new claim ID or empty if not available or not GP3D (use create1x1SubdivisionAt for 3D).
      */
     public Optional<String> create1x1Subdivision2DAt(Location loc, UUID ownerId, Object parentClaim) {

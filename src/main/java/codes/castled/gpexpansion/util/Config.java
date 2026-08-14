@@ -24,6 +24,7 @@ public class Config {
     private final JavaPlugin plugin;
     private FileConfiguration config;
     private File configFile;
+    private boolean configCreatedOnLoad;
     
     // Define all defaults here - when adding new options, add them here
     private static final Map<String, Object> DEFAULTS = new LinkedHashMap<>();
@@ -141,7 +142,6 @@ public class Config {
 
         // Mailbox behavior
         DEFAULTS.put("signs.mailbox.enabled", true);
-        DEFAULTS.put("signs.mailbox.protocol", "virtual");
         DEFAULTS.put("signs.mailbox.allow-self-mailboxes", true);
         DEFAULTS.put("signs.mailbox.require-container-attached", true);
         DEFAULTS.put("signs.mailbox.allow-stacked-mailboxes", true);
@@ -240,7 +240,8 @@ public class Config {
      */
     public void load() {
         // Create config file if it doesn't exist
-        if (!configFile.exists()) {
+        configCreatedOnLoad = !configFile.exists();
+        if (configCreatedOnLoad) {
             plugin.saveDefaultConfig();
         }
         
@@ -263,6 +264,11 @@ public class Config {
         // Keep the JavaPlugin's internal config in sync so that plugin.saveConfig()
         // (used by VersionManager) does not overwrite values we just saved.
         plugin.reloadConfig();
+    }
+
+    /** True only when this startup created config.yml from the bundled resource. */
+    public boolean wasConfigCreatedOnLoad() {
+        return configCreatedOnLoad;
     }
 
     /**

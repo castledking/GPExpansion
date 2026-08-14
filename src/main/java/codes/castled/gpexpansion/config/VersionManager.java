@@ -34,10 +34,12 @@ public class VersionManager {
     private String currentConfigVersion;
     private boolean updateCheckerEnabled;
     private long lastUpdateCheck;
+    private boolean freshConfig;
     
     public VersionManager(GPExpansionPlugin plugin) {
         this.plugin = plugin;
         this.dataFolder = plugin.getDataFolder();
+        this.freshConfig = plugin.getConfigManager().wasConfigCreatedOnLoad();
         loadConfig();
     }
     
@@ -474,14 +476,37 @@ public class VersionManager {
      */
     private void ensureMailboxProtocolPresent() {
         FileConfiguration config = plugin.getConfig();
-        if (config.contains("signs.mailbox.protocol")) return;
+        boolean initialConfig = freshConfig;
+        freshConfig = false;
+        boolean nestedProtocolPresent = config.contains("signs.mailbox.protocol");
+        if (!initialConfig && nestedProtocolPresent) return;
+
         String existing = config.getString("mailbox-protocol", null);
         GPBridge gp = new GPBridge();
         boolean gp3d = gp.isGP3D();
-        String defaultProtocol = existing != null && !existing.isBlank() ? existing.trim() : (gp3d ? "real" : "virtual");
+        String defaultProtocol = mailboxProtocolToWrite(initialConfig,
+            nestedProtocolPresent,
+            existing,
+            gp3d);
+        if (defaultProtocol == null) return;
         config.set("signs.mailbox.protocol", defaultProtocol);
         plugin.saveConfig();
-        plugin.getLogger().info("VersionManager: Added missing signs.mailbox.protocol=" + defaultProtocol + " (detected " + (gp3d ? "GP3D" : "regular GP") + ").");
+        plugin.getLogger().info("VersionManager: "
+            + (initialConfig ? "Set fresh-install" : "Added missing")
+            + " signs.mailbox.protocol=" + defaultProtocol
+            + " (detected " + (gp3d ? "GP3D" : "regular GP") + ").");
+    }
+
+    /**
+     * Select the protocol value startup should persist, or null when an existing choice must remain untouched.
+     * The fresh-config parameter is intentionally part of this seam so first-install behavior can be tested.
+     */
+    static String mailboxProtocolToWrite(boolean freshConfig, boolean nestedProtocolPresent,
+                                         String legacyProtocol, boolean gp3d) {
+        if (freshConfig) return gp3d ? "real" : "virtual";
+        if (nestedProtocolPresent) return null;
+        if (legacyProtocol != null && !legacyProtocol.isBlank()) return legacyProtocol.trim();
+        return gp3d ? "real" : "virtual";
     }
     
     /**
