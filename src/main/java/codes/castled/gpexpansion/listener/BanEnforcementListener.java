@@ -3,14 +3,22 @@ package codes.castled.gpexpansion.listener;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDismountEvent;
+import org.bukkit.event.entity.EntityMountEvent;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.util.Vector;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
@@ -32,6 +40,8 @@ public class BanEnforcementListener implements Listener {
     
     // Track players currently being ejected to prevent movement during teleport
     private final java.util.Set<UUID> beingEjected = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    // Dismounts we caused ourselves, so the dismount handler does not redo the mount's removal
+    private final java.util.Set<UUID> pluginDismounts = java.util.concurrent.ConcurrentHashMap.newKeySet();
     
     // Knockback strength for boundary rebound effect
     private static final double KNOCKBACK_STRENGTH = 0.8;
@@ -192,14 +202,214 @@ public class BanEnforcementListener implements Listener {
         
         if (wasOutside) {
             // BOUNDARY CROSSING - apply immediate knockback/rebound effect
-            e.setCancelled(true);
-            applyKnockback(player, from, to, result.claim);
+            if (player.getVehicle() != null) {
+                // A passenger does not own its own position: cancelling the move and setting
+                // the player's velocity are both ignored while the vehicle keeps walking in.
+                // Roll the whole mount back to where it came from instead.
+                rejectMountedEntry(player, from);
+            } else {
+                e.setCancelled(true);
+                applyKnockback(player, from, to, result.claim);
+            }
             notifyEnterBlocked(player, result.claim);
         } else {
             // ALREADY INSIDE - teleport them out safely (banned while inside, or teleported in)
             handleDeepEjection(player, result.claim);
             notifyBanned(player, "claim.ban-blocked-inside", result.claim);
         }
+    }
+
+    /**
+     * Vehicles move their passengers themselves, and on some paths that happens without a
+     * {@link PlayerMoveEvent} the listener can veto, so the ride has to be checked too.
+     * {@link VehicleMoveEvent} is not cancellable - the mount is put back by hand.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onVehicleMove(VehicleMoveEvent e) {
+        Location from = e.getFrom();
+        Location to = e.getTo();
+        if (to == null || from == null) return;
+        if (from.getBlockX() == to.getBlockX() && from.getBlockZ() == to.getBlockZ()
+                && from.getWorld() == to.getWorld()) {
+            return;
+        }
+        if (!nearBannedClaim(to)) return;
+        if (!plugin.getConfigManager().isClaimBanEntryPreventionEnabled()) return;
+
+        for (Player passenger : playerPassengers(e.getVehicle())) {
+            if (beingEjected.contains(passenger.getUniqueId())) continue;
+            BanCheckResult result = checkBanned(passenger, to);
+            if (result == null) continue;
+
+            if (isInsideClaim(from, result.claim)) {
+                // The ride started inside the claim, so there is nothing safe to roll back to
+                handleDeepEjection(passenger, result.claim);
+                notifyBanned(passenger, "claim.ban-blocked-inside", result.claim);
+            } else {
+                rejectMountedEntry(passenger, from);
+                notifyEnterBlocked(passenger, result.claim);
+            }
+        }
+    }
+
+    /**
+     * Block mounting an entity that is standing in a claim the player is banned from. Reach
+     * is longer than the claim border is thick, so without this a banned player can right
+     * click an animal from outside and ride it in.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onEntityMount(EntityMountEvent e) {
+        if (!(e.getEntity() instanceof Player player)) return;
+        Location mountLocation = e.getMount().getLocation();
+        if (!nearBannedClaim(mountLocation)) return;
+        if (!plugin.getConfigManager().isClaimBanEntryPreventionEnabled()) return;
+
+        BanCheckResult result = checkBanned(player, mountLocation);
+        if (result == null) return;
+        e.setCancelled(true);
+        notifyActionBlocked(player, "claim.ban-blocked-mount", result.claim);
+    }
+
+    /**
+     * A banned rider who hops off inside the claim gets ejected by the move handler, but the
+     * animal they arrived on would stay behind. Send it out after them.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEntityDismount(EntityDismountEvent e) {
+        if (!(e.getEntity() instanceof Player player)) return;
+        // Our own ejection paths dismount the player and already move the mount themselves
+        if (pluginDismounts.contains(player.getUniqueId())) return;
+
+        Entity mount = e.getDismounted();
+        Location mountLocation = mount.getLocation();
+        if (!nearBannedClaim(mountLocation)) return;
+        if (!plugin.getConfigManager().isClaimBanEntryPreventionEnabled()) return;
+
+        BanCheckResult result = checkBanned(player, mountLocation);
+        if (result == null) return;
+        // The event fires before the player is actually off, so wait a tick - teleporting a
+        // mount that still has a passenger would drag the player along with it.
+        SchedulerAdapter.runLaterEntity(plugin, mount, () -> {
+            if (mount.isValid() && playerPassengers(mount).isEmpty()) {
+                relocateVehicleOutside(mount, result.claim);
+            }
+        }, 1L);
+    }
+
+    /**
+     * Deny interacting with anything inside a claim the player is banned from, even when the
+     * player is stood outside the border. Bans do not remove trust, so GriefPrevention will
+     * happily allow a trusted-but-banned player to leash, feed, saddle or open things across
+     * the boundary.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onInteractEntity(PlayerInteractEntityEvent e) {
+        if (denyIfBannedAt(e.getPlayer(), e.getRightClicked().getLocation())) {
+            e.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onDamageEntity(EntityDamageByEntityEvent e) {
+        Player player = resolveAttacker(e.getDamager());
+        if (player == null) return;
+        if (denyIfBannedAt(player, e.getEntity().getLocation())) {
+            e.setCancelled(true);
+        }
+    }
+
+    /** The player behind the damage, whether they swung or shot it. */
+    private Player resolveAttacker(Entity damager) {
+        if (damager instanceof Player player) return player;
+        if (damager instanceof org.bukkit.entity.Projectile projectile
+                && projectile.getShooter() instanceof Player shooter) {
+            return shooter;
+        }
+        return null;
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBlockBreak(BlockBreakEvent e) {
+        if (denyIfBannedAt(e.getPlayer(), e.getBlock().getLocation())) {
+            e.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBlockPlace(BlockPlaceEvent e) {
+        if (denyIfBannedAt(e.getPlayer(), e.getBlock().getLocation())) {
+            e.setCancelled(true);
+        }
+    }
+
+    /**
+     * True when the player is banned from the claim covering {@code target}, in which case
+     * they have already been told. Cheap for the common case: the flat ban index rejects
+     * anything nowhere near a claim with bans before any claim lookup happens.
+     */
+    private boolean denyIfBannedAt(Player player, Location target) {
+        if (target == null) return false;
+        if (!nearBannedClaim(target)) return false;
+        if (!plugin.getConfigManager().isClaimBanEntryPreventionEnabled()) return false;
+
+        BanCheckResult result = checkBanned(player, target);
+        if (result == null) return false;
+        notifyActionBlocked(player, "claim.ban-blocked-interact", result.claim);
+        return true;
+    }
+
+    /** Every player riding this vehicle, including passengers stacked on other passengers. */
+    private List<Player> playerPassengers(Entity vehicle) {
+        List<Player> players = new java.util.ArrayList<>(1);
+        collectPlayerPassengers(vehicle, players);
+        return players;
+    }
+
+    private void collectPlayerPassengers(Entity entity, List<Player> out) {
+        for (Entity passenger : entity.getPassengers()) {
+            if (passenger instanceof Player player) {
+                out.add(player);
+            }
+            collectPlayerPassengers(passenger, out);
+        }
+    }
+
+    /** Dismount the player, flagged so {@link #onEntityDismount} leaves the mount to the caller. */
+    private void detachFromVehicle(Player player) {
+        UUID playerId = player.getUniqueId();
+        pluginDismounts.add(playerId);
+        try {
+            player.leaveVehicle();
+        } finally {
+            pluginDismounts.remove(playerId);
+        }
+    }
+
+    /** The bottom of the stack - the entity that actually carries everything else. */
+    private Entity rootVehicle(Entity entity) {
+        Entity current = entity;
+        while (current.getVehicle() != null) {
+            current = current.getVehicle();
+        }
+        return current;
+    }
+
+    /**
+     * Put a mounted player back outside the claim. The mount is moved with them: leaving it
+     * inside is what turned this into a grief vector rather than just a bypass.
+     */
+    private void rejectMountedEntry(Player player, Location outside) {
+        Entity vehicle = player.getVehicle();
+        if (vehicle == null) return;
+        Entity root = rootVehicle(vehicle);
+
+        detachFromVehicle(player);
+        // Only pull the mount back out if the banned rider was the one steering it - someone
+        // else's boat carries on, it just carries on without this passenger.
+        if (playerPassengers(root).isEmpty()) {
+            plugin.getSchedulerFacade().teleportEntity(root, outside);
+        }
+        plugin.getSchedulerFacade().teleportEntity(player, outside);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -227,16 +437,17 @@ public class BanEnforcementListener implements Listener {
     public void onInteract(PlayerInteractEvent e) {
         Player p = e.getPlayer();
         Location location = p.getLocation();
-        if (!nearBannedClaim(location)) {
-            return;
+        if (nearBannedClaim(location) && plugin.getConfigManager().isClaimBanEntryPreventionEnabled()) {
+            BanCheckResult result = checkBanned(p, location);
+            if (result != null) {
+                e.setCancelled(true);
+                showBanVisualization(p, result.claim);
+                return;
+            }
         }
-        if (!plugin.getConfigManager().isClaimBanEntryPreventionEnabled()) {
-            return;
-        }
-        BanCheckResult result = checkBanned(p, location);
-        if (result != null) {
+        // Also check what was clicked: reach crosses the border even when the player does not
+        if (e.getClickedBlock() != null && denyIfBannedAt(p, e.getClickedBlock().getLocation())) {
             e.setCancelled(true);
-            showBanVisualization(p, result.claim);
         }
     }
 
@@ -288,6 +499,16 @@ public class BanEnforcementListener implements Listener {
         }
         lastEnterMessageAt.put(playerId, now);
         return true;
+    }
+
+    /**
+     * Like {@link #notifyBanned} but rate limited. Interaction attempts arrive in bursts -
+     * a held left click is one event per tick - so the boundary visual is throttled too.
+     */
+    private void notifyActionBlocked(Player player, String messageKey, Object claim) {
+        if (!shouldSendEnterMessage(player)) return;
+        sendBanMessage(player, messageKey);
+        showBanVisualization(player, claim);
     }
 
     private void notifyBanned(Player player, String messageKey, Object claim) {
@@ -356,10 +577,13 @@ public class BanEnforcementListener implements Listener {
         UUID uuid = player.getUniqueId();
         boolean pubBanned = plugin.getClaimDataStore().isPublicBanned(claimId);
         boolean playerBanned = plugin.getClaimDataStore().getBannedPlayers(claimId).contains(uuid);
-        
-        if (!pubBanned && !playerBanned) return null;
-        if (pubBanned && isTrusted(main, player)) return null;
-        
+
+        // A ban naming this player outranks their trust - banning does not strip trust, so
+        // checking trust first would let a trusted player walk through their own ban.
+        if (playerBanned) return new BanCheckResult(claim);
+        if (!pubBanned) return null;
+        if (isTrusted(main, player)) return null;
+
         return new BanCheckResult(claim);
     }
     
@@ -425,7 +649,13 @@ public class BanEnforcementListener implements Listener {
      */
     private void handleDeepEjection(Player player, Object claim) {
         plugin.getSchedulerFacade().runAtEntity(player, () -> {
-            if (!ejectFromClaim(player, toMainClaim(claim))) {
+            // A passenger cannot be teleported away from its vehicle, and the vehicle has to
+            // come along anyway so it is not left behind inside the claim.
+            Entity vehicle = player.getVehicle() != null ? rootVehicle(player.getVehicle()) : null;
+            if (vehicle != null) {
+                detachFromVehicle(player);
+            }
+            if (!ejectFromClaim(player, toMainClaim(claim), vehicle)) {
                 plugin.getSchedulerFacade().runGlobal(() -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "spawn " + player.getName()));
             }
         });
@@ -466,7 +696,57 @@ public class BanEnforcementListener implements Listener {
         return false;
     }
 
-    private boolean ejectFromClaim(Player target, Object claim) {
+    /**
+     * The block just outside the claim's flat footprint, on whichever side is nearest, at the
+     * same height. Only the X/Z matter to callers; the height is where the search starts.
+     */
+    private Location nearestOutsidePoint(Location inside, GPBridge.ClaimCorners c) {
+        int x = inside.getBlockX();
+        int z = inside.getBlockZ();
+        int minX = Math.min(c.x1, c.x2);
+        int maxX = Math.max(c.x1, c.x2);
+        int minZ = Math.min(c.z1, c.z2);
+        int maxZ = Math.max(c.z1, c.z2);
+
+        int dx = Math.min(Math.abs(x - minX), Math.abs(maxX - x));
+        int dz = Math.min(Math.abs(z - minZ), Math.abs(maxZ - z));
+        int targetX = x;
+        int targetZ = z;
+        if (dx <= dz) {
+            if (Math.abs(x - minX) <= Math.abs(maxX - x)) targetX = minX - 1; else targetX = maxX + 1;
+        } else {
+            if (Math.abs(z - minZ) <= Math.abs(maxZ - z)) targetZ = minZ - 1; else targetZ = maxZ + 1;
+        }
+        return new Location(inside.getWorld(), targetX + 0.5, inside.getBlockY(), targetZ + 0.5);
+    }
+
+    /**
+     * Move a mount out of the claim. Ejecting the rider on its own leaves the animal parked
+     * inside to trample crops, which is the grief the ban is supposed to prevent.
+     */
+    private void relocateVehicleOutside(Entity vehicle, Object claim) {
+        Object main = toMainClaim(claim);
+        GPBridge.ClaimCorners corners = gp.getClaimCorners(main).orElse(null);
+        if (corners == null) return;
+
+        Location loc = vehicle.getLocation();
+        if (loc == null || loc.getWorld() == null) return;
+        Location exit = nearestOutsidePoint(loc, corners);
+        final int exitX = exit.getBlockX();
+        final int exitZ = exit.getBlockZ();
+        final int startY = exit.getBlockY();
+
+        SchedulerAdapter.runAtLocation(plugin, exit, () -> {
+            org.bukkit.World world = vehicle.getWorld();
+            Location dest = findSafeLocation(world, exitX, exitZ, startY);
+            if (dest == null) {
+                dest = new Location(world, exitX + 0.5, world.getHighestBlockYAt(exitX, exitZ) + 1, exitZ + 0.5);
+            }
+            plugin.getSchedulerFacade().teleportEntity(vehicle, dest);
+        });
+    }
+
+    private boolean ejectFromClaim(Player target, Object claim, Entity vehicle) {
         try {
             beingEjected.add(target.getUniqueId());
             
@@ -495,22 +775,9 @@ public class BanEnforcementListener implements Listener {
                 return false;
             }
 
-            int x = targetLoc.getBlockX();
-            int z = targetLoc.getBlockZ();
-            int minX = Math.min(c.x1, c.x2);
-            int maxX = Math.max(c.x1, c.x2);
-            int minZ = Math.min(c.z1, c.z2);
-            int maxZ = Math.max(c.z1, c.z2);
-
-            int dx = Math.min(Math.abs(x - minX), Math.abs(maxX - x));
-            int dz = Math.min(Math.abs(z - minZ), Math.abs(maxZ - z));
-            int targetX = x;
-            int targetZ = z;
-            if (dx <= dz) {
-                if (Math.abs(x - minX) <= Math.abs(maxX - x)) targetX = minX - 1; else targetX = maxX + 1;
-            } else {
-                if (Math.abs(z - minZ) <= Math.abs(maxZ - z)) targetZ = minZ - 1; else targetZ = maxZ + 1;
-            }
+            Location exit = nearestOutsidePoint(targetLoc, c);
+            int targetX = exit.getBlockX();
+            int targetZ = exit.getBlockZ();
 
             final int finalTargetX = targetX;
             final int finalTargetZ = targetZ;
@@ -524,6 +791,9 @@ public class BanEnforcementListener implements Listener {
                         target.getWorld().getHighestBlockYAt(finalTargetX, finalTargetZ) + 1, finalTargetZ + 0.5);
                 }
                 plugin.getSchedulerFacade().teleportEntity(target, dest);
+                if (vehicle != null) {
+                    plugin.getSchedulerFacade().teleportEntity(vehicle, dest);
+                }
                 beingEjected.remove(target.getUniqueId());
                 return true;
             }
@@ -540,6 +810,9 @@ public class BanEnforcementListener implements Listener {
                 }
                 final Location finalDest = dest;
                 plugin.getSchedulerFacade().teleportEntity(target, finalDest);
+                if (vehicle != null) {
+                    plugin.getSchedulerFacade().teleportEntity(vehicle, finalDest);
+                }
                 // Clear ejection flag after a short delay to ensure teleport completes
                 codes.castled.gpexpansion.scheduler.SchedulerAdapter.runLaterEntity(plugin, target, 
                     () -> beingEjected.remove(target.getUniqueId()), 5L);

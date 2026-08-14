@@ -638,6 +638,8 @@ claim:
   ban-blocked-enter: "&cYou are not allowed to enter this claim!"
   ban-blocked-inside: "&cYou are not allowed to be in this claim!"
   ban-blocked-teleport: "&cYou cannot teleport into this claim - you are banned!"
+  ban-blocked-mount: "&cYou cannot ride entities in a claim you are banned from!"
+  ban-blocked-interact: "&cYou cannot touch anything in a claim you are banned from!"
   ban-ignoreclaims-hint: "&7To override use &e/ignoreclaims&7."
   
   # Ban list

@@ -241,6 +241,8 @@ public class Messages {
         DEFAULTS.put("claim.ban-blocked-enter", "&cYou are not allowed to enter this claim!");
         DEFAULTS.put("claim.ban-blocked-inside", "&cYou are not allowed to be in this claim!");
         DEFAULTS.put("claim.ban-blocked-teleport", "&cYou cannot teleport into this claim - you are banned!");
+        DEFAULTS.put("claim.ban-blocked-mount", "&cYou cannot ride entities in a claim you are banned from!");
+        DEFAULTS.put("claim.ban-blocked-interact", "&cYou cannot touch anything in a claim you are banned from!");
         DEFAULTS.put("claim.ban-ignoreclaims-hint", "&7To override use &e/ignoreclaims&7.");
         DEFAULTS.put("claim.banlist-no-permission", "&cYou lack permission: &egriefprevention.claim.banlist");
         DEFAULTS.put("claim.banlist-header", "&eBan list for claim {id}:");

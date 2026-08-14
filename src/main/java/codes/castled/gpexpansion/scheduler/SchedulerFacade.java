@@ -25,13 +25,18 @@ public class SchedulerFacade {
     }
 
     public void teleportEntity(Player player, Location to) {
+        teleportEntity((org.bukkit.entity.Entity) player, to);
+    }
+
+    /** Same as {@link #teleportEntity(Player, Location)} for any entity - vehicles, mounts, items. */
+    public void teleportEntity(org.bukkit.entity.Entity entity, Location to) {
         if (SchedulerAdapter.isFolia()) {
             try {
-                player.teleportAsync(to);
+                entity.teleportAsync(to);
             } catch (Throwable ignored) {}
         } else {
             try {
-                player.teleport(to);
+                entity.teleport(to);
             } catch (Throwable ignored) {}
         }
     }
