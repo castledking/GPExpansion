@@ -47,6 +47,8 @@ public class SignListener implements Listener {
     private final GPExpansionPlugin plugin;
     private final GPBridge gp = new GPBridge();
     private final SignLimitManager signLimitManager;
+    private final SignMarkerShield<SignChangeEvent, Component> markerShield = new SignMarkerShield<>();
+    private static final Component MARKER_SHIELD_HEADER = Component.text("GPExpansion");
 
     /** True if player has the permission, or has full access (op or wildcard *). Ensures server owners with * aren't blocked. */
     private static boolean hasPermissionOrFullAccess(Player player, String permission) {
@@ -120,6 +122,37 @@ public class SignListener implements Listener {
     private boolean matchesAnyHeader(String header, String type, List<String> signFallbacks, List<String> hangingFallbacks) {
         return matchesHeader(header, type, "sign-formats", signFallbacks)
             || matchesHeader(header, type, "hanging-sign-formats", hangingFallbacks);
+    }
+
+    private boolean matchesRentInputHeader(String header) {
+        return matchesAnyHeader(header, "rent",
+            List.of("[Rent Claim]", "[Rent]", "[Rented]", "[Renew]"),
+            List.of("[Rent]"));
+    }
+
+    private boolean matchesSellInputHeader(String header) {
+        return matchesAnyHeader(header, "sell",
+            List.of("[Buy Claim]", "[Buy]", "[Sell Claim]", "[Sell]"),
+            List.of("[Buy]", "[Sell]"));
+    }
+
+    private boolean matchesMailboxInputHeader(String header) {
+        return matchesAnyHeader(header, "mailbox",
+            List.of("[Mailbox]"),
+            List.of("[Mailbox]"));
+    }
+
+    private boolean matchesGlobalInputHeader(String header) {
+        return matchesAnyHeader(header, "global",
+            List.of("[Global Claim]", "[Global]"),
+            List.of("[Global]"));
+    }
+
+    private boolean isEnabledManagedInputHeader(String header) {
+        return (matchesRentInputHeader(header) && isSignTypeEnabled("rent"))
+            || (matchesSellInputHeader(header) && isSignTypeEnabled("sell"))
+            || (matchesMailboxInputHeader(header) && isSignTypeEnabled("mailbox"))
+            || (matchesGlobalInputHeader(header) && isSignTypeEnabled("global"));
     }
 
     private Optional<Object> findClaimFromInputLine(String line) {
@@ -386,6 +419,30 @@ public class SignListener implements Listener {
                lower.startsWith("claimblocks") || lower.startsWith("blocks") || lower.startsWith("cb") ||
                lower.startsWith("item");
     }
+
+    /**
+     * Hide enabled GPExpansion input headers while normal-priority marker plugins run.
+     * SignAutoPasteListener is registered before this listener at LOW, so wizard-generated
+     * headers are already present here. The original component is restored at HIGH before
+     * GPExpansion's creation handlers run at HIGHEST.
+     */
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void shieldManagedSignFromBlueMapMarkers(@NotNull SignChangeEvent event) {
+        if (!plugin.getConfigManager().shouldPreventBlueMapMarkersForManagedSigns()) return;
+
+        Component originalHeader = event.line(0);
+        if (originalHeader == null) return;
+        String header = LegacyComponentSerializer.legacySection().serialize(originalHeader);
+        if (!isEnabledManagedInputHeader(header)) return;
+
+        event.line(0, markerShield.shield(event, originalHeader, true, MARKER_SHIELD_HEADER));
+    }
+
+    /** Always restore the original header, including when another listener cancelled the event. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = false)
+    public void restoreManagedSignAfterBlueMapMarkers(@NotNull SignChangeEvent event) {
+        markerShield.restore(event).ifPresent(header -> event.line(0, header));
+    }
     
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onSignCreate(@NotNull SignChangeEvent event) {
@@ -416,18 +473,10 @@ public class SignListener implements Listener {
         String strippedLine0 = stripLegacyColors(line0Text);
         // Support configured headers for every body format. The remaining lines decide
         // whether this is a claim-id format or a location-based short format.
-        boolean rent = matchesAnyHeader(strippedLine0, "rent",
-            List.of("[Rent Claim]", "[Rent]", "[Rented]", "[Renew]"),
-            List.of("[Rent]"));
-        boolean sell = matchesAnyHeader(strippedLine0, "sell",
-            List.of("[Buy Claim]", "[Buy]", "[Sell Claim]", "[Sell]"),
-            List.of("[Buy]", "[Sell]"));
-        boolean mailbox = matchesAnyHeader(strippedLine0, "mailbox",
-            List.of("[Mailbox]"),
-            List.of("[Mailbox]"));
-        boolean globalClaim = matchesAnyHeader(strippedLine0, "global",
-            List.of("[Global Claim]", "[Global]"),
-            List.of("[Global]"));
+        boolean rent = matchesRentInputHeader(strippedLine0);
+        boolean sell = matchesSellInputHeader(strippedLine0);
+        boolean mailbox = matchesMailboxInputHeader(strippedLine0);
+        boolean globalClaim = matchesGlobalInputHeader(strippedLine0);
         if (!rent && !sell && !mailbox && !globalClaim) {
             return; // Not a rent/sell/mailbox/global claim sign, ignore
         }

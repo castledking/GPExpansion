@@ -54,6 +54,9 @@ public class Config {
         DEFAULTS.put("defaults.max-rent-signs", 5);
         DEFAULTS.put("defaults.max-mailbox-signs", 5);
         DEFAULTS.put("defaults.max-self-mailboxes-per-claim", 1);
+
+        // Sign integration compatibility
+        DEFAULTS.put("signs.compatibility.prevent-bluemap-markers", true);
         
         // Permission tracking
         DEFAULTS.put("permission-tracking.enabled", true);
@@ -648,6 +651,10 @@ public class Config {
 
     public boolean areGlobalSignsEnabled() {
         return config.getBoolean("signs.global.enabled", true);
+    }
+
+    public boolean shouldPreventBlueMapMarkersForManagedSigns() {
+        return config.getBoolean("signs.compatibility.prevent-bluemap-markers", true);
     }
 
     public boolean areSelfMailboxesAllowed() {

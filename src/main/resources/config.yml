@@ -136,6 +136,13 @@ permission-tracking:
 # =============================================================================
 
 signs:
+  compatibility:
+    # Prevent generic bracket-based BlueMap sign-marker plugins from claiming
+    # enabled GPExpansion input headers such as [sell], [rent], and [mailbox].
+    # Unrelated marker headers (for example [bank]) are never affected.
+    # Set false if another plugin should own one of the same configured headers.
+    prevent-bluemap-markers: true
+
   rent:
     enabled: true
     allow-renewals: true
