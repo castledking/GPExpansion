@@ -46,6 +46,7 @@ public class MailboxListener implements Listener {
     // PDC keys
     private NamespacedKey keyKind() { return new NamespacedKey(plugin, "sign.kind"); }
     private NamespacedKey keyClaim() { return new NamespacedKey(plugin, "sign.claimId"); }
+    private NamespacedKey keyCreator() { return new NamespacedKey(plugin, "sign.creator"); }
     private NamespacedKey keyEcoAmt() { return new NamespacedKey(plugin, "sign.ecoAmt"); }
     private NamespacedKey keyItemB64() { return new NamespacedKey(plugin, "item-b64"); }
     private NamespacedKey keyEcoKind() { return new NamespacedKey(plugin, "sign.ecoKind"); }
@@ -211,6 +212,7 @@ public class MailboxListener implements Listener {
                     PersistentDataContainer pdc = sign.getPersistentDataContainer();
                     pdc.set(keyKind(), PersistentDataType.STRING, "MAILBOX");
                     pdc.set(keyClaim(), PersistentDataType.STRING, newClaimId); // The subdivision claim ID
+                    pdc.set(keyCreator(), PersistentDataType.STRING, player.getUniqueId().toString());
                     pdc.set(keyMailboxParentClaim(), PersistentDataType.STRING, parentClaimId); // For validation
                     pdc.set(keyEcoAmt(), PersistentDataType.STRING, ecoAmtStr);
                     pdc.set(keyEcoKind(), PersistentDataType.STRING, ecoKindStr);
@@ -331,6 +333,7 @@ public class MailboxListener implements Listener {
                 PersistentDataContainer pdc = sign.getPersistentDataContainer();
                 pdc.set(keyKind(), PersistentDataType.STRING, "MAILBOX");
                 pdc.set(keyClaim(), PersistentDataType.STRING, claimIdForPdc);
+                pdc.set(keyCreator(), PersistentDataType.STRING, player.getUniqueId().toString());
                 pdc.set(keyEcoAmt(), PersistentDataType.STRING, "0");
                 pdc.set(keyEcoKind(), PersistentDataType.STRING, "MONEY");
                 if (!sharedPdc.isEmpty()) pdc.set(keyMailboxShared(), PersistentDataType.STRING, sharedPdc);

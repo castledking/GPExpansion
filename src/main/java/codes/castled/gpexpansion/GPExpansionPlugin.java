@@ -19,6 +19,7 @@ import codes.castled.gpexpansion.listener.MailboxListener;
 import codes.castled.gpexpansion.listener.BanEnforcementListener;
 import codes.castled.gpexpansion.command.PaperCommandWrapper;
 import codes.castled.gpexpansion.permission.SignLimitManager;
+import codes.castled.gpexpansion.sign.SignMoveManager;
 import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
 import codes.castled.gpexpansion.util.Messages;
 import org.bukkit.Bukkit;
@@ -62,6 +63,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
     private codes.castled.gpexpansion.pack.ClaimWaypointPackService claimWaypointPackService;
     private codes.castled.gpexpansion.listener.ClaimFlyListener claimFlyListener;
     private codes.castled.gpexpansion.api.ClaimMetadataService metadataService;
+    private SignMoveManager signMoveManager;
 
     @Override
     public void onEnable() {
@@ -131,6 +133,10 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
         // Start confirmation service
         confirmationService = new codes.castled.gpexpansion.confirm.ConfirmationService(this);
+
+        // Register before the normal sign listeners so selection clicks are consumed first.
+        signMoveManager = new SignMoveManager(this);
+        Bukkit.getPluginManager().registerEvents(signMoveManager, this);
 
         registerPluginCommands();
 
@@ -408,6 +414,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
             unregisterExistingCommands(
                     "gpx",
                     "claiminfo",
+                    "moveclaimsign",
                     "globalclaim",
                     "globalclaimlist",
                     "globalclaimslist",
@@ -544,6 +551,17 @@ public final class GPExpansionPlugin extends JavaPlugin {
                 claimInfoCommand
         );
         registerRuntimeCommand(map, claimInfoWrapper);
+
+        Command moveClaimSignWrapper = new PaperCommandWrapper(
+                this,
+                "moveclaimsign",
+                "Move a managed claim or mailbox sign",
+                "/moveclaimsign [cancel]",
+                Collections.emptyList(),
+                signMoveManager,
+                null
+        );
+        registerRuntimeCommand(map, moveClaimSignWrapper);
 
         CancelSetupCommand cancelSetupCommand = new CancelSetupCommand(setupWizardManager);
         Command cancelSetupWrapper = new PaperCommandWrapper(
@@ -784,6 +802,10 @@ public final class GPExpansionPlugin extends JavaPlugin {
      */
     public codes.castled.gpexpansion.storage.ClaimDataStore getClaimDataStore() {
         return claimDataStore;
+    }
+
+    public SignMoveManager getSignMoveManager() {
+        return signMoveManager;
     }
 
     /** Claim command handler (for CommandInterceptListener when sharing with GP3D) */

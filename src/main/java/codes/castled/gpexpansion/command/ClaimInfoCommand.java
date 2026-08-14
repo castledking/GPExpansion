@@ -53,6 +53,11 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
     
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
+        return run(sender, args);
+    }
+
+    /** Execute claim-info handling from either /claiminfo or the /claim info alias. */
+    public boolean run(@NotNull CommandSender sender, @NotNull String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(plugin.getMessages().get("general.player-only"));
             return true;

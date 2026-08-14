@@ -14,6 +14,7 @@ import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.util.Vector;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
+import codes.castled.gpexpansion.events.ClaimBanChangedEvent;
 import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
 import codes.castled.gpexpansion.scheduler.TaskHandle;
@@ -246,6 +247,21 @@ public class BanEnforcementListener implements Listener {
         }
         Player player = event.getPlayer();
         SchedulerAdapter.runLaterEntity(plugin, player, () -> ejectIfBannedInside(player), 20L);
+    }
+
+    /**
+     * Enforce a newly-added player ban without waiting for movement or interaction.
+     *
+     * <p>The datastore fires this event after the new ban is visible. Deferring one entity tick
+     * lets callers finish any dismount/release work and keeps the check safe on both Paper and
+     * Folia. Unbans deliberately do nothing.</p>
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onClaimBanChanged(ClaimBanChangedEvent event) {
+        if (!event.isBanned()) return;
+        Player player = Bukkit.getPlayer(event.getPlayer());
+        if (player == null || !player.isOnline()) return;
+        SchedulerAdapter.runLaterEntity(plugin, player, () -> ejectIfBannedInside(player), 1L);
     }
 
     private void ejectIfBannedInside(Player player) {

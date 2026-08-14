@@ -126,6 +126,23 @@ sign-protection:
   trust-removal-warning: "&eWarning: trust will be removed for &6{player}"
 
 # =============================================================================
+# SIGN MOVING
+# =============================================================================
+sign-move:
+  select-source: "&eRight-click the managed sign you want to move. &7Use &6/moveclaimsign cancel &7to cancel."
+  select-source-sign: "&cThat is not a sign. Right-click the managed sign you want to move."
+  not-managed: "&cThat is not a GPExpansion rent, sell, mailbox, global, or self-mailbox sign."
+  no-permission: "&cYou cannot move that sign. Missing permission: &e{permission}"
+  place-destination: "&aSelected the {type} sign. &ePlace another sign where it should move."
+  same-location: "&cPlace the destination sign at a different location."
+  destination-failed: "&cThe destination sign could not be placed. Try placing another sign."
+  failed: "&cThe sign could not be prepared for moving."
+  success: "&aMoved the {type} sign. The old sign has been cleared."
+  cancelled: "&eSign moving cancelled."
+  nothing-to-cancel: "&7You are not currently moving a sign."
+  expired: "&eSign moving timed out. Run &6/moveclaimsign &eagain."
+
+# =============================================================================
 # SIGN DESTRUCTION MESSAGES
 # =============================================================================
 sign-destruction:

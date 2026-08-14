@@ -57,6 +57,7 @@ public class SignListener implements Listener {
     // PDC keys
     private NamespacedKey keyKind() { return new NamespacedKey(plugin, "sign.kind"); }
     private NamespacedKey keyClaim() { return new NamespacedKey(plugin, "sign.claimId"); }
+    private NamespacedKey keyCreator() { return new NamespacedKey(plugin, "sign.creator"); }
     private NamespacedKey keyEcoAmt() { return new NamespacedKey(plugin, "sign.ecoAmt"); }
     private NamespacedKey keyPerClick() { return new NamespacedKey(plugin, "sign.perClick"); }
     private NamespacedKey keyMaxCap() { return new NamespacedKey(plugin, "sign.maxCap"); }
@@ -1017,6 +1018,7 @@ public class SignListener implements Listener {
                     String pdcSignType = mailbox ? "MAILBOX" : (rent ? "RENT" : "SELL");
                     pdc.set(keyKind(), PersistentDataType.STRING, pdcSignType);
                     pdc.set(keyClaim(), PersistentDataType.STRING, finalClaimId);
+                    pdc.set(keyCreator(), PersistentDataType.STRING, player.getUniqueId().toString());
                     pdc.set(keyEcoAmt(), PersistentDataType.STRING, renewal.ecoAmtRaw);
                     pdc.set(keyPerClick(), PersistentDataType.STRING, renewal.perClick);
                     pdc.set(keyMaxCap(), PersistentDataType.STRING, renewal.maxCap);
@@ -1733,6 +1735,7 @@ public class SignListener implements Listener {
         PersistentDataContainer pdc = sign.getPersistentDataContainer();
         pdc.set(keyKind(), PersistentDataType.STRING, "GLOBAL");
         pdc.set(keyClaim(), PersistentDataType.STRING, claimId);
+        pdc.set(keyCreator(), PersistentDataType.STRING, player.getUniqueId().toString());
         
         // Set sign lines
         boolean hanging = signLocation.getBlock().getType().name().contains("HANGING_SIGN");

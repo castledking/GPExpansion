@@ -43,6 +43,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private final GPBridge gp;
     private final GPExpansionPlugin plugin;
+    private final ClaimInfoCommand claimInfoCommand;
     private final Map<UUID, Long> claimTeleportCooldowns = new ConcurrentHashMap<>();
     private final Map<UUID, PendingClaimTeleport> pendingClaimTeleports = new ConcurrentHashMap<>();
     private final Map<UUID, PendingUnsafeClaimTeleport> pendingUnsafeClaimTeleports = new ConcurrentHashMap<>();
@@ -151,6 +152,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     public ClaimCommand(GPExpansionPlugin plugin) {
         this.plugin = plugin;
         this.gp = new GPBridge();
+        this.claimInfoCommand = new ClaimInfoCommand(plugin);
     }
 
     /**
@@ -179,7 +181,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     /** Subcommands we handle - used when sharing /claim with GP3D (only intercept these) */
     public static final java.util.Set<String> HANDLED_SUBCOMMANDS = java.util.Collections.unmodifiableSet(
             new java.util.HashSet<>(Arrays.asList(
-            "!", "gui", "menu", "name", "color", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly",
+            "!", "gui", "menu", "info", "name", "color", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly", "movesign",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -207,7 +209,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBS = Arrays.asList(
             // Our features
-            "!", "gui", "menu", "name", "color", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly",
+            "!", "gui", "menu", "info", "name", "color", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly", "movesign",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -450,6 +452,10 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 return handleDispatch(sender, "basicclaims", subArgs);
             case "explosions":
                 return handleDispatch(sender, "claimexplosions", subArgs);
+            case "info":
+                return claimInfoCommand.run(sender, subArgs);
+            case "movesign":
+                return plugin.getSignMoveManager().run(sender, subArgs);
             case "name":
                 return handleName(sender, subArgs);
             case "color":
@@ -1204,7 +1210,8 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 "{max}", String.valueOf(plugin.getConfigManager().getClaimNameMaxLength())));
         }
 
-        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, true, allowAnywhere, "rename this claim");
+        Optional<ClaimContext> ctxOpt = resolveClaimContext(sender, player, explicitClaim, explicitId,
+            allowOther, true, allowAnywhere, "rename this claim", true);
         if (!ctxOpt.isPresent()) return true;
 
         ClaimContext ctx = ctxOpt.get();
@@ -1773,6 +1780,14 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private Optional<ClaimContext> resolveClaimContext(CommandSender sender, Player player, Optional<Object> explicitClaim,
                                                        String explicitId, boolean allowOther, boolean requireOwnership, boolean allowAnywhere,
                                                        String actionDescription) {
+        return resolveClaimContext(sender, player, explicitClaim, explicitId, allowOther, requireOwnership,
+            allowAnywhere, actionDescription, false);
+    }
+
+    @SuppressWarnings("all")
+    private Optional<ClaimContext> resolveClaimContext(CommandSender sender, Player player, Optional<Object> explicitClaim,
+                                                       String explicitId, boolean allowOther, boolean requireOwnership, boolean allowAnywhere,
+                                                       String actionDescription, boolean allowActiveTenant) {
         Object claim = explicitClaim.orElse(null);
         String claimId = explicitId;
 
@@ -1824,8 +1839,16 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         String mainClaimId = mainIdOpt.get();
 
         // Admin claims have no owner - anyone allowed to make admin claims may manage them
-        boolean isOwner = gp.isOwner(mainClaim, player.getUniqueId()) || canManageAdminClaim(player, mainClaim);
-        if (requireOwnership && !isOwner && !allowOther) {
+        boolean isOwner = gp.isOwner(claim, player.getUniqueId())
+            || gp.isOwner(mainClaim, player.getUniqueId())
+            || canManageAdminClaim(player, mainClaim);
+        ClaimDataStore.RentalData rental = allowActiveTenant
+            ? plugin.getClaimDataStore().getRental(claimId).orElse(null)
+            : null;
+        boolean isActiveTenant = rental != null
+            && rental.expiry > System.currentTimeMillis()
+            && player.getUniqueId().equals(rental.renter);
+        if (requireOwnership && !isOwner && !isActiveTenant && !allowOther) {
             sender.sendMessage(plugin.getMessages().get("claim.must-own-action", "{action}", actionDescription));
             return Optional.empty();
         }
@@ -1841,7 +1864,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private Optional<Object> findSubclaimAt(Object parentClaim, Location location) {
         for (Object sub : gp.getSubclaims(parentClaim)) {
             if (gp.claimContains(sub, location.getWorld(), location.getBlockX(), location.getBlockY(), location.getBlockZ())) {
-                return Optional.of(sub);
+                return findSubclaimAt(sub, location).or(() -> Optional.of(sub));
             }
         }
         return Optional.empty();
@@ -2063,6 +2086,11 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         String noticeDisplay = plugin.getRentalSignManager().getEvictionNoticePeriodDisplay();
 
         UUID ownerId = gp.getClaimOwner(ctx.mainClaim);
+        if (ownerId == null && canManageAdminClaim(player, ctx.mainClaim)) {
+            // Admin claims are intentionally ownerless. Record the authorized administrator
+            // as the eviction actor instead of rejecting an otherwise valid eviction.
+            ownerId = player.getUniqueId();
+        }
         if (ownerId == null) {
             sender.sendMessage(plugin.getMessages().get("claim.owner-unknown"));
             return true;
@@ -2077,7 +2105,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (renterName == null) renterName = rental.renter.toString();
 
         if (plugin.getConfigManager().isRenterTrustRemovedOnEvictionStart()) {
-            removeRenterTrust(rental.renter, ctx.mainClaim);
+            removeRenterTrust(rental.renter, ctx.claim);
         }
 
         sender.sendMessage(plugin.getMessages().get("eviction.notice-started", "{renter}", renterName));
@@ -2143,7 +2171,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             dataStore.save();
 
             if (plugin.getConfigManager().isRenterTrustRemovedOnEvictionStart()) {
-                grantRenterTrust(rental.renter, ctx.mainClaim, player);
+                grantRenterTrust(rental.renter, ctx.claim, player);
             }
 
             // Notify the renter if online
@@ -3602,11 +3630,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 // Base commands available to all with claims permission
                 if (!allCommands.contains("gui")) allCommands.add("gui");
                 if (!allCommands.contains("menu")) allCommands.add("menu");
+                if (!allCommands.contains("info")) allCommands.add("info");
                 if (!allCommands.contains("list")) allCommands.add("list");
                 if (!allCommands.contains("create")) allCommands.add("create");
                 if (!allCommands.contains("!")) allCommands.add("!");
                 if (!allCommands.contains("resize")) allCommands.add("resize");
                 if (!allCommands.contains("map")) allCommands.add("map");
+                if (!allCommands.contains("movesign")) allCommands.add("movesign");
             }
             
             if (sender.hasPermission("griefprevention.adminclaimslist")) {
@@ -3667,6 +3697,14 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             switch (sub) {
                 case "name":
                     return Collections.singletonList("<name...>");
+                case "info":
+                    if (args.length == 2) return Collections.singletonList("[claimId]");
+                    return new ArrayList<>();
+                case "movesign":
+                    if (args.length == 2 && "cancel".startsWith(args[1].toLowerCase(Locale.ROOT))) {
+                        return Collections.singletonList("cancel");
+                    }
+                    return new ArrayList<>();
                 case "color":
                     if (args.length == 2) {
                         List<String> colors = new ArrayList<>(WAYPOINT_COLOR_NAMES);

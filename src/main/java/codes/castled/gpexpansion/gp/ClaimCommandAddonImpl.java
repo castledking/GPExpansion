@@ -117,6 +117,14 @@ public class ClaimCommandAddonImpl {
 
         // Add [claimId] for subcommands that support claim ID as argument
         switch (sub) {
+            case "info":
+                if (args != null && args.length == 1) out.add("[claimId]");
+                break;
+            case "movesign":
+                if (args != null && args.length == 1 && "cancel".startsWith(args[0].toLowerCase(Locale.ROOT))) {
+                    out.add("cancel");
+                }
+                break;
             case "abandon":
                 if (args != null && args.length == 1) out.add("[claimId]");
                 break;
@@ -265,6 +273,16 @@ public class ClaimCommandAddonImpl {
             out.add("name");
             out.add("desc");
             out.add("icon");
+        }
+        if (sender.hasPermission("griefprevention.claiminfo")) {
+            out.add("info");
+        }
+        if (sender.hasPermission("griefprevention.sign.move.rent")
+                || sender.hasPermission("griefprevention.sign.move.sell")
+                || sender.hasPermission("griefprevention.sign.move.mailbox")
+                || sender.hasPermission("griefprevention.sign.move.global")
+                || sender.hasPermission("griefprevention.sign.move.self-mailbox")) {
+            out.add("movesign");
         }
         if (sender.hasPermission("griefprevention.claim.gui.return")) {
             out.add("!");

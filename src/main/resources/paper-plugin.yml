@@ -87,6 +87,9 @@ commands:
     description: Show detailed claim information
     usage: /<command> [claimId]
     permission: griefprevention.claiminfo
+  moveclaimsign:
+    description: Move a managed claim or mailbox sign
+    usage: /<command> [cancel]
   globalclaim:
     description: Toggle or set global listing for a claim (standalone for /claim global)
     usage: /<command> [true|false] [claimId]
@@ -474,6 +477,47 @@ permissions:
   griefprevention.sign.admin:
     description: Allows admin sign management
     default: op
+
+  # === SIGN MOVE PERMISSIONS ===
+  griefprevention.sign.move.rent:
+    description: Allows claim owners and active tenants to move their rent signs
+    default: true
+
+  griefprevention.sign.move.rent.other:
+    description: Allows moving rent signs controlled by somebody else
+    default: false
+
+  griefprevention.sign.move.sell:
+    description: Allows claim owners to move their sell signs
+    default: true
+
+  griefprevention.sign.move.sell.other:
+    description: Allows moving sell signs controlled by somebody else
+    default: false
+
+  griefprevention.sign.move.mailbox:
+    description: Allows mailbox sellers and buyers to move their mailbox signs
+    default: true
+
+  griefprevention.sign.move.mailbox.other:
+    description: Allows moving mailbox signs controlled by somebody else
+    default: false
+
+  griefprevention.sign.move.global:
+    description: Allows global sign creators to move their signs
+    default: true
+
+  griefprevention.sign.move.global.other:
+    description: Allows moving global claim signs controlled by somebody else
+    default: false
+
+  griefprevention.sign.move.self-mailbox:
+    description: Allows creators to move their unshared self-mailbox signs
+    default: true
+
+  griefprevention.sign.move.self-mailbox.other:
+    description: Allows moving self-mailbox signs controlled by somebody else
+    default: false
 
   griefprevention.admin:
     description: Allows access to GPExpansion admin commands

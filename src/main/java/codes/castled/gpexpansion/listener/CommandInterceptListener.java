@@ -141,8 +141,7 @@ public class CommandInterceptListener implements Listener {
     }
 
     /**
-     * When GP3D owns /claim, inject our sub-arg completions for snapshot and evict so that
-     * "/claim snapshot " and "/claim evict " get list/remove/create and cancel/status/ etc.
+     * When GP3D owns /claim, inject sub-argument completions for GPExpansion-owned commands.
      */
     @EventHandler(priority = EventPriority.NORMAL)
     public void onTabComplete(TabCompleteEvent event) {
@@ -159,7 +158,8 @@ public class CommandInterceptListener implements Listener {
         String[] args = argsStr.isEmpty() ? new String[0] : argsStr.split("\\s+", -1);
         if (args.length == 0) return;
         String first = (args[0] != null ? args[0].trim() : "").toLowerCase(Locale.ROOT);
-        if (!"snapshot".equals(first) && !"evict".equals(first)) return;
+        if (!"snapshot".equals(first) && !"evict".equals(first)
+                && !"info".equals(first) && !"movesign".equals(first)) return;
         ClaimCommand claimCmd = plugin.getClaimCommand();
         if (claimCmd == null) return;
         List<String> ours = claimCmd.completeTab(event.getSender(), "claim", "claim", args);

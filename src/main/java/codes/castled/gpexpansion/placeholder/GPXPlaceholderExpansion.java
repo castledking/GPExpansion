@@ -5,6 +5,7 @@ import codes.castled.gpexpansion.claimfly.ClaimFlyManager;
 import codes.castled.gpexpansion.gp.GPBridge;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
@@ -72,18 +73,37 @@ public class GPXPlaceholderExpansion extends PlaceholderExpansion {
         Optional<Object> claimOpt = gpBridge.getClaimAt(online.getLocation(), online);
         if (claimOpt.isEmpty()) return "";
 
-        Object claim = claimOpt.get();
+        Object claim = findDeepestClaimAt(claimOpt.get(), online.getLocation());
 
         if (params.equalsIgnoreCase("currentclaim_claimid")) {
             return gpBridge.getClaimId(claim).orElse("");
         }
 
         if (params.equalsIgnoreCase("currentclaim_claimname")) {
-            return gpBridge.getClaimId(claim)
+            Object namedClaim = claim;
+            while (namedClaim != null) {
+                Optional<String> name = gpBridge.getClaimId(namedClaim)
                     .flatMap(id -> plugin.getMetadataService().getName(id))
-                    .orElse("");
+                    .filter(value -> !value.isBlank());
+                if (name.isPresent()) return name.get();
+
+                Object parent = gpBridge.getParentClaim(namedClaim).orElse(null);
+                if (parent == null || parent == namedClaim) break;
+                namedClaim = parent;
+            }
+            return "";
         }
 
         return null;
+    }
+
+    private Object findDeepestClaimAt(Object claim, Location location) {
+        for (Object child : gpBridge.getSubclaims(claim)) {
+            if (gpBridge.claimContains(child, location.getWorld(), location.getBlockX(),
+                    location.getBlockY(), location.getBlockZ())) {
+                return findDeepestClaimAt(child, location);
+            }
+        }
+        return claim;
     }
 }
