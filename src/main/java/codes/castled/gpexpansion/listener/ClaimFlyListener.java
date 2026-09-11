@@ -6,6 +6,7 @@ import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
 import codes.castled.gpexpansion.scheduler.TaskHandle;
 import org.bukkit.GameMode;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
@@ -18,6 +19,9 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataHolder;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.projectiles.ProjectileSource;
@@ -56,10 +60,17 @@ public class ClaimFlyListener implements Listener {
     // race window where setAllowFlight calls can be stomped by other plugins.
     private final ConcurrentHashMap<UUID, TaskHandle> flightReconcilerTasks = new ConcurrentHashMap<>();
 
+    // Persistent copy of claimFlightGranted, stored on the player. Minecraft saves allowFlight
+    // with the player, so after a relog (or a crash, where no quit event fires) the flight is
+    // still on but the in-memory marker is gone. Without this we would take our own flight for
+    // /fly from another plugin and never revoke it.
+    private final NamespacedKey claimFlightGrantKey;
+
     public ClaimFlyListener(GPExpansionPlugin plugin) {
         this.plugin = plugin;
         this.gpBridge = new GPBridge();
         this.claimFlyManager = plugin.getClaimFlyManager();
+        this.claimFlightGrantKey = new NamespacedKey(plugin, "claimfly_granted");
     }
 
     /**
@@ -74,6 +85,10 @@ public class ClaimFlyListener implements Listener {
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         UUID playerID = player.getUniqueId();
+
+        // Must run before anything reconciles, including the disabled-feature path, so a grant
+        // from the previous session is recognised as ours and can be revoked.
+        restoreClaimFlightGrant(player);
 
         if (!isFeatureEnabled()) {
             // Still start the reconciler; it idles cheaply and picks the feature back up
@@ -108,8 +123,8 @@ public class ClaimFlyListener implements Listener {
             reconciler.cancel();
         }
 
-        // Drop our claim-flight grant marker; reconcileFlightForClaim will re-add it
-        // on next join if the player is in a claim and meets the conditions.
+        // Drop only the in-memory marker. The persistent copy stays on the player so that
+        // onPlayerJoin knows the flight they log back in with was granted by us.
         claimFlightGranted.remove(playerID);
         
         // Clean up external flight tracking
@@ -225,7 +240,7 @@ public class ClaimFlyListener implements Listener {
                 player.setAllowFlight(true);
             }
 
-            claimFlightGranted.add(playerID);
+            markClaimFlightGranted(player);
             return;
         }
 
@@ -313,13 +328,42 @@ public class ClaimFlyListener implements Listener {
                 || (plugin.getConfigManager().isClaimFlightAccessTrustAllowed() && levels.contains(GPBridge.TrustLevel.ACCESS));
     }
 
-    public void markClaimFlightGranted(UUID playerId) {
-        claimFlightGranted.add(playerId);
+    /**
+     * The player's writable data container. Player inherits getPersistentDataContainer() twice:
+     * writable through Entity, and as a read-only view through OfflinePlayer. The compilers pick
+     * the writable one, but an editor's live analysis can resolve the view and flag every write,
+     * so go through PersistentDataHolder where only the writable declaration exists.
+     */
+    private static PersistentDataContainer grantData(Player player) {
+        return ((PersistentDataHolder) player).getPersistentDataContainer();
+    }
+
+    public void markClaimFlightGranted(Player player) {
+        claimFlightGranted.add(player.getUniqueId());
+        grantData(player).set(claimFlightGrantKey, PersistentDataType.BYTE, (byte) 1);
+    }
+
+    /**
+     * Re-adopt a grant made in a previous session. Only trusted while the player still has
+     * flight in a mode we manage: creative/spectator flight is the game's, and if flight was
+     * already turned off there is nothing left to revoke.
+     */
+    private void restoreClaimFlightGrant(Player player) {
+        if (!grantData(player).has(claimFlightGrantKey, PersistentDataType.BYTE)) return;
+
+        GameMode mode = player.getGameMode();
+        if (player.getAllowFlight() && (mode == GameMode.SURVIVAL || mode == GameMode.ADVENTURE)) {
+            claimFlightGranted.add(player.getUniqueId());
+        } else {
+            grantData(player).remove(claimFlightGrantKey);
+        }
     }
 
     private void revokeClaimFlight(Player player) {
         UUID playerID = player.getUniqueId();
-        if (!claimFlightGranted.remove(playerID) || !player.getAllowFlight()) return;
+        boolean wasGranted = claimFlightGranted.remove(playerID);
+        grantData(player).remove(claimFlightGrantKey);
+        if (!wasGranted || !player.getAllowFlight()) return;
 
         if (externalFlightEnabled.remove(playerID)) {
             return;
