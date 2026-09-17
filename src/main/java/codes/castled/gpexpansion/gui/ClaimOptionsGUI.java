@@ -9,6 +9,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
 import codes.castled.gpexpansion.gp.GPBridge;
+import net.kyori.adventure.text.Component;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -206,15 +207,32 @@ public class ClaimOptionsGUI extends BaseGUI {
         placeholders.put("{abandon_status}", status);
         placeholders.put("{abandon_action}", action);
 
+        ItemStack item;
         if (config != null && config.contains("items.abandon")) {
-            return createItemFromConfig("items.abandon", placeholders);
+            item = createItemFromConfig("items.abandon", placeholders);
+        } else {
+            List<String> lore = new ArrayList<>();
+            lore.add(status);
+            lore.add("");
+            lore.add(action);
+            item = createItem(Material.CAULDRON, confirmAbandon ? "&c&lConfirm Abandon" : "&4&lAbandon Claim", lore, confirmAbandon);
         }
 
-        List<String> lore = new ArrayList<>();
-        lore.add(status);
-        lore.add("");
-        lore.add(action);
-        return createItem(Material.CAULDRON, confirmAbandon ? "&c&lConfirm Abandon" : "&4&lAbandon Claim", lore, confirmAbandon);
+        // Append a subdivision warning when confirming an abandon of a claim with subclaims.
+        int subcount = confirmAbandon ? gp.getSubclaims(claim).size() : 0;
+        if (subcount > 0) {
+            Component warning = plugin.getMessages().get("claim.abandon-subdivision-warning",
+                "{count}", String.valueOf(subcount),
+                "{plural}", subcount == 1 ? "" : "s");
+            item.editMeta(meta -> {
+                List<Component> lore = new ArrayList<>(meta.hasLore() ? meta.lore() : new ArrayList<>());
+                lore.add(Component.empty());
+                lore.add(warning);
+                meta.lore(lore);
+            });
+        }
+
+        return item;
     }
 
     private ItemStack createViewChildrenItem() {
@@ -325,7 +343,11 @@ public class ClaimOptionsGUI extends BaseGUI {
                 confirmAbandon = true;
                 populateInventory();
             } else {
-                closeAndRunOnMainThread("claim abandon " + claimId);
+                // Top-level claims with subdivisions must be abandoned via
+                // /abandontoplevelclaim so the native command deletes them all.
+                String abandonBase = gp.getSubclaims(claim).isEmpty() ? "abandonclaim" : "abandontoplevelclaim";
+                player.closeInventory();
+                runStandaloneClaimCommand(abandonBase, claimId);
             }
             return;
         }

@@ -37,8 +37,10 @@ final class ResourcePackManagerBootstrap {
                 true,
                 true,
                 null);
-            plugin.getLogger().info(
-                "Registered the claim waypoint resource pack with ResourcePackManager (" + localPath + ").");
+            if (plugin.getConfig().getBoolean("debug.enabled", false)) {
+                plugin.getLogger().info(
+                    "Registered the claim waypoint resource pack with ResourcePackManager (" + localPath + ").");
+            }
             return true;
         } catch (Throwable throwable) {
             // RSPM initializes asynchronously, so an early attempt can fail; the caller retries.

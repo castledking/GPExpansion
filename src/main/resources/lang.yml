@@ -1,7 +1,7 @@
 # GPExpansion Language File
 # Use & for color codes, supports MiniMessage format
 # Placeholders are shown in {brackets}
-version: "1.1.2"
+version: "1.2.4"
 
 # =============================================================================
 # GENERAL MESSAGES
@@ -65,8 +65,9 @@ permissions:
   use-sign-denied: "&cYou don't have permission to use {signtype} signs."
   use-sign-denied-detail: "&7  Missing: &e{permission}"
   
-  # Anywhere permission (creating signs outside own claims)
-  anywhere-denied: "&cYou can only create {signtype} signs in your own claims."
+  # Anywhere permission denied
+  sign-anywhere-denied: "&cYou can only create {signtype} signs in your own claims."
+  command-anywhere-denied: "&cYou can only run this command in your own claims."
   anywhere-denied-detail: "&7  Missing: &e{permission}"
   missing: "&cYou lack permission: &e{permission}"
 
@@ -266,26 +267,6 @@ mailbox:
   self-deleted-virtual: "&aSelf mailbox removed."
 
 # =============================================================================
-# CLAIM TELEPORT MESSAGES
-# =============================================================================
-claim:
-  teleport-usage: "&cUsage: /claim tp <claimId> [player]"
-  teleport-success: "&aTeleported to claim &6{id}&a ({name}&a)."
-  teleport-other-success: "&aTeleported &6{player}&a to claim &6{id}&a ({name}&a)."
-  teleport-by-other: "&aYou were teleported to claim &6{id}&a ({name}&a)."
-  teleport-no-location: "&cCould not find a teleport location for claim &6{id}&c."
-  teleport-unsafe: "&cThe spawn location for claim &6{id}&c is unsafe and cannot be teleported to."
-  teleport-unsafe-confirm: "&eWarning: The spawn location for claim &6{id}&c is unsafe. Running this command again will confirm teleport to a nearby safe location."
-  teleport-delay-start: "&eTeleporting to claim &6{id}&e in &6{time}&e."
-  teleport-cooldown: "&cYou must wait &6{time}&c before teleporting to another claim."
-  player-not-found: "&cPlayer not found: &6{player}"
-  setspawn-not-in-claim: "&cYou must be standing inside a claim to set its spawn point."
-  setspawn-not-owner: "&cYou must be the owner of this claim to set its spawn point."
-  setspawn-success: "&aSpawn point set for claim &6{id}&a."
-  setspawn-error: "&cAn error occurred while setting the spawn point."
-  setspawn-unsafe: "&cCannot set spawn point in an unsafe location."
-
-# =============================================================================
 # GUI MESSAGES
 # =============================================================================
 gui:
@@ -315,11 +296,6 @@ flags:
   not-owner: "&cYou can only modify flags on your own claims."
   toggled: "&aFlag {flag} {state}."
   toggle-failed: "&cFailed to toggle flag {flag}."
-
-claim:
-  global-usage: "&cUsage: /claim global <true|false> [claimId]"
-  global-not-in-claim: "&cYou must be standing in a claim or provide a claim ID."
-  global-not-owner: "&cYou must own this claim to toggle its global listing."
 
 # =============================================================================
 # COMMAND MESSAGES
@@ -515,6 +491,22 @@ wizard:
 # CLAIM COMMAND MESSAGES
 # =============================================================================
 claim:
+  teleport-usage: "&cUsage: /claim tp <claimId> [player]"
+  teleport-success: "&aTeleported to claim &6{id}&a ({name}&a)."
+  teleport-other-success: "&aTeleported &6{player}&a to claim &6{id}&a ({name}&a)."
+  teleport-by-other: "&aYou were teleported to claim &6{id}&a ({name}&a)."
+  teleport-no-location: "&cCould not find a teleport location for claim &6{id}&c."
+  teleport-unsafe: "&cThe spawn location for claim &6{id}&c is unsafe and cannot be teleported to."
+  teleport-unsafe-confirm: "&eWarning: The spawn location for claim &6{id}&c is unsafe. Running this command again will confirm teleport to a nearby safe location."
+  teleport-delay-start: "&eTeleporting to claim &6{id}&e in &6{time}&e."
+  teleport-cooldown: "&cYou must wait &6{time}&c before teleporting to another claim."
+  player-not-found: "&cPlayer not found: &6{player}"
+  setspawn-not-in-claim: "&cYou must be standing inside a claim to set its spawn point."
+  setspawn-not-owner: "&cYou must be the owner of this claim to set its spawn point."
+  setspawn-success: "&aSpawn point set for claim &6{id}&a."
+  setspawn-error: "&cAn error occurred while setting the spawn point."
+  setspawn-unsafe: "&cCannot set spawn point in an unsafe location."
+
   # Claim list headers
   list-header: "&eClaims ({count}):"
   list-page: "&7Page {page}/{pages}"
@@ -565,7 +557,18 @@ claim:
   waypoint-published: "&aClaim {id}'s waypoint is now shown to everyone."
   waypoint-hidden: "&aClaim {id}'s waypoint is back to owner and trusted only."
   waypoint-limit-reached: "&cYou already publish {used}/{max} claim waypoints. Hide one first."
-  
+
+  # Locator bar mode
+  bar-usage: "&eUsage: {usage}"
+  bar-current: "&7Your locator bar mode is &e{mode}&7. The bar shows: &e{what}&7."
+  bar-set: "&aLocator bar mode set to &e{mode}&a. The bar now shows: &e{what}&a."
+  bar-current-mode-off: "&7Your locator bar mode is &eoff&7. Nothing appears on the bar."
+  bar-set-mode-off: "&aLocator bar mode set to &eoff&a. Nothing appears on the bar."
+  bar-mode-what-own: "only your own claims"
+  bar-mode-what-trusted: "your claims and claims you can access"
+  bar-mode-what-both: "your claims, claims you can access, and published claims"
+  bar-invalid: "&cUnknown mode &6{label}&c. Valid modes: &e{modes}&c."
+
   # Icon
   icon-no-permission: "&cYou lack permission: &egriefprevention.claim.icon"
   icon-hold-item: "&cYou must hold an item to set as the claim icon."
@@ -613,6 +616,7 @@ claim:
   id-missing: "&cCould not determine claim ID for this action."
   main-id-missing: "&cCould not determine main claim ID."
   must-own-action: "&cYou must own this claim to {action}."
+  abandon-subdivision-warning: "&7This will delete &6{count} subdivision{plural}."
   
   # Transfer
   transfer-usage: "&eUsage: /claim transfer <claimId> <player>"
@@ -678,6 +682,12 @@ claim:
   teleport-safe-location-fail: "&cCould not compute a safe location in claim {id}."
   untrust-renter: "&cYou cannot untrust {renter} while they are renting your claim."
   untrust-renter-hint: "&eUse {command} instead."
+
+startup:
+  tag-author: "&7by castledking"
+  tag-plugin: "&6The GriefPrevention expansion plugin \n&b- signs, economy, rentals, claim fly & waypoints"
+  details: "&fStartup details:"
+  boot-finished: "&7Boot finished in: &a{boot}"
 
 tax:
   payee-notify: "&7Tax withheld: &e{tax}&7. Net received: &a{net}&7."

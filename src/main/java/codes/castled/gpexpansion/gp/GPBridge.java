@@ -4437,6 +4437,35 @@ public class GPBridge {
         return false;
     }
 
+    /**
+     * Location checker for operations that may only be run inside your own claims.
+     * <p>
+     * Returns true when the player is currently standing inside {@code targetClaim}
+     * (or one of its subdivisions) and has edit permission there (owner or build
+     * trust). Used to decide whether an abandon with a claim ID may proceed when the
+     * {@code .anywhere} permission has been negated.
+     */
+    public boolean playerCanAbandonAtLocation(Player player, Object targetClaim) {
+        if (player == null || targetClaim == null) return false;
+        try {
+            java.util.Optional<Object> standingOpt = getClaimAt(player.getLocation(), player);
+            if (!standingOpt.isPresent()) return false;
+            Object standing = standingOpt.get();
+            // Require edit permission on the claim the player is standing in.
+            if (!isOwner(standing, player.getUniqueId())
+                    && !getTrustLevels(standing, player.getUniqueId()).contains(TrustLevel.BUILD)) {
+                return false;
+            }
+            // The standing claim must be the target claim or a subdivision of it.
+            Object standingMain = getParentClaim(standing).orElse(standing);
+            Object targetMain = getParentClaim(targetClaim).orElse(targetClaim);
+            return standingMain.equals(targetMain);
+        } catch (Exception e) {
+            if (DEBUG) e.printStackTrace();
+            return false;
+        }
+    }
+
     public enum TrustLevel {
         MANAGE,
         BUILD,

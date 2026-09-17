@@ -84,7 +84,7 @@ public final class DiscordSRVChatCaptureBridge {
                 false
             );
 
-            plugin.getLogger().info("- Registered DiscordSRV captured-chat bridge");
+            plugin.debug("- Registered DiscordSRV captured-chat bridge");
         } catch (ReflectiveOperationException | LinkageError | ClassCastException e) {
             plugin.getLogger().warning("Failed to register DiscordSRV captured-chat bridge: " + e.getMessage());
         }

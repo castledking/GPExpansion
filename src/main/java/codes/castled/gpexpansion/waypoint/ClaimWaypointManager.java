@@ -75,7 +75,7 @@ public final class ClaimWaypointManager {
 
     /** Claim metadata shared by the CrowBar payload and the optional vanilla packet path. */
     private record PreparedClaim(String id, Claim claim, Location anchor, String name,
-                                 @Nullable Integer color, UUID waypointId) {}
+                                 @Nullable Integer color, UUID waypointId, boolean publicWaypoint) {}
 
     public ClaimWaypointManager(GPExpansionPlugin plugin) {
         this.plugin = plugin;
@@ -219,7 +219,7 @@ public final class ClaimWaypointManager {
             }
             if (eligible.isEmpty()) continue;
 
-            PreparedClaim prepared = prepareClaim(claimId, claim);
+            PreparedClaim prepared = prepareClaim(claimId, claim, publicWaypoint);
             if (prepared == null) continue;
             for (Player viewer : eligible) {
                 result.get(viewer.getUniqueId()).add(prepared);
@@ -228,13 +228,13 @@ public final class ClaimWaypointManager {
         return result;
     }
 
-    private @Nullable PreparedClaim prepareClaim(String claimId, Claim claim) {
+    private @Nullable PreparedClaim prepareClaim(String claimId, Claim claim, boolean publicWaypoint) {
         Location anchor = anchorFor(claimId, claim);
         if (anchor == null || anchor.getWorld() == null) return null;
 
         Color color = resolveColor(plugin.getClaimDataStore().getWaypointColor(claimId).orElse(null));
         return new PreparedClaim(claimId, claim, anchor, displayNameFor(claimId, claim),
-            color == null ? null : color.asRGB(), waypointUuid(claimId));
+            color == null ? null : color.asRGB(), waypointUuid(claimId), publicWaypoint);
     }
 
     /** Diffs one viewer's desired waypoint set against what they were already sent. */
@@ -245,9 +245,15 @@ public final class ClaimWaypointManager {
         // would override an explicit server choice. Absent means enabled, matching vanilla.
         boolean barEnabled = !Boolean.FALSE.equals(viewer.getWorld().getGameRuleValue(GameRule.LOCATOR_BAR));
         long range = plugin.getConfigManager().getClaimWaypointTransmitRange();
+        // The bar mode narrows the vanilla packet path only. CrowBar clients render their own
+        // waypoints from the channel payload, so the mode is meaningless for them and stays on
+        // the full default rather than letting `off` fight their mod's rendering.
+        WaypointBarMode mode = isCrowBarClient(viewer) ? WaypointBarMode.BOTH : modeStore().get(viewer.getUniqueId());
+        UUID viewerId = viewer.getUniqueId();
 
         if (barEnabled) {
             for (PreparedClaim claim : claims) {
+                if (!allowedByMode(mode, claim, viewerId)) continue;
                 Location anchor = claim.anchor();
                 if (!anchor.getWorld().equals(viewer.getWorld())) continue;
                 if (anchor.distanceSquared(viewer.getLocation()) > (double) range * range) continue;
@@ -381,6 +387,46 @@ public final class ClaimWaypointManager {
         if (colorName == null) return null;
         NamedTextColor named = NamedTextColor.NAMES.value(colorName.toLowerCase(Locale.ROOT));
         return named == null ? null : Color.fromRGB(named.value());
+    }
+
+    private WaypointModeStore modeStore() {
+        return plugin.getWaypointModeStore();
+    }
+
+    /**
+     * Whether a waypoint survives the viewer's bar mode.
+     *
+     * <p>Admin claims (no owner) never appear on the vanilla bar, whichever mode is active.
+     * {@code both} matches the historical behaviour: own claims, anything the viewer holds trust
+     * on, and published claims. {@code trusted} includes owned claims for simplicity.
+     */
+    private boolean allowedByMode(WaypointBarMode mode, PreparedClaim claim, UUID viewerId) {
+        switch (mode) {
+            case OFF:
+                return false;
+            case OWN: {
+                UUID owner = claim.claim().getOwnerID();
+                return owner != null && owner.equals(viewerId);
+            }
+            default: {
+                UUID owner = claim.claim().getOwnerID();
+                if (owner == null) return false;
+                boolean personal = owner.equals(viewerId)
+                    || claim.claim().hasExplicitPermission(viewerId, ClaimPermission.Access);
+                if (mode == WaypointBarMode.TRUSTED) return personal;
+                return personal || claim.publicWaypoint();
+            }
+        }
+    }
+
+    /**
+     * Whether this player has CrowBar installed.
+     *
+     * <p>Detected from the plugin channels the client registered on join. CrowBar registers a
+     * receiver for the claim data channel, and only a client with the mod will have done so.
+     */
+    private boolean isCrowBarClient(Player player) {
+        return player.getListeningPluginChannels().contains(CLAIM_DATA_CHANNEL);
     }
 
     // ------------------------------------------------------------------ CrowBar payload

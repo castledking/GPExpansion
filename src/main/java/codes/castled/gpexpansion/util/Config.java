@@ -256,7 +256,9 @@ public class Config {
         
         if (modified) {
             save();
-            plugin.getLogger().info("Config updated with new default values.");
+            if (isDebugEnabled()) {
+                plugin.getLogger().info("Config updated with new default values.");
+            }
         }
 
         // Ensure player-commands section is between defaults and permission-tracking (not at bottom).
@@ -392,7 +394,9 @@ public class Config {
             if (newContent.equals(content)) return false;
 
             Files.writeString(configFile.toPath(), newContent);
-            plugin.getLogger().info("Config updated: placed player-commands between defaults and permission-tracking.");
+            if (isDebugEnabled()) {
+                plugin.getLogger().info("Config updated: placed player-commands between defaults and permission-tracking.");
+            }
             return true;
         } catch (Exception e) {
             plugin.getLogger().warning("Failed to place player-commands block in config.yml: " + e.getMessage());
@@ -421,7 +425,9 @@ public class Config {
             if (!config.contains(path)) {
                 config.set(path, defaultValue);
                 modified = true;
-                plugin.getLogger().info("Added missing config option: " + path + " = " + defaultValue);
+                if (isDebugEnabled()) {
+                    plugin.getLogger().info("Added missing config option: " + path + " = " + defaultValue);
+                }
             }
         }
 
@@ -429,7 +435,9 @@ public class Config {
         if (!config.contains("player-commands") && defaultConfig != null && defaultConfig.contains("player-commands")) {
             config.set("player-commands", defaultConfig.getList("player-commands"));
             modified = true;
-            plugin.getLogger().info("Added missing config option: player-commands (from default)");
+            if (isDebugEnabled()) {
+                plugin.getLogger().info("Added missing config option: player-commands (from default)");
+            }
         }
 
         return modified;
@@ -468,7 +476,7 @@ public class Config {
     // Convenience getters for common options
     
     public boolean isDebugEnabled() {
-        return config.getBoolean("debug.enabled", false);
+        return config != null && config.getBoolean("debug.enabled", false);
     }
     
     public boolean showPermissionDetails() {
@@ -1008,10 +1016,11 @@ public class Config {
     /**
      * Whether claim waypoints are delivered only to CrowBar clients.
      *
-     * <p>When true no marker entities are spawned: CrowBar receives claim positions over a plugin
-     * channel and draws them itself, so there are no entities, no chunk tickets and no dependency
-     * on loaded terrain. When false, invisible marker entities are also spawned so unmodified
-     * clients see the claim on the vanilla locator bar.
+     * <p>When true no locator-bar packets are sent to unmodified clients: CrowBar receives claim
+     * positions over a plugin channel and draws them itself, so there are no packets, no entities
+     * and no dependency on loaded terrain. When false, self-contained
+     * {@code ClientboundTrackedWaypointPacket}s are also sent so unmodified clients see the claim
+     * on the vanilla locator bar.
      */
     public boolean areClaimWaypointsCrowbarOnly() {
         return config.getBoolean("claim-waypoints.crowbar-only", true);

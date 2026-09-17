@@ -70,12 +70,12 @@ public final class ClaimWaypointPackService {
 
         if (Bukkit.getPluginManager().getPlugin(RSPM_PLUGIN_NAME) == null) {
             if (configuredUrl().isEmpty()) {
-                plugin.getLogger().info(
+                plugin.debug(
                     "ResourcePackManager not installed and claim-waypoints.resource-pack.url is unset; "
                         + "vanilla clients will see claim bowties shrink to a dot past 64 blocks. "
                         + "The pack was written to " + PACK_FILE_NAME + " if you want to host it.");
             } else {
-                plugin.getLogger().info("ResourcePackManager not installed; sending the claim waypoint pack directly.");
+                plugin.debug("ResourcePackManager not installed; sending the claim waypoint pack directly.");
             }
             return;
         }

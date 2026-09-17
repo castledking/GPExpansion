@@ -9,6 +9,8 @@ import me.ryanhamshire.GriefPrevention.events.ClaimDeletedEvent;
 import me.ryanhamshire.GriefPrevention.events.ClaimResizeEvent;
 import me.ryanhamshire.GriefPrevention.events.ClaimTransferEvent;
 import me.ryanhamshire.GriefPrevention.events.TrustChangedEvent;
+import io.papermc.paper.event.world.WorldGameRuleChangeEvent;
+import org.bukkit.GameRule;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -107,6 +109,16 @@ public final class ClaimWaypointListener implements Listener {
         // The claim set is per-world, and vanilla removes a player's waypoints on dimension
         // change — the diff resends the ones valid for the new world.
         rebuildNextTick(event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onGameRuleChanged(WorldGameRuleChangeEvent event) {
+        // A live locatorBar flip should withdraw or restore waypoints immediately rather than
+        // waiting for the next join/world change. The per-viewer diff handles both directions.
+        if (event.getGameRule() != null
+            && event.getGameRule().getName().equalsIgnoreCase(GameRule.LOCATOR_BAR.getName())) {
+            rebuildNextTick();
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

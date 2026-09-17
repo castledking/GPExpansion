@@ -81,6 +81,8 @@ player-commands:
   - claim.banlist.anywhere
   - claim.cancelrent
   - claim.cancelrent.anywhere
+  - abandonclaim.anywhere
+  - abandontoplevelclaim.anywhere
   - sign.create.rent
   - sign.use.rent
   - sign.rent.money
@@ -124,6 +126,7 @@ player-commands:
   - claim.format.bold
   - claim.format.italic
   - claim.format.reset
+  - claim.bar
 
 permission-tracking:
   # Track player permission changes for sign limits and accrual profile changes.
@@ -587,7 +590,7 @@ integrations:
 
 version:
   # Current configuration version. Used for migrations.
-  config-version: "1.1.2"
+  config-version: "1.2.4"
 
   update-checker:
     enabled: true

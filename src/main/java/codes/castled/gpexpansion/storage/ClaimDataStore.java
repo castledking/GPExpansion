@@ -191,7 +191,7 @@ public class ClaimDataStore {
         }
         
         banRevision++;
-        plugin.getLogger().info("Loaded " + claimData.size() + " claim data entries.");
+        plugin.debug(() -> "Loaded " + claimData.size() + " claim data entries.");
 
         // Always check for old files and show safe-to-delete messages
         checkForOldFiles();

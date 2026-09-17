@@ -46,7 +46,7 @@ public class TaxManager {
         roundMode = plugin.getConfigManager().getTaxRoundMode();
         minimumTax = plugin.getConfigManager().getMinimumTax();
         if (enabled && taxPercent > 0) {
-            plugin.getLogger().info("Tax enabled: " + taxPercent + "% (" + depositMode + ")");
+            plugin.debug("Tax enabled: " + taxPercent + "% (" + depositMode + ")");
         }
     }
 

@@ -79,6 +79,23 @@ public class CommandInterceptListener implements Listener {
             return;
         }
 
+        // Support /abandonclaim <id> and /abandontoplevelclaim <id> by routing to our
+        // anywhere-aware handler (mirrors the trust standalone routing). Commands without
+        // a numeric ID are left to native GriefPrevention so the rental protection in
+        // ClaimAbandonListener continues to apply to bare abandons.
+        if (isStandaloneAbandonCommand(lower)) {
+            ClaimCommand claimCmd = plugin.getClaimCommand();
+            String[] abandonArgs = noSlash.trim().split("\\s+", -1);
+            if (claimCmd != null && abandonArgs.length >= 2 && abandonArgs[abandonArgs.length - 1].matches("\\d+")) {
+                event.setCancelled(true);
+                String[] claimArgs = new String[abandonArgs.length];
+                claimArgs[0] = abandonArgs[0].toLowerCase(Locale.ROOT);
+                System.arraycopy(abandonArgs, 1, claimArgs, 1, abandonArgs.length - 1);
+                claimCmd.run(event.getPlayer(), abandonArgs[0].toLowerCase(Locale.ROOT), abandonArgs[0].toLowerCase(Locale.ROOT), claimArgs);
+            }
+            return;
+        }
+
         if (lower.equals("expandclaim") || lower.equals("extendclaim")) {
             ClaimCommand claimCmd = plugin.getClaimCommand();
             if (claimCmd != null) {
@@ -138,6 +155,13 @@ public class CommandInterceptListener implements Listener {
             || lower.startsWith("containertrust ")
             || lower.equals("permissiontrust")
             || lower.startsWith("permissiontrust ");
+    }
+
+    private boolean isStandaloneAbandonCommand(String lower) {
+        return lower.equals("abandonclaim")
+            || lower.startsWith("abandonclaim ")
+            || lower.equals("abandontoplevelclaim")
+            || lower.startsWith("abandontoplevelclaim ");
     }
 
     /**

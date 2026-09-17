@@ -31,7 +31,7 @@ public class EconomyManager {
                 RegisteredServiceProvider<Economy> rsp = Bukkit.getServicesManager().getRegistration(Economy.class);
                 if (rsp != null) {
                     economy = rsp.getProvider();
-                    plugin.getLogger().info("Hooked into Vault economy (legacy): " + economy.getName());
+                    plugin.debug("Hooked into Vault economy (legacy): " + economy.getName());
                 }
                 if (economy == null) {
                     @SuppressWarnings("all")
@@ -40,7 +40,7 @@ public class EconomyManager {
                         RegisteredServiceProvider<Economy> pick = regs.iterator().next();
                         if (pick != null && pick.getProvider() != null) {
                             economy = pick.getProvider();
-                            plugin.getLogger().info("Hooked into Vault economy (legacy via scan): " + economy.getName());
+                            plugin.debug("Hooked into Vault economy (legacy via scan): " + economy.getName());
                         }
                     }
                 }
@@ -59,7 +59,7 @@ public class EconomyManager {
                         if (rsp2 != null && rsp2.getProvider() != null) {
                             this.economyV2Class = legacyEcoClass;
                             this.economyV2 = rsp2.getProvider();
-                            plugin.getLogger().info("Hooked into Vault economy via reflective legacy bridge: " + economyV2.getClass().getName());
+                            plugin.debug("Hooked into Vault economy via reflective legacy bridge: " + economyV2.getClass().getName());
                         }
                     } catch (Throwable ignored2) { }
                 }
@@ -76,7 +76,7 @@ public class EconomyManager {
                 RegisteredServiceProvider<?> rsp2 = (RegisteredServiceProvider) Bukkit.getServicesManager().getRegistration((Class) economyV2Class);
                 if (rsp2 != null) {
                     economyV2 = rsp2.getProvider();
-                    plugin.getLogger().info("Hooked into Vault economy (modern v2): " + economyV2.getClass().getName());
+                    plugin.debug("Hooked into Vault economy (modern v2): " + economyV2.getClass().getName());
                 }
             } catch (ClassNotFoundException ignored) {
             } catch (Throwable t) {
@@ -97,7 +97,7 @@ public class EconomyManager {
                             if (reg != null && reg.getProvider() != null) {
                                 this.economyV2Class = svc;
                                 this.economyV2 = reg.getProvider();
-                                plugin.getLogger().info("Hooked into economy via known-services scan: " + svc.getName() + " -> " + economyV2.getClass().getName());
+                                plugin.debug("Hooked into economy via known-services scan: " + svc.getName() + " -> " + economyV2.getClass().getName());
                                 break;
                             }
                         }

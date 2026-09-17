@@ -22,7 +22,7 @@ public class EconomyHookListener implements Listener {
             if (service.getName().equals("net.milkbowl.vault.economy.Economy")) {
                 RegisteredServiceProvider<?> rsp = (RegisteredServiceProvider<?>) event.getProvider();
                 if (rsp.getProvider() != null) {
-                    plugin.getLogger().info("Economy service (legacy Vault) registered late. Refreshing hook...");
+                    plugin.debug("Economy service (legacy Vault) registered late. Refreshing hook...");
                     plugin.getEconomyManager().setupEconomy();
                 }
             }
@@ -30,7 +30,7 @@ public class EconomyHookListener implements Listener {
             if (service.getName().equals("net.milkbowl.vault2.economy.Economy")) {
                 RegisteredServiceProvider<?> rsp = (RegisteredServiceProvider<?>) event.getProvider();
                 if (rsp.getProvider() != null) {
-                    plugin.getLogger().info("Economy service (Vault v2) registered late. Refreshing hook...");
+                    plugin.debug("Economy service (Vault v2) registered late. Refreshing hook...");
                     plugin.getEconomyManager().setupEconomy();
                 }
             }

@@ -49,7 +49,7 @@ public class PermissionManager {
     @SuppressWarnings("all")
     private void setupVault() {
         if (Bukkit.getPluginManager().getPlugin("Vault") == null) {
-            plugin.getLogger().info("Vault not found - permission management via /gpx max will use in-memory limits only");
+            plugin.debug("Vault not found - permission management via /gpx max will use in-memory limits only");
             return;
         }
         
@@ -57,7 +57,7 @@ public class PermissionManager {
             RegisteredServiceProvider<Permission> rsp = Bukkit.getServicesManager().getRegistration(Permission.class);
             if (rsp != null) {
                 vaultPermission = rsp.getProvider();
-                plugin.getLogger().info("Vault permission provider found: " + vaultPermission.getName());
+                plugin.debug("Vault permission provider found: " + vaultPermission.getName());
             } else {
                 plugin.getLogger().warning("Vault found but no permission provider registered");
             }
@@ -577,7 +577,7 @@ public class PermissionManager {
                     "Base permission for GPExpansion player commands (children permissions are dynamically managed)",
                     PermissionDefault.TRUE);
                 Bukkit.getPluginManager().addPermission(gpxPlayerPerm);
-                plugin.getLogger().info("Created gpx.player permission");
+                plugin.debug("Created gpx.player permission");
             }
             
             // Build list of full permission names (with griefprevention. prefix).
@@ -650,7 +650,7 @@ public class PermissionManager {
             Bukkit.getPluginManager().addPermission(newGpxPlayerPerm);
             
             if (added > 0 || removed > 0) {
-                plugin.getLogger().info("Updated gpx.player permission: added " + added + 
+                plugin.debug("Updated gpx.player permission: added " + added +
                     " children, removed " + removed + " children");
             } else {
                 plugin.getLogger().fine("gpx.player permission children are up to date");

@@ -25,6 +25,7 @@ import codes.castled.gpexpansion.scheduler.TaskHandle;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
 import codes.castled.gpexpansion.util.ClaimCustomizationUtil;
 import codes.castled.gpexpansion.util.SafeTeleportUtil;
+import codes.castled.gpexpansion.waypoint.WaypointBarMode;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -181,7 +182,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     /** Subcommands we handle - used when sharing /claim with GP3D (only intercept these) */
     public static final java.util.Set<String> HANDLED_SUBCOMMANDS = java.util.Collections.unmodifiableSet(
             new java.util.HashSet<>(Arrays.asList(
-            "!", "gui", "menu", "info", "name", "color", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly", "movesign",
+            "!", "gui", "menu", "info", "name", "color", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "bar", "resize", "map", "fly", "movesign",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -209,7 +210,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBS = Arrays.asList(
             // Our features
-            "!", "gui", "menu", "info", "name", "color", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "resize", "map", "fly", "movesign",
+            "!", "gui", "menu", "info", "name", "color", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "bar", "resize", "map", "fly", "movesign",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -409,6 +410,19 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         if (commandName.equalsIgnoreCase("cancelrent") || label.equalsIgnoreCase("cancelrent")) {
             return handleCancelRent(sender, args);
         }
+        // Support standalone /claimbar [mode]
+        if (commandName.equalsIgnoreCase("claimbar") || label.equalsIgnoreCase("claimbar")) {
+            return handleBar(sender, args);
+        }
+        // Support standalone /abandonclaim and /abandontoplevelclaim with an optional claim ID
+        // (route matching the interception listener's embedded command-name arg layout)
+        if (commandName.equalsIgnoreCase("abandonclaim") || label.equalsIgnoreCase("abandonclaim")
+                || commandName.equalsIgnoreCase("abandontoplevelclaim") || label.equalsIgnoreCase("abandontoplevelclaim")) {
+            String[] subArgs = (args.length > 0 && args[0].equalsIgnoreCase(commandName))
+                ? java.util.Arrays.copyOfRange(args, 1, args.length)
+                : args;
+            return handleDispatch(sender, commandName.toLowerCase(Locale.ROOT), subArgs);
+        }
         if (args.length == 0) {
             // Check if GUI mode is enabled and sender is a player
             if (sender instanceof Player && plugin.getGUIManager() != null && plugin.getGUIManager().isGUIEnabled()) {
@@ -510,6 +524,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 return handleClaimFlags(sender, subArgs);
             case "options":
                 return handleClaimOptions(sender, subArgs);
+            case "bar":
+                return handleBar(sender, subArgs);
             default:
                 // Try to delegate to GP3D's UnifiedClaimCommand if available
                 if (tryDelegateToGP3D(sender, args)) {
@@ -519,6 +535,57 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage(plugin.getMessages().get("commands.unknown-subcommand-help"));
                 return true;
         }
+    }
+
+    /**
+     * Handle /claim bar [mode] and standalone /claimbar [mode].
+     *
+     * <p>Chooses which of the viewer's claims appear on their vanilla locator bar. No argument
+     * reports the current mode. Modes: {@code own} (owned claims only), {@code trusted} (owned
+     * claims plus anything the player holds access trust on), {@code both} (also published claims,
+     * the default), {@code off} (nothing on the bar). The mode never affects CrowBar clients's
+     * waypoints, which they render themselves.
+     */
+    private boolean handleBar(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+        if (!player.hasPermission("griefprevention.claim.bar")) {
+            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+        String usage = "/claim bar <" + String.join("|", WaypointBarMode.ARGUMENTS) + ">";
+        if (args.length == 0) {
+            WaypointBarMode mode = plugin.getWaypointModeStore().get(player.getUniqueId());
+            sender.sendMessage(plugin.getMessages().get(
+                mode == WaypointBarMode.OFF ? "claim.bar-current-mode-off" : "claim.bar-current",
+                "{mode}", mode.name().toLowerCase(Locale.ROOT),
+                "{what}", barModeDescription(mode),
+                "{usage}", usage,
+                "{modes}", String.join("|", WaypointBarMode.ARGUMENTS)));
+            return true;
+        }
+        WaypointBarMode mode = WaypointBarMode.fromString(args[0]);
+        if (mode == null) {
+            sender.sendMessage(plugin.getMessages().get("claim.bar-invalid",
+                "{label}", args[0],
+                "{modes}", String.join("|", WaypointBarMode.ARGUMENTS),
+                "{usage}", usage));
+            return true;
+        }
+        plugin.getWaypointModeStore().set(player.getUniqueId(), mode);
+        sender.sendMessage(plugin.getMessages().get(
+            mode == WaypointBarMode.OFF ? "claim.bar-set-mode-off" : "claim.bar-set",
+            "{mode}", mode.name().toLowerCase(Locale.ROOT),
+            "{what}", barModeDescription(mode),
+            "{usage}", usage,
+            "{modes}", String.join("|", WaypointBarMode.ARGUMENTS)));
+        // Refresh the vanilla packets (removes or adds waypoints) right away.
+        plugin.getClaimWaypointManager().rebuildViewer(player);
+        return true;
+    }
+
+    private String barModeDescription(WaypointBarMode mode) {
+        return plugin.getMessages().getRaw("claim.bar-mode-what-" + mode.name().toLowerCase(Locale.ROOT));
     }
 
     private boolean requirePlayer(CommandSender sender) {
@@ -584,7 +651,8 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         boolean supportsIdWithArgs = base.equals("trust") || base.equals("untrust") || base.equals("containertrust") || 
                            base.equals("accesstrust") || base.equals("permissiontrust");
         // Commands that can take just an ID with no other args (e.g., abandonclaim [id])
-        boolean supportsIdOnly = base.equals("abandonclaim") || base.equals("claimexplosions") ||
+        boolean supportsIdOnly = base.equals("abandonclaim") || base.equals("abandontoplevelclaim") ||
+                           base.equals("claimexplosions") ||
                            base.equals("restrictsubclaim");
         
         // Check if we have an ID at the end
@@ -598,6 +666,25 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         if (hasIdArg && isTrustCommand(base) && !sender.hasPermission("griefprevention.trust.anywhere")) {
             sender.sendMessage(plugin.getMessages().get("claim.trust-anywhere-required"));
             return true;
+        }
+        
+        // Abandon commands with a claim ID are limited to claims the player is standing
+        // inside unless the matching .anywhere permission (GriefPrevention admin bypasses)
+        // is granted. The location check is deliberately synchronous: this is the code path
+        // that would otherwise abandon a claim purely by ID from anywhere.
+        if (hasIdArg && (base.equals("abandonclaim") || base.equals("abandontoplevelclaim"))) {
+            String anywherePerm = base.equals("abandontoplevelclaim")
+                    ? "griefprevention.abandontoplevelclaim.anywhere"
+                    : "griefprevention.abandonclaim.anywhere";
+            if (!sender.hasPermission(anywherePerm) && !sender.hasPermission("griefprevention.admin")) {
+                String gateId = args[args.length - 1];
+                java.util.Optional<Object> gateClaim = gp.findClaimById(gateId);
+                boolean canHere = gateClaim.isPresent() && gp.playerCanAbandonAtLocation(player, gateClaim.get());
+                if (!canHere) {
+                    plugin.getMessages().sendCommandAnywhereDenied(player, anywherePerm);
+                    return true;
+                }
+            }
         }
         
         if (hasIdArg) {
@@ -3535,6 +3622,15 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             || alias.equalsIgnoreCase("claimmap")) {
             return Collections.emptyList();
         }
+        // Tab completion for /claimbar [mode]
+        if (commandName.equalsIgnoreCase("claimbar") || alias.equalsIgnoreCase("claimbar")) {
+            if (args.length == 1) {
+                return WaypointBarMode.ARGUMENTS.stream()
+                    .filter(s -> s.toLowerCase(Locale.ROOT).startsWith(args[0].toLowerCase(Locale.ROOT)))
+                    .collect(Collectors.toList());
+            }
+            return Collections.emptyList();
+        }
         // Tab completion for /globalclaim [true|false] [claimId]
         if (commandName.equalsIgnoreCase("globalclaim") || alias.equalsIgnoreCase("globalclaim")) {
             if (!plugin.getConfigManager().isGlobalClaimsEnabled()) return Collections.emptyList();
@@ -3884,6 +3980,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 case "options":
                     if (args.length == 2 && sender.hasPermission("griefprevention.claim.gui.options"))
                         return Collections.singletonList("[claimId]");
+                    return new ArrayList<>();
+                case "bar":
+                    if (args.length == 2 && sender.hasPermission("griefprevention.claim.bar"))
+                        return WaypointBarMode.ARGUMENTS.stream()
+                            .filter(s -> s.toLowerCase(Locale.ROOT).startsWith(args[1].toLowerCase(Locale.ROOT)))
+                            .collect(Collectors.toList());
                     return new ArrayList<>();
                 default:
                     return new ArrayList<>();

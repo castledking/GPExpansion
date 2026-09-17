@@ -21,6 +21,7 @@ import codes.castled.gpexpansion.command.PaperCommandWrapper;
 import codes.castled.gpexpansion.permission.SignLimitManager;
 import codes.castled.gpexpansion.sign.SignMoveManager;
 import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
+import codes.castled.gpexpansion.platform.PlatformDetection; import codes.castled.gpexpansion.startup.StartupHeader; import codes.castled.gpexpansion.util.Config;
 import codes.castled.gpexpansion.util.Messages;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -31,6 +32,7 @@ import org.bukkit.entity.Player;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Locale;
+import java.util.function.Supplier;
 
 public final class GPExpansionPlugin extends JavaPlugin {
 
@@ -60,14 +62,37 @@ public final class GPExpansionPlugin extends JavaPlugin {
     private codes.castled.gpexpansion.scheduler.TaskHandle evictionDisplayTickTask;
     private ClaimFlyManager claimFlyManager;
     private codes.castled.gpexpansion.waypoint.ClaimWaypointManager claimWaypointManager;
+    private codes.castled.gpexpansion.waypoint.WaypointModeStore waypointModeStore;
+
+    public codes.castled.gpexpansion.waypoint.WaypointModeStore getWaypointModeStore() {
+        return waypointModeStore;
+    }
     private codes.castled.gpexpansion.pack.ClaimWaypointPackService claimWaypointPackService;
     private codes.castled.gpexpansion.listener.ClaimFlyListener claimFlyListener;
     private codes.castled.gpexpansion.api.ClaimMetadataService metadataService;
     private SignMoveManager signMoveManager;
+    private long startupStartTime;
+
+    public long getStartupStartTime() {
+        return startupStartTime;
+    }
+
+    private void displayEnabledHeader() {
+        try {
+            StartupHeader startupHeader = new StartupHeader(this);
+            String message = startupHeader.getRandomHeader();
+            if (message == null) return;
+
+            Bukkit.getConsoleSender().sendMessage(message);
+        } catch (Exception e) {
+            this.getLogger().warning("Failed to display enabled header: " + e.getMessage());
+        }
+    }
 
     @Override
     public void onEnable() {
         instance = this;
+        startupStartTime = System.currentTimeMillis();
 
         // Initialize config manager (handles defaults automatically)
         configManager = new codes.castled.gpexpansion.util.Config(this);
@@ -79,7 +104,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Enable debug mode if configured
         if (configManager.isDebugEnabled()) {
             GPBridge.setDebug(true);
-            getLogger().info("Debug mode enabled for GPBridge");
+            debug("Debug mode enabled for GPBridge");
         }
         
         // Initialize managers
@@ -118,6 +143,9 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Initialize sign limit manager
         signLimitManager = new codes.castled.gpexpansion.permission.SignLimitManager(this);
         claimFlyManager = new ClaimFlyManager(this);
+        // Before the waypoint manager, which reads each viewer's bar mode from it; /claim bar needs it
+        // even when waypoints are switched off.
+        waypointModeStore = new codes.castled.gpexpansion.waypoint.WaypointModeStore(this);
         claimWaypointManager = new codes.castled.gpexpansion.waypoint.ClaimWaypointManager(this);
 
         // Initialize permission manager (handles dynamic gpx.player permissions)
@@ -125,7 +153,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
             permissionManager = new codes.castled.gpexpansion.permission.PermissionManager(this);
         } catch (NoClassDefFoundError e) {
             permissionManager = null;
-            getLogger().info("Vault classes not available - permission management features disabled");
+            debug("Vault classes not available - permission management features disabled");
         } catch (Exception e) {
             permissionManager = null;
             getLogger().warning("Failed to initialize PermissionManager: " + e.getMessage());
@@ -146,28 +174,28 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             new codes.castled.gpexpansion.placeholder.GPXPlaceholderExpansion(this).register();
-            getLogger().info("- Registered PlaceholderAPI placeholders (%gpx_*)");
+            debug("- Registered PlaceholderAPI placeholders (%gpx_*)");
         }
 
         // Register listeners
-        getLogger().info("Registering event listeners...");
+        debug("Registering event listeners...");
         
         SignListener signListener = new SignListener(this);
         Bukkit.getPluginManager().registerEvents(signListener, this);
-        getLogger().info("- Registered SignListener: " + signListener.getClass().getName());
+        debug("- Registered SignListener: " + signListener.getClass().getName());
         
         mailboxListener = new MailboxListener(this);
         Bukkit.getPluginManager().registerEvents(mailboxListener, this);
-        getLogger().info("- Registered MailboxListener: " + mailboxListener.getClass().getName());
+        debug("- Registered MailboxListener: " + mailboxListener.getClass().getName());
         
         BanEnforcementListener banListener = new BanEnforcementListener(this);
         Bukkit.getPluginManager().registerEvents(banListener, this);
-        getLogger().info("- Registered BanEnforcementListener: " + banListener.getClass().getName());
+        debug("- Registered BanEnforcementListener: " + banListener.getClass().getName());
         
         codes.castled.gpexpansion.listener.CommandInterceptListener commandListener = 
             new codes.castled.gpexpansion.listener.CommandInterceptListener(this);
         Bukkit.getPluginManager().registerEvents(commandListener, this);
-        getLogger().info("- Registered CommandInterceptListener: " + commandListener.getClass().getName());
+        debug("- Registered CommandInterceptListener: " + commandListener.getClass().getName());
         // Protect rent/buy signs and their supports from griefing and enforce deletion flow
         Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.SignProtectionListener(this), this);
         // Prevent claim abandonment during active rentals
@@ -183,7 +211,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Claim flight listener
         claimFlyListener = new codes.castled.gpexpansion.listener.ClaimFlyListener(this);
         Bukkit.getPluginManager().registerEvents(claimFlyListener, this);
-        getLogger().info("- Registered ClaimFlyListener for claim flight feature");
+        debug("- Registered ClaimFlyListener for claim flight feature");
         // Claim waypoint markers (vanilla locator bar bowties)
         if (configManager.areClaimWaypointsEnabled()) {
             Bukkit.getPluginManager().registerEvents(
@@ -198,27 +226,29 @@ public final class GPExpansionPlugin extends JavaPlugin {
             // Deferred so GP3D has finished loading its claim data before the first build.
             codes.castled.gpexpansion.scheduler.SchedulerAdapter.runLaterGlobal(
                 this, claimWaypointManager::start, 40L);
-            getLogger().info("- Registered ClaimWaypointListener for claim locator-bar waypoints");
+            debug("- Registered ClaimWaypointListener for claim locator-bar waypoints");
         }
         // Claim teleport movement listener (cancels teleport if player moves during delay)
         if (configManager.isClaimTeleportCancelOnMove()) {
             Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.ClaimTeleportListener(this, claimCommand), this);
-            getLogger().info("- Registered ClaimTeleportListener for teleport movement detection");
+            debug("- Registered ClaimTeleportListener for teleport movement detection");
         }
         registerAccrualListener();
         
-        getLogger().info(() -> "GPExpansion enabled");
+        displayEnabledHeader();
+        
+        debug(() -> "GPExpansion enabled");
     }
 
     private void registerAccrualListener() {
         if (!Bukkit.getPluginManager().isPluginEnabled("GriefPrevention")) {
-            getLogger().info("- Skipped AccrualListener because GriefPrevention is not enabled");
+            debug("- Skipped AccrualListener because GriefPrevention is not enabled");
             return;
         }
 
         try {
             Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.AccrualListener(this), this);
-            getLogger().info("- Registered AccrualListener for claim block accrual profiles");
+            debug("- Registered AccrualListener for claim block accrual profiles");
         } catch (NoClassDefFoundError error) {
             getLogger().warning("- Skipped AccrualListener because this GriefPrevention build does not expose the required accrual events: " + error.getMessage());
         }
@@ -269,7 +299,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
                     existing.unregister(map);
                 } catch (Throwable ignored) { }
                 known.remove(label);
-                getLogger().info("Unregistered existing command label: " + label);
+                debug("Unregistered existing command label: " + label);
             }
         }
     }
@@ -308,7 +338,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
                     existing.unregister(map);
                 } catch (Throwable ignored) { }
                 known.remove(key);
-                getLogger().info("Unregistered existing command label: " + key);
+                debug("Unregistered existing command label: " + key);
             }
         }
     }
@@ -323,7 +353,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
                 getLogger().warning("Failed to unregister claimlist for takeover: " + e.getMessage());
             }
             codes.castled.gpexpansion.gp.ClaimCommandAddonImpl.register(this);
-            getLogger().info("GP3D detected: GPExpansion takes claimslist/claimlist for enhanced display, intercepts /claim list");
+            debug("GP3D detected: GPExpansion takes claimslist/claimlist for enhanced display, intercepts /claim list");
         } else {
             try {
                 unregisterExistingClaimCommands();
@@ -429,7 +459,8 @@ public final class GPExpansionPlugin extends JavaPlugin {
                     "claimtp",
                     "setclaimspawn",
                     "resizeclaim",
-                    "claimmap"
+                    "claimmap",
+                    "claimbar"
             );
         } catch (ReflectiveOperationException e) {
             getLogger().warning("Failed to clean up duplicate command labels: " + e.getMessage());
@@ -495,11 +526,11 @@ public final class GPExpansionPlugin extends JavaPlugin {
         setupWizardManager = new SetupWizardManager(this);
 
         Bukkit.getPluginManager().registerEvents(new SetupChatListener(this, setupWizardManager), this);
-        getLogger().info("- Registered SetupChatListener for wizard commands");
+        debug("- Registered SetupChatListener for wizard commands");
 
         descriptionInputManager = new codes.castled.gpexpansion.gui.DescriptionInputManager(this);
         Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.gui.DescriptionChatListener(this, descriptionInputManager), this);
-        getLogger().info("- Registered DescriptionChatListener for claim descriptions");
+        debug("- Registered DescriptionChatListener for claim descriptions");
 
         // Chat we capture for wizards/description input must not leak into Discord relay.
         new codes.castled.gpexpansion.listener.DiscordSRVChatCaptureBridge(this, player -> {
@@ -623,6 +654,17 @@ public final class GPExpansionPlugin extends JavaPlugin {
         );
         registerRuntimeCommand(map, claimMapWrapper);
 
+        Command claimBarWrapper = new PaperCommandWrapper(
+                this,
+                "claimbar",
+                "Choose which claims appear on your vanilla locator bar",
+                "/claimbar [own|trusted|both|off]",
+                java.util.Collections.emptyList(),
+                claimCommand,
+                claimCommand
+        );
+        registerRuntimeCommand(map, claimBarWrapper);
+
         // /buyclaimblocks - opens the hopper confirmation GUI (migrated from GP3D).
         // Unregister any prior owner (GP3D itself or other plugins) first so our
         // handler wins the command dispatch.
@@ -646,9 +688,9 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
         SignAutoPasteListener autoPasteListener = new SignAutoPasteListener(this, setupWizardManager);
         Bukkit.getPluginManager().registerEvents(autoPasteListener, this);
-        getLogger().info("- Registered SignAutoPasteListener for auto-paste mode");
+        debug("- Registered SignAutoPasteListener for auto-paste mode");
         syncCommandTree();
-        getLogger().info("Registered /claim, /claimmap, /adminclaimlist, /gpx, /rentclaim, /sellclaim, /cancelsetup commands under GPExpansion");
+        debug("Registered /claim, /claimmap, /adminclaimlist, /gpx, /rentclaim, /sellclaim, /cancelsetup commands under GPExpansion");
     }
 
     private void syncCommandTree() {
@@ -865,6 +907,18 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
     public codes.castled.gpexpansion.util.Config getConfigManager() {
         return configManager;
+    }
+
+    public void debug(String message) {
+        if (configManager != null && configManager.isDebugEnabled()) {
+            getLogger().info(message);
+        }
+    }
+
+    public void debug(Supplier<String> message) {
+        if (configManager != null && configManager.isDebugEnabled()) {
+            getLogger().info(message);
+        }
     }
     
     // New manager getters

@@ -49,11 +49,11 @@ public class SignLimitManager {
             if (plugin.getServer().getPluginManager().getPlugin("Vault") != null) {
                 return new PermissionManager(plugin);
             } else {
-                plugin.getLogger().info("Vault not found - permission management via /gpx max will use in-memory limits only");
+                plugin.debug("Vault not found - permission management via /gpx max will use in-memory limits only");
                 return null;
             }
         } catch (NoClassDefFoundError e) {
-            plugin.getLogger().info("Vault classes not available - permission management via /gpx max will use in-memory limits only");
+            plugin.debug("Vault classes not available - permission management via /gpx max will use in-memory limits only");
             return null;
         } catch (Exception e) {
             plugin.getLogger().warning("Failed to initialize PermissionManager: " + e.getMessage());

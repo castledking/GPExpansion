@@ -57,7 +57,7 @@ public class VersionManager {
     private void loadConfig() {
         FileConfiguration config = plugin.getConfig();
         
-        plugin.getLogger().info("VersionManager: Loading config...");
+        plugin.debug("VersionManager: Loading config...");
         
         // Check actual file content for version section
         File configFile = new File(dataFolder, "config.yml");
@@ -80,9 +80,9 @@ public class VersionManager {
                     }
                 }
                 
-                plugin.getLogger().info("VersionManager: File contains version section: " + fileHasVersionSection);
+                plugin.debug("VersionManager: File contains version section: " + fileHasVersionSection);
                 if (actualVersion != null) {
-                    plugin.getLogger().info("VersionManager: Actual version in file: " + actualVersion);
+                    plugin.debug("VersionManager: Actual version in file: " + actualVersion);
                 }
                 
             } catch (IOException e) {
@@ -94,10 +94,10 @@ public class VersionManager {
         if (!fileHasVersionSection || actualVersion == null) {
             // Old config without version section - treat as pre-0.1.3a
             currentConfigVersion = "0.1.2";
-            plugin.getLogger().info("VersionManager: No version section found in file, assuming version: " + currentConfigVersion);
+            plugin.debug("VersionManager: No version section found in file, assuming version: " + currentConfigVersion);
         } else {
             currentConfigVersion = actualVersion;
-            plugin.getLogger().info("VersionManager: Found version section in file, version: " + currentConfigVersion);
+            plugin.debug("VersionManager: Found version section in file, version: " + currentConfigVersion);
         }
         
         updateCheckerEnabled = config.getBoolean("version.update-checker.enabled", true);
@@ -110,8 +110,8 @@ public class VersionManager {
     public void checkAndMigrateConfiguration() {
         String configVersion = currentConfigVersion;
         
-        plugin.getLogger().info("VersionManager: Checking for migrations...");
-        plugin.getLogger().info("VersionManager: Current version: " + configVersion);
+        plugin.debug("VersionManager: Checking for migrations...");
+        plugin.debug("VersionManager: Current version: " + configVersion);
         
         // Check actual file content for old format indicators
         File configFileForFormat = new File(dataFolder, "config.yml");
@@ -120,16 +120,16 @@ public class VersionManager {
         if (configFileForFormat.exists()) {
             try {
                 String configContent = Files.readString(configFileForFormat.toPath());
-                plugin.getLogger().info("VersionManager: Contains 'messages:': " + configContent.contains("messages:"));
-                plugin.getLogger().info("VersionManager: Contains 'show-permission-details: true': " + configContent.contains("show-permission-details: true"));
-                plugin.getLogger().info("VersionManager: Contains 'eviction:': " + configContent.contains("eviction:"));
+                plugin.debug("VersionManager: Contains 'messages:': " + configContent.contains("messages:"));
+                plugin.debug("VersionManager: Contains 'show-permission-details: true': " + configContent.contains("show-permission-details: true"));
+                plugin.debug("VersionManager: Contains 'eviction:': " + configContent.contains("eviction:"));
                 
                 // Check for old format indicators in the actual file content
                 isOldFormat = configContent.contains("messages:") && 
                              configContent.contains("show-permission-details: true") &&
                              !configContent.contains("eviction:");
                 
-                plugin.getLogger().info("VersionManager: File content analysis - isOldFormat: " + isOldFormat);
+                plugin.debug("VersionManager: File content analysis - isOldFormat: " + isOldFormat);
             } catch (IOException e) {
                 plugin.getLogger().warning("Failed to read config file for format detection: " + e.getMessage());
                 // Fallback to config-based detection
@@ -140,10 +140,10 @@ public class VersionManager {
         
         // If version is older than 0.1.3a, migrate (don't migrate based on format alone)
         if (isVersionOlder(configVersion, "0.1.3a")) {
-            plugin.getLogger().info("VersionManager: Migration needed, starting...");
+            plugin.debug("VersionManager: Migration needed, starting...");
             performMigrationToVersion013a(configVersion);
         } else {
-            plugin.getLogger().info("VersionManager: No migration needed for 0.1.3a");
+            plugin.debug("VersionManager: No migration needed for 0.1.3a");
         }
 
         // Migrate self-mailboxes section to defaults.max-self-mailboxes-per-claim
@@ -168,7 +168,7 @@ public class VersionManager {
                 // Check for player-commands section in file
                 playerCommandsExists = configContent.contains("player-commands:") || 
                                       configContent.contains("player-commands");
-                plugin.getLogger().info("VersionManager: Checked file for player-commands: " + playerCommandsExists);
+                plugin.debug("VersionManager: Checked file for player-commands: " + playerCommandsExists);
             } catch (IOException e) {
                 plugin.getLogger().warning("Failed to read config file to check for player-commands: " + e.getMessage());
                 // Fallback to in-memory config check
@@ -179,7 +179,7 @@ public class VersionManager {
         // Run migration if version is old OR if section is missing (even if version is already 0.1.8a)
         if (isVersionOlder(currentConfigVersion, "0.1.8a") || !playerCommandsExists) {
             if (!playerCommandsExists) {
-                plugin.getLogger().info("VersionManager: player-commands section missing" + 
+                plugin.debug("VersionManager: player-commands section missing" +
                     (isVersionOlder(currentConfigVersion, "0.1.8a") ? " (version " + currentConfigVersion + " < 0.1.8a)" : " (version " + currentConfigVersion + " but migration not applied)") + 
                     ", applying 0.1.8a migration");
             }
@@ -200,7 +200,7 @@ public class VersionManager {
             try {
                 String content = Files.readString(configFileEviction.toPath());
                 if (content.contains("notice-period-days")) {
-                    plugin.getLogger().info("VersionManager: Config file contains notice-period-days, migrating to notice-period format");
+                    plugin.debug("VersionManager: Config file contains notice-period-days, migrating to notice-period format");
                     migrateToVersion019a();
                     loadConfig();
                 }
@@ -213,6 +213,9 @@ public class VersionManager {
         ensureEvictionSectionPresent();
         ensurePlayerCommandPresent("claimfly.use");
         ensureGlobalClaimPlayerCommandDefault();
+        ensurePlayerCommandPresent("abandonclaim.anywhere");
+        ensurePlayerCommandPresent("abandontoplevelclaim.anywhere");
+        ensurePlayerCommandPresent("claim.bar");
         ensureAccrualsSectionPresent();
         ensureClaimMapEditorModeSlotPresent();
 
@@ -229,6 +232,13 @@ public class VersionManager {
         // If the version is already 1.1.2, skip to avoid creating unnecessary backups on every restart.
         if (isVersionOlder(currentConfigVersion, "1.1.2")) {
             ensureVersion112Structure();
+            loadConfig();
+        }
+
+        // Migrate to 1.1.3: abandon anywhere player-commands (entries added by the
+        // ensurePlayerCommandPresent calls above; this step just records the version).
+        if (isVersionOlder(currentConfigVersion, "1.1.3")) {
+            migrateToVersion113();
             loadConfig();
         }
 
@@ -298,7 +308,7 @@ public class VersionManager {
             config.set("version.config-version", targetVersion);
             plugin.saveConfig();
             currentConfigVersion = targetVersion;
-            plugin.getLogger().info("VersionManager: Auto-bumped config version from " + currentVersion + " to " + targetVersion + " (no migrations needed)");
+            plugin.debug("VersionManager: Auto-bumped config version from " + currentVersion + " to " + targetVersion + " (no migrations needed)");
         }
     }
     
@@ -315,7 +325,7 @@ public class VersionManager {
      * Migrate configuration to version 0.1.3a
      */
     private void performMigrationToVersion013a(String fromVersion) {
-        plugin.getLogger().info(plainText(plugin.getMessages().get("migration.console-starting"))
+        plugin.debug(() -> plainText(plugin.getMessages().get("migration.console-starting"))
             .replace("{old}", fromVersion != null ? fromVersion : "unknown")
             .replace("{new}", "0.1.3a"));
         
@@ -349,12 +359,12 @@ public class VersionManager {
                 
                 try {
                     Files.copy(configFile.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                    plugin.getLogger().info(plainText(plugin.getMessages().get("migration.console-backup-created"))
+                    plugin.debug(() -> plainText(plugin.getMessages().get("migration.console-backup-created"))
                         .replace("{backup-file}", backupFile.getName()));
                     
                     // Delete old config and let it be recreated with new format
                     configFile.delete();
-                    plugin.getLogger().info(plainText(plugin.getMessages().get("migration.console-file-recreated"))
+                    plugin.debug(() -> plainText(plugin.getMessages().get("migration.console-file-recreated"))
                         .replace("{file}", "config.yml"));
                     
                     // Reload config to recreate from defaults
@@ -377,12 +387,12 @@ public class VersionManager {
                     
                     try {
                         Files.copy(claimSettingsFile.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                        plugin.getLogger().info(plainText(plugin.getMessages().get("migration.console-backup-created"))
+                        plugin.debug(() -> plainText(plugin.getMessages().get("migration.console-backup-created"))
                             .replace("{backup-file}", backupFile.getName()));
                         
                         // Delete old file and let it be recreated with new format
                         claimSettingsFile.delete();
-                        plugin.getLogger().info(plainText(plugin.getMessages().get("migration.console-file-recreated"))
+                        plugin.debug(() -> plainText(plugin.getMessages().get("migration.console-file-recreated"))
                             .replace("{file}", "claim-settings.yml"));
                         
                     } catch (IOException e) {
@@ -398,7 +408,7 @@ public class VersionManager {
             plugin.saveConfig();
             
             if (migrationSuccess) {
-                plugin.getLogger().info(plainText(plugin.getMessages().get("migration.console-migration-complete")));
+                plugin.debug(() -> plainText(plugin.getMessages().get("migration.console-migration-complete")));
                 
                 // Notify admins in-game
                 if (foundDeprecatedFiles) {
@@ -442,11 +452,11 @@ public class VersionManager {
             if (config.contains("self-mailboxes.max") && !config.contains("defaults.max-self-mailboxes-per-claim")) {
                 int max = config.getInt("self-mailboxes.max", 1);
                 config.set("defaults.max-self-mailboxes-per-claim", max);
-                plugin.getLogger().info("VersionManager: Migrated self-mailboxes.max to defaults.max-self-mailboxes-per-claim: " + max);
+                plugin.debug("VersionManager: Migrated self-mailboxes.max to defaults.max-self-mailboxes-per-claim: " + max);
             }
             config.set("self-mailboxes", null);
             plugin.saveConfig();
-            plugin.getLogger().info("VersionManager: Removed deprecated self-mailboxes section");
+            plugin.debug("VersionManager: Removed deprecated self-mailboxes section");
         }
     }
 
@@ -462,12 +472,12 @@ public class VersionManager {
             boolean gp3d = gp.isGP3D();
             String defaultProtocol = existing != null && !existing.isBlank() ? existing.trim() : (gp3d ? "real" : "virtual");
             config.set("signs.mailbox.protocol", defaultProtocol);
-            plugin.getLogger().info("VersionManager: Set signs.mailbox.protocol to " + defaultProtocol + " (detected " + (gp3d ? "GP3D" : "regular GP") + "). You can change this in config.yml.");
+            plugin.debug("VersionManager: Set signs.mailbox.protocol to " + defaultProtocol + " (detected " + (gp3d ? "GP3D" : "regular GP") + "). You can change this in config.yml.");
         }
         config.set("version.config-version", "0.1.5a");
         plugin.saveConfig();
         currentConfigVersion = "0.1.5a";
-        plugin.getLogger().info("VersionManager: Config version updated to 0.1.5a");
+        plugin.debug("VersionManager: Config version updated to 0.1.5a");
     }
 
     /**
@@ -491,7 +501,7 @@ public class VersionManager {
         if (defaultProtocol == null) return;
         config.set("signs.mailbox.protocol", defaultProtocol);
         plugin.saveConfig();
-        plugin.getLogger().info("VersionManager: "
+        plugin.debug("VersionManager: "
             + (initialConfig ? "Set fresh-install" : "Added missing")
             + " signs.mailbox.protocol=" + defaultProtocol
             + " (detected " + (gp3d ? "GP3D" : "regular GP") + ").");
@@ -525,7 +535,7 @@ public class VersionManager {
             
             // Check if player-commands already exists in the actual file (not just defaults)
             if (configContent.contains("player-commands:")) {
-                plugin.getLogger().info("VersionManager: player-commands section already exists in file, skipping addition");
+                plugin.debug("VersionManager: player-commands section already exists in file, skipping addition");
                 // Still update version if needed
                 FileConfiguration config = plugin.getConfig();
                 String currentVersion = config.getString("version.config-version", currentConfigVersion);
@@ -577,6 +587,9 @@ public class VersionManager {
             playerCommandsSection.append("  - claim.toggleglobal\n");
             playerCommandsSection.append("  - claim.toggleglobal.anywhere\n");
             playerCommandsSection.append("  - claim.toggleglobal.1\n");
+            playerCommandsSection.append("  - abandonclaim.anywhere\n");
+            playerCommandsSection.append("  - abandontoplevelclaim.anywhere\n");
+            playerCommandsSection.append("  - claim.bar\n");
             playerCommandsSection.append("  - claim.color.black\n");
             playerCommandsSection.append("  - claim.color.dark_blue\n");
             playerCommandsSection.append("  - claim.color.dark_green\n");
@@ -688,12 +701,12 @@ public class VersionManager {
             // Write to file
             Files.writeString(configFile.toPath(), newContent);
             currentConfigVersion = "0.1.8a";
-            plugin.getLogger().info("VersionManager: Successfully migrated config to version 0.1.8a - added player-commands section with 50 permissions");
+            plugin.debug("VersionManager: Successfully migrated config to version 0.1.8a - added player-commands section with 50 permissions");
             
             // Verify the save worked
             String verifyContent = Files.readString(configFile.toPath());
             if (verifyContent.contains("player-commands:")) {
-                plugin.getLogger().info("VersionManager: Verified player-commands section was saved to file");
+                plugin.debug("VersionManager: Verified player-commands section was saved to file");
             } else {
                 plugin.getLogger().warning("VersionManager: WARNING - player-commands section not found in file after save!");
             }
@@ -773,7 +786,7 @@ public class VersionManager {
                 for (String line : newEvictionBlock.split("\\R", -1)) newLines.add(line);
                 for (int i = endIdx; i < lines.length; i++) newLines.add(lines[i]);
                 newContent = String.join(System.lineSeparator(), newLines);
-                plugin.getLogger().info("VersionManager: Replaced eviction section with canonical 0.1.9a format (notice-period: " + noticePeriodValue + ")");
+                plugin.debug("VersionManager: Replaced eviction section with canonical 0.1.9a format (notice-period: " + noticePeriodValue + ")");
             } else {
                 // Eviction section missing: insert before version section
                 int insertAt = -1;
@@ -792,7 +805,7 @@ public class VersionManager {
                 newLines.add("");
                 for (int i = insertAt; i < lines.length; i++) newLines.add(lines[i]);
                 newContent = String.join(System.lineSeparator(), newLines);
-                plugin.getLogger().info("VersionManager: Added eviction section (was missing) with notice-period: " + noticePeriodValue);
+                plugin.debug("VersionManager: Added eviction section (was missing) with notice-period: " + noticePeriodValue);
             }
 
             // Update config-version
@@ -803,7 +816,7 @@ public class VersionManager {
 
             Files.writeString(configFile.toPath(), newContent);
             currentConfigVersion = "0.1.9a";
-            plugin.getLogger().info("VersionManager: Config version updated to 0.1.9a");
+            plugin.debug("VersionManager: Config version updated to 0.1.9a");
 
             plugin.reloadConfig();
         } catch (IOException e) {
@@ -876,7 +889,7 @@ public class VersionManager {
             for (int i = endIdx; i < lines.length; i++) newLines.add(lines[i]);
             Files.writeString(configFile.toPath(), String.join(System.lineSeparator(), newLines));
             plugin.reloadConfig();
-            plugin.getLogger().info("VersionManager: Repaired empty/corrupted eviction section (notice-period: " + noticePeriodValue + ")");
+            plugin.debug("VersionManager: Repaired empty/corrupted eviction section (notice-period: " + noticePeriodValue + ")");
         } catch (IOException e) {
             plugin.getLogger().warning("VersionManager: Could not repair eviction section: " + e.getMessage());
         }
@@ -971,7 +984,7 @@ public class VersionManager {
 
             Files.writeString(configFile.toPath(), String.join(System.lineSeparator(), newLines));
             plugin.reloadConfig();
-            plugin.getLogger().info(plainText(plugin.getMessages().get("migration.accruals-section-added")));
+            plugin.debug(() -> plainText(plugin.getMessages().get("migration.accruals-section-added")));
         } catch (IOException e) {
             plugin.getLogger().warning(plainText(plugin.getMessages().get("migration.accruals-section-failed",
                 "{error}", e.getMessage())));
@@ -1033,7 +1046,7 @@ public class VersionManager {
 
             Files.writeString(configFile.toPath(), String.join(System.lineSeparator(), newLines));
             plugin.reloadConfig();
-            plugin.getLogger().info("VersionManager: Added missing player-commands entry: " + commandPermission);
+            plugin.debug("VersionManager: Added missing player-commands entry: " + commandPermission);
         } catch (IOException e) {
             plugin.getLogger().warning("VersionManager: Failed to add player-commands entry " + commandPermission + ": " + e.getMessage());
         }
@@ -1065,7 +1078,7 @@ public class VersionManager {
 
             if (!updated.equals(content)) {
                 Files.writeString(guiFile.toPath(), updated);
-                plugin.getLogger().info("VersionManager: Added items.mode.slot to guis/claim-map-editor.yml");
+                plugin.debug("VersionManager: Added items.mode.slot to guis/claim-map-editor.yml");
             }
         } catch (IOException e) {
             plugin.getLogger().warning("VersionManager: Failed to migrate claim-map-editor.yml mode slot: " + e.getMessage());
@@ -1095,7 +1108,7 @@ public class VersionManager {
     public void checkForUpdates() {
         if (!updateCheckerEnabled) return;
         
-        plugin.getLogger().info(plainText(plugin.getMessages().get("update-checker.console-checking")));
+        plugin.debug(() -> plainText(plugin.getMessages().get("update-checker.console-checking")));
         
         // Run async to avoid blocking main thread
         CompletableFuture.supplyAsync(this::fetchLatestVersion)
@@ -1147,7 +1160,7 @@ public class VersionManager {
         plugin.saveConfig();
         
         if (currentVersion.equals(latestVersion)) {
-            plugin.getLogger().info(plainText(plugin.getMessages().get("update-checker.console-up-to-date")));
+            plugin.debug(() -> plainText(plugin.getMessages().get("update-checker.console-up-to-date")));
         } else {
             String updateMessage = plainText(plugin.getMessages().get("update-checker.console-update-available"))
                 .replace("{current}", currentVersion)
@@ -1237,14 +1250,14 @@ public class VersionManager {
     private void migrateSignProtectionToLang() {
         File langFile = new File(dataFolder, "lang.yml");
         if (!langFile.exists()) {
-            plugin.getLogger().info("VersionManager: lang.yml does not exist, skipping sign-protection migration");
+            plugin.debug("VersionManager: lang.yml does not exist, skipping sign-protection migration");
             return;
         }
 
         try {
             String content = Files.readString(langFile.toPath());
             if (content.contains("sign-protection:")) {
-                plugin.getLogger().info("VersionManager: sign-protection section already exists in lang.yml, skipping migration");
+                plugin.debug("VersionManager: sign-protection section already exists in lang.yml, skipping migration");
                 return;
             }
 
@@ -1306,12 +1319,12 @@ public class VersionManager {
             // Write to file
             String newContent = String.join(System.lineSeparator(), newLines);
             Files.writeString(langFile.toPath(), newContent);
-            plugin.getLogger().info("VersionManager: Successfully migrated lang.yml - added sign-protection section");
+            plugin.debug("VersionManager: Successfully migrated lang.yml - added sign-protection section");
             
             // Verify the save worked
             String verifyContent = Files.readString(langFile.toPath());
             if (verifyContent.contains("sign-protection:")) {
-                plugin.getLogger().info("VersionManager: Verified sign-protection section was saved to lang.yml");
+                plugin.debug("VersionManager: Verified sign-protection section was saved to lang.yml");
             } else {
                 plugin.getLogger().warning("VersionManager: Failed to verify sign-protection section in lang.yml");
             }
@@ -1378,11 +1391,11 @@ public class VersionManager {
     private void migrateToVersion112() {
         File configFile = new File(dataFolder, "config.yml");
         if (!configFile.exists()) {
-            plugin.getLogger().info("VersionManager: config.yml does not exist, cannot migrate to 1.1.2");
+            plugin.getLogger().warning("VersionManager: config.yml does not exist, cannot migrate to 1.1.2");
             return;
         }
 
-        plugin.getLogger().info("VersionManager: Migrating config to 1.1.2...");
+        plugin.debug("VersionManager: Migrating config to 1.1.2...");
 
         try {
             // 1. Read old config values
@@ -1423,7 +1436,7 @@ public class VersionManager {
             String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
             File backupFile = new File(dataFolder, "config.yml.backup_" + timestamp + "_pre-1.1.2");
             Files.copy(configFile.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            plugin.getLogger().info("VersionManager: Backup created: " + backupFile.getName());
+            plugin.debug("VersionManager: Backup created: " + backupFile.getName());
 
             // 3. Replace with resource default
             configFile.delete();
@@ -1454,7 +1467,7 @@ public class VersionManager {
                 Set<String> merged = new LinkedHashSet<>(newPlayerCommands);
                 merged.addAll(oldPlayerCommands);
                 newConfig.set("player-commands", new ArrayList<>(merged));
-                plugin.getLogger().info("VersionManager: Merged " + oldPlayerCommands.size()
+                plugin.debug("VersionManager: Merged " + oldPlayerCommands.size()
                     + " old player-commands with " + newPlayerCommands.size() + " new defaults");
             }
 
@@ -1471,7 +1484,7 @@ public class VersionManager {
             plugin.saveConfig();
 
             currentConfigVersion = "1.1.2";
-            plugin.getLogger().info("VersionManager: Migration to 1.1.2 complete. Backup: " + backupFile.getName());
+            plugin.debug("VersionManager: Migration to 1.1.2 complete. Backup: " + backupFile.getName());
 
             // Notify admins
             try {
@@ -1481,6 +1494,18 @@ public class VersionManager {
         } catch (IOException e) {
             plugin.getLogger().severe("VersionManager: Failed to migrate config to 1.1.2: " + e.getMessage());
         }
+    }
+
+    /**
+     * Migrate to 1.1.3. The actual player-commands additions for the abandon anywheres
+     * are handled by the always-run ensurePlayerCommandPresent calls; this step only
+     * records the version so the migration chain is explicit.
+     */
+    private void migrateToVersion113() {
+        plugin.getConfig().set("version.config-version", "1.1.3");
+        plugin.saveConfig();
+        currentConfigVersion = "1.1.3";
+        plugin.debug("VersionManager: Updated config to 1.1.3 (abandon anywhere commands).");
     }
 
     /**
@@ -1499,7 +1524,7 @@ public class VersionManager {
             boolean hasDefaultsSection = content.matches("(?sm).*^defaults:\\s*$.*");
             if (!hasDefaultsSection) return;
 
-            plugin.getLogger().info("VersionManager: Detected leftover defaults section - applying 1.1.2 structural fixup");
+            plugin.debug("VersionManager: Detected leftover defaults section - applying 1.1.2 structural fixup");
 
             // Read old values
             FileConfiguration oldConfig = plugin.getConfig();
@@ -1557,7 +1582,7 @@ public class VersionManager {
 
             newConfig.set("version.config-version", "1.1.2");
             plugin.saveConfig();
-            plugin.getLogger().info("VersionManager: 1.1.2 structural fixup complete. Backup: " + backupFile.getName());
+            plugin.debug("VersionManager: 1.1.2 structural fixup complete. Backup: " + backupFile.getName());
 
         } catch (IOException e) {
             plugin.getLogger().warning("VersionManager: Could not fix 1.1.2 structure: " + e.getMessage());

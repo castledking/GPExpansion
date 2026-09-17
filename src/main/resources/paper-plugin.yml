@@ -120,6 +120,10 @@ commands:
     description: Open the claim map editor for the claim you're standing in
     usage: /<command>
     permission: griefprevention.claims
+  claimbar:
+    description: Choose which claims appear on your vanilla locator bar
+    usage: /<command> [own|trusted|both|off]
+    permission: griefprevention.claim.bar
   setclaimspawn:
     description: Set the teleport spawn point for a claim
     usage: /<command>
@@ -167,6 +171,10 @@ permissions:
   griefprevention.claim.waypoint.admin:
     description: Shows admin claims on the locator bar (requires claim-waypoints.include-admin-claims)
     default: op
+
+  griefprevention.claim.bar:
+    description: Allows choosing which claims appear on your vanilla locator bar (/claim bar or /claimbar)
+    default: true
 
   griefprevention.claim.color.anywhere:
     description: Allows using /claim color outside own claims
@@ -268,6 +276,14 @@ permissions:
 
   griefprevention.trust.anywhere:
     description: Allows using trust commands with an explicit claim ID
+    default: true
+
+  griefprevention.abandonclaim.anywhere:
+    description: Allows abandoning your claims by ID from anywhere
+    default: true
+
+  griefprevention.abandontoplevelclaim.anywhere:
+    description: Allows abandoning your top-level claims (and subdivisions) by ID from anywhere
     default: true
 
   # === RENT SIGN PERMISSIONS ===
@@ -525,10 +541,6 @@ permissions:
 
   gpx.admin:
     description: Allows viewing migration notices
-    default: op
-
-  griefprevention.adminclaimslist:
-    description: Allows viewing admin claims list
     default: op
 
   griefprevention.claimfly.use:

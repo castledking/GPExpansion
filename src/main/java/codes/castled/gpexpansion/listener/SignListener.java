@@ -78,11 +78,11 @@ public class SignListener implements Listener {
         this.plugin = plugin;
         // Must share the plugin's instance so admin-set limits (/gpx max) apply to sign creation
         this.signLimitManager = plugin.getSignLimitManager();
-        plugin.getLogger().info("SignListener has been instantiated");
+        plugin.debug("SignListener has been instantiated");
         @SuppressWarnings("deprecation")
         String version = plugin.getDescription().getVersion();
-        plugin.getLogger().info("Plugin version: " + version);
-        plugin.getLogger().info("Server version: " + plugin.getServer().getVersion());
+        plugin.debug("Plugin version: " + version);
+        plugin.debug(() -> "Server version: " + plugin.getServer().getVersion());
     }
 
     // Helper method to safely get a line from SignChangeEvent
@@ -602,7 +602,7 @@ public class SignListener implements Listener {
                                                  : "griefprevention.sign.create.buy.anywhere";
                 if (!hasPermissionOrFullAccess(player, anywherePermission)) {
                     String signTypeStr = rent ? "rent" : "sell";
-                    plugin.getMessages().send(player, "permissions.anywhere-denied", "{signtype}", signTypeStr);
+                    plugin.getMessages().send(player, "permissions.sign-anywhere-denied", "{signtype}", signTypeStr);
                     return;
                 }
             }

@@ -54,6 +54,9 @@ public class Messages {
         DEFAULTS.put("permissions.economy-type-denied-detail", "&7  Missing: &e{permission}");
         DEFAULTS.put("permissions.create-sign-denied", "&cYou don't have permission to create {signtype} signs.");
         DEFAULTS.put("permissions.create-sign-denied-detail", "&7  Missing: &e{permission}");
+        DEFAULTS.put("permissions.sign-anywhere-denied", "&cYou can only create {signtype} signs in your own claims.");
+        DEFAULTS.put("permissions.command-anywhere-denied", "&cYou can only run this command in your own claims.");
+        DEFAULTS.put("permissions.anywhere-denied-detail", "&7  Missing: &e{permission}");
         
         // Sign creation
         DEFAULTS.put("sign-creation.rent-limit-reached", "&cYou have reached your rent sign limit ({current}/{max}).");
@@ -218,6 +221,19 @@ public class Messages {
         DEFAULTS.put("claim.id-missing", "&cCould not determine claim ID for this action.");
         DEFAULTS.put("claim.main-id-missing", "&cCould not determine main claim ID.");
         DEFAULTS.put("claim.must-own-action", "&cYou must own this claim to {action}.");
+        DEFAULTS.put("claim.abandon-subdivision-warning", "&7This will delete &6{count} subdivision{plural}.");
+        DEFAULTS.put("claim.bar-current", "&7Your locator bar mode is &e{mode}&7. The bar shows: &e{what}&7.");
+        DEFAULTS.put("claim.bar-set", "&aLocator bar mode set to &e{mode}&a. The bar now shows: &e{what}&a.");
+        DEFAULTS.put("claim.bar-current-mode-off", "&7Your locator bar mode is &eoff&7. Nothing appears on the bar.");
+        DEFAULTS.put("claim.bar-set-mode-off", "&aLocator bar mode set to &eoff&a. Nothing appears on the bar.");
+        DEFAULTS.put("claim.bar-mode-what-own", "only your own claims");
+        DEFAULTS.put("claim.bar-mode-what-trusted", "your claims and claims you can access");
+        DEFAULTS.put("claim.bar-mode-what-both", "your claims, claims you can access, and published claims");
+        DEFAULTS.put("claim.bar-invalid", "&cUnknown mode &6{label}&c. Valid modes: &e{modes}&c.");
+        DEFAULTS.put("startup.tag-author", "&7by castledking");
+        DEFAULTS.put("startup.tag-plugin", "&6The GriefPrevention expansion plugin \n&b- signs, economy, rentals, claim fly & waypoints");
+        DEFAULTS.put("startup.details", "&fStartup details:");
+        DEFAULTS.put("startup.boot-finished", "&7Boot finished in: &a{boot}");
         DEFAULTS.put("claim.transfer-usage", "&eUsage: /claim transfer <claimId> <player>");
         DEFAULTS.put("claim.transfer-failed-contact", "&cFailed to transfer claim ownership. Please contact an admin.");
         DEFAULTS.put("claim.name-usage", "&eUsage: /claim name <newName> [claimId]");
@@ -628,6 +644,43 @@ public class Messages {
             }
         }
         
+        // Migrate to 1.1.3: permissions.anywhere-denied was split into sign-anywhere-denied
+        // (sign context) and command-anywhere-denied (command context). Copy any custom
+        // legacy text forward, then drop the old key so it is never referenced again.
+        String legacyAnywhereDenied = langConfig.getString("permissions.anywhere-denied");
+        if (isOlderVersion(langVersion, "1.1.3")) {
+            boolean modified = false;
+            
+            if (!langConfig.isSet("permissions.sign-anywhere-denied") && legacyAnywhereDenied != null) {
+                langConfig.set("permissions.sign-anywhere-denied", legacyAnywhereDenied);
+                modified = true;
+                plugin.getLogger().info("Migrated permissions.anywhere-denied to permissions.sign-anywhere-denied");
+            }
+            
+            if (!langConfig.isSet("permissions.command-anywhere-denied")) {
+                langConfig.set("permissions.command-anywhere-denied", DEFAULTS.get("permissions.command-anywhere-denied"));
+                modified = true;
+            }
+            
+            if (!langConfig.isSet("claim.abandon-subdivision-warning")) {
+                langConfig.set("claim.abandon-subdivision-warning", DEFAULTS.get("claim.abandon-subdivision-warning"));
+                modified = true;
+            }
+            
+            langConfig.set("version", "1.1.3");
+            if (modified) {
+                saveLanguageFile();
+                plugin.getLogger().info("Updated lang.yml to version 1.1.3 (sign/command anywhere-denied message keys).");
+            }
+        }
+        
+        // Remove the legacy permissions.anywhere-denied key whenever it is still present.
+        if (langConfig.contains("permissions.anywhere-denied")) {
+            langConfig.set("permissions.anywhere-denied", null);
+            saveLanguageFile();
+            plugin.getLogger().info("Removed deprecated lang key permissions.anywhere-denied.");
+        }
+        
         // Auto-bump version if no migrations needed and version is older than project version
         String projectVersion = getProjectVersion();
         String currentLangVersion = langConfig.getString("version", "0.1.3a");
@@ -753,7 +806,7 @@ public class Messages {
     /**
      * Get a message string with placeholders replaced.
      */
-    public String getRaw(String path, String... replacements) {
+        public String getRaw(String path, String... replacements) {
         String message = getRaw(path);
         
         // Replace placeholders in pairs: {key}, value, {key2}, value2, etc.
@@ -764,6 +817,14 @@ public class Messages {
         }
         
         return message;
+    }
+    
+    public int getMessageCount() {
+        return DEFAULTS.size();
+    }
+    
+    public String getLangVersion() {
+        return currentVersion;
     }
     
     /**
@@ -853,6 +914,18 @@ public class Messages {
         
         if (plugin.getConfig().getBoolean("messages.show-permission-details", true)) {
             send(player, "permissions.create-sign-denied-detail",
+                "{permission}", permission);
+        }
+    }
+    
+    /**
+     * Send "command can only be run in your own claims" message.
+     */
+    public void sendCommandAnywhereDenied(Player player, String permission) {
+        send(player, "permissions.command-anywhere-denied");
+        
+        if (plugin.getConfig().getBoolean("messages.show-permission-details", true)) {
+            send(player, "permissions.anywhere-denied-detail",
                 "{permission}", permission);
         }
     }

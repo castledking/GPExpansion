@@ -62,7 +62,7 @@ public class ClaimCommandAddonImpl {
 
             registerMethod.invoke(null, addonInstance);
             available = true;
-            plugin.getLogger().info("Registered GP3D ClaimCommandAddon for enhanced tab completion and snapshot execution");
+            plugin.debug("Registered GP3D ClaimCommandAddon for enhanced tab completion and snapshot execution");
         } catch (Throwable t) {
             // GP3D addon API not present (vanilla GP or older GP3D)
         }
