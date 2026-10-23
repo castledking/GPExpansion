@@ -60,7 +60,7 @@ public class ClaimFlyCommand implements CommandExecutor, TabCompleter {
         }
 
         UUID uuid = player.getUniqueId();
-        if (!manager.hasFlightAccess(uuid)) {
+        if (!manager.hasFlightAccess(player)) {
             player.sendMessage("§cYou do not have any claim flight time available.");
             manager.setEnabled(uuid, false);
             return true;
@@ -69,16 +69,19 @@ public class ClaimFlyCommand implements CommandExecutor, TabCompleter {
         boolean enabled = manager.toggle(uuid);
         applyImmediateFlightState(player, enabled);
         player.sendMessage(enabled
-                ? "§aClaim flight enabled. " + formatModeSuffix(uuid)
-                : "§eClaim flight disabled. " + formatModeSuffix(uuid));
+                ? "§aClaim flight enabled. " + formatModeSuffix(player)
+                : "§eClaim flight disabled. " + formatModeSuffix(player));
         return true;
     }
 
-    private String formatModeSuffix(UUID uuid) {
+    private String formatModeSuffix(Player player) {
         if (manager.isPassiveClaimFlightEnabled()) {
             return "§7Passive mode is active.";
         }
-        return "Remaining: §e" + ClaimFlyManager.formatDuration(manager.getRemainingMillis(uuid));
+        if (player.hasPermission(ClaimFlyManager.UNLIMITED_PERMISSION)) {
+            return "§7Unlimited while inside a claim you can fly in.";
+        }
+        return "Remaining: §e" + ClaimFlyManager.formatDuration(manager.getRemainingMillis(player.getUniqueId()));
     }
 
     private void applyImmediateFlightState(Player player, boolean enabled) {
@@ -150,12 +153,18 @@ public class ClaimFlyCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
             }
-            sender.sendMessage("§a" + target.getName() + " claim flight: §e" + ClaimFlyManager.formatDuration(manager.getRemainingMillis(uuid)) + " §7(" + (manager.hasTime(uuid) ? "yes" : "no") + ")");
+            sender.sendMessage("§a" + target.getName() + " claim flight: §e" + ClaimFlyManager.formatDuration(manager.getRemainingMillis(uuid)) + " §7(" + flightAccessLabel(target) + ")");
             if (!action.equals("check")) {
                 target.sendMessage("§eYour claim flight time is now §6" + ClaimFlyManager.formatDuration(manager.getRemainingMillis(uuid)) + "§e.");
             }
         }
         return true;
+    }
+
+    /** Distinguishes "has banked time" from "has unlimited", so 0s is not read as "cannot fly". */
+    private String flightAccessLabel(Player target) {
+        if (target.hasPermission(ClaimFlyManager.UNLIMITED_PERMISSION)) return "unlimited";
+        return manager.hasTime(target.getUniqueId()) ? "yes" : "no";
     }
 
     private boolean requiresTime(String action) {

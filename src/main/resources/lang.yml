@@ -1,7 +1,7 @@
 # GPExpansion Language File
 # Use & for color codes, supports MiniMessage format
 # Placeholders are shown in {brackets}
-version: "1.2.4"
+version: "1.2.5"
 
 # =============================================================================
 # GENERAL MESSAGES
@@ -549,10 +549,10 @@ claim:
   name-no-permission: "&cYou lack permission: &egriefprevention.claim.name"
   name-usage: "&eUsage: /claim name <newName> [claimId]"
 
-  # Claim waypoint color
+  # Claim waypoint / claim map colour
   color-no-permission: "&cYou lack permission: &egriefprevention.claim.color"
-  color-usage: "&eUsage: /claim color <color|reset> [claimId]"
-  color-invalid: "&cUnknown color. Valid colors: &e{colors}&c, or &ereset&c."
+  color-usage: "&eUsage: /claim color <color|#hex|reset> [claimId]"
+  color-invalid: "&cUnknown color. Valid colors: &e{colors}&c, a &e#RRGGBB&c hex value, or &ereset&c."
   waypoint-disabled: "&cClaim waypoints are disabled on this server."
   waypoint-published: "&aClaim {id}'s waypoint is now shown to everyone."
   waypoint-hidden: "&aClaim {id}'s waypoint is back to owner and trusted only."

@@ -573,6 +573,47 @@ integrations:
     sync-dynamic-player-permission: true
   placeholderapi:
     enabled: true
+  # Default claim marker colours on Dynmap/BlueMap. A per-claim /claim color
+  # (named colour or #RRGGBB hex) overrides these for that claim.
+  colors:
+    main-claim: "#FFD700"
+    admin-claim: "#FF8C00"
+  dynmap:
+    enabled: true
+    layer-name: GriefPrevention
+    update-interval-seconds: 300
+    # Clicking a claim shows its trust list (Managers/Builders/Containers/Accessors).
+    show-trust-list: true
+    colors:
+      # Line and fill colours follow the claim's colour; stroke-opacity and
+      # fill-opacity tune them. fill-opacity 0 auto-derives a translucent fill
+      # from the line colour.
+      stroke-weight: 3
+      stroke-opacity: 1.0
+      fill-opacity: 0.0
+  bluemap:
+    enabled: true
+    marker-set-id: gpexpansion.claims
+    layer-name: GriefPrevention
+    update-interval-seconds: 300
+    # Heightless (2D) claims have no real Y bounds, so they are drawn as flat
+    # ground polygons at a single Y instead of full-height columns. Shaped (GP3D)
+    # claims always render with their true height.
+    flat-view-only: true
+    # Y that flat (2D) claims are drawn at. 63 sits just above sea level and matches
+    # what BlueBridge/BlueMapClaims use, so outlines sit on the ground instead of
+    # floating over hills (sampling the terrain per claim lifts the whole polygon
+    # to the highest block under it).
+    render-height: 63
+    # When false (default) claim outlines and fills draw through terrain, so claims
+    # stay visible in caves, behind hills and under cover. Set true to hide claims
+    # occluded by blocks.
+    depth-test: false
+    # Clicking a claim shows its trust list alongside the owner.
+    show-trust-list: true
+    colors:
+      line-width: 2
+      fill-opacity: 0.0
   discord:
     # Planned: report high-value claim events to DiscordSRV or a webhook.
     enabled: false
@@ -590,7 +631,7 @@ integrations:
 
 version:
   # Current configuration version. Used for migrations.
-  config-version: "1.2.4"
+  config-version: "1.2.5"
 
   update-checker:
     enabled: true

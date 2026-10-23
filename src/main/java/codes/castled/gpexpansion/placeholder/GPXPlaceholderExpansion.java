@@ -58,7 +58,13 @@ public class GPXPlaceholderExpansion extends PlaceholderExpansion {
         if (params.equalsIgnoreCase("claim_flight")) {
             ClaimFlyManager manager = plugin.getClaimFlyManager();
             if (manager == null) return "";
-            return manager.hasTime(player.getUniqueId()) ? "yes" : "no";
+            // OfflinePlayer cannot be permission-checked on this API, so an offline
+            // holder of the unlimited node reports on their bank alone.
+            Player online = Bukkit.getPlayer(player.getUniqueId());
+            boolean access = online != null
+                    ? manager.hasFlightAccess(online)
+                    : manager.hasTime(player.getUniqueId());
+            return access ? "yes" : "no";
         }
 
         // --- claim-location placeholders (need online player) ---

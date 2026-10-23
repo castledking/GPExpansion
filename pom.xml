@@ -7,7 +7,7 @@
 
   <groupId>codes.castled.gpexpansion</groupId>
   <artifactId>gpexpansion</artifactId>
-  <version>1.2.4</version>
+  <version>1.2.5</version>
   <name>GPExpansion</name>
   <description>GriefPrevention Expansion</description>
 
@@ -57,6 +57,14 @@
       <url
             >https://repo.extendedclip.com/content/repositories/placeholderapi/</url>
     </repository>
+    <repository>
+      <id>bluecolored-releases</id>
+      <url>https://repo.bluecolored.de/releases/</url>
+    </repository>
+    <repository>
+      <id>dynmap-repo</id>
+      <url>https://repo.mikeprimm.com/</url>
+    </repository>
   </repositories>
 
   <dependencies>
@@ -99,6 +107,26 @@
       <groupId>com.github.castledking</groupId>
       <artifactId>GriefPrevention3D</artifactId>
       <version>${griefprevention3d.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <!-- BlueMap API (optional map integration; only loaded when BlueMap is present) -->
+    <dependency>
+      <groupId>de.bluecolored</groupId>
+      <artifactId>bluemap-api</artifactId>
+      <version>2.8.0</version>
+      <scope>provided</scope>
+    </dependency>
+    <!-- Dynmap API (optional map integration; only loaded when Dynmap is present) -->
+    <dependency>
+      <groupId>us.dynmap</groupId>
+      <artifactId>DynmapCoreAPI</artifactId>
+      <version>3.8</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>us.dynmap</groupId>
+      <artifactId>dynmap-api</artifactId>
+      <version>3.8</version>
       <scope>provided</scope>
     </dependency>
     <dependency>

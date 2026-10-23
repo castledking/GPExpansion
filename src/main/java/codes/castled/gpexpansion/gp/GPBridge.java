@@ -56,6 +56,7 @@ public class GPBridge {
     private static volatile boolean DEBUG = false;
     private static volatile long lastAvailWarn = 0L;
     public static void setDebug(boolean enabled) { DEBUG = enabled; }
+    public static boolean isDebug() { return DEBUG; }
     
     // Cache for GP3D detection
     private static volatile boolean isGP3D = false;
@@ -5048,6 +5049,96 @@ public class GPBridge {
             if (DEBUG) e.printStackTrace();
         }
         return new int[]{0, 0, 0};
+    }
+
+    /**
+     * Resolve the display name of a claim's owner, or "administrator" for admin claims.
+     */
+    public String getClaimOwnerName(Object claim) {
+        if (!isAvailable() || claim == null) return "unknown";
+        if (isAdminClaim(claim)) return "administrator";
+        try {
+            Method getOwnerName = lookupMethod(claim.getClass(), "getOwnerName");
+            if (getOwnerName != null) {
+                Object result = getOwnerName.invoke(claim);
+                if (result instanceof String s && !s.isEmpty()) return s;
+            }
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+        }
+        try {
+            Method getOwnerId = lookupMethod(claim.getClass(), "getOwnerID");
+            if (getOwnerId != null) {
+                Object owner = getOwnerId.invoke(claim);
+                if (owner instanceof UUID uuid) {
+                    org.bukkit.OfflinePlayer offline = org.bukkit.Bukkit.getOfflinePlayer(uuid);
+                    return offline.getName() != null ? offline.getName() : uuid.toString();
+                }
+            }
+        } catch (ReflectiveOperationException e) {
+            if (DEBUG) e.printStackTrace();
+        }
+        return "unknown";
+    }
+
+    /**
+     * Return the claim's outline as a single polygon of {@code double[]} corners:
+     * {@code { xs, zs }}. Shaped (GP3D) claims use their real polygon corners;
+     * rectangular claims use the 4 inflated corners used by the reference map plugins.
+     * Returns {@code null} when the claim has no usable geometry.
+     */
+    public double[][] getClaimOutline(Object claim) {
+        if (!isAvailable() || claim == null) return null;
+
+        // Shaped claims: reuse the polygon machinery already proven by the claim map editor.
+        Object polygon = resolveClaimBoundaryPolygon(claim);
+        if (polygon != null) {
+            try {
+                PolygonView view = buildPolygonView(polygon);
+                if (view != null && view.xs.length >= 3) {
+                    double[] xs = new double[view.xs.length];
+                    double[] zs = new double[view.zs.length];
+                    for (int i = 0; i < view.xs.length; i++) {
+                        xs[i] = view.xs[i];
+                        zs[i] = view.zs[i];
+                    }
+                    return new double[][]{xs, zs};
+                }
+            } catch (ReflectiveOperationException e) {
+                if (DEBUG) e.printStackTrace();
+            }
+        }
+
+        // Rectangular fallback: inflate the lesser/greater corners by one block, matching
+        // the convention used by Dynmap-GriefPrevention and BluemapClaims.
+        ClaimCorners corners = getClaimCorners(claim).orElse(null);
+        if (corners == null) return null;
+        double[] xs = {
+                corners.x1, corners.x1, corners.x2 + 1.0, corners.x2 + 1.0
+        };
+        double[] zs = {
+                corners.z1, corners.z2 + 1.0, corners.z2 + 1.0, corners.z1
+        };
+        return new double[][]{xs, zs};
+    }
+
+    /**
+     * Return every claim (top-level and descendants) as a flat list, for map renderers.
+     */
+    public java.util.List<Object> getAllClaimsIncludingChildren() {
+        java.util.List<Object> all = new java.util.ArrayList<>();
+        if (!isAvailable()) return all;
+        java.util.List<Object> roots = getAllClaims();
+        java.util.ArrayDeque<Object> stack = new java.util.ArrayDeque<>(roots);
+        while (!stack.isEmpty()) {
+            Object claim = stack.poll();
+            if (claim == null) continue;
+            all.add(claim);
+            for (Object child : getChildrenOfClaim(claim)) {
+                stack.push(child);
+            }
+        }
+        return all;
     }
     
     private boolean isTrusted(Object claim, UUID playerId, String trustType) {

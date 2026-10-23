@@ -231,6 +231,35 @@ public class Config {
 
         // Integration behavior
         DEFAULTS.put("integrations.vault.ignore-vault-missing", true);
+
+        // Default claim marker colours for Dynmap/BlueMap. Per-claim values set through
+        // /claim color (a named colour or #RRGGBB) override these.
+        DEFAULTS.put("integrations.colors.main-claim", "#FFD700");
+        DEFAULTS.put("integrations.colors.admin-claim", "#FF8C00");
+
+        // Dynmap claim markers. A fill-opacity of 0 auto-derives a translucent fill
+        // from the claim's line colour instead of using the legacy flat red fill.
+        DEFAULTS.put("integrations.dynmap.enabled", true);
+        DEFAULTS.put("integrations.dynmap.layer-name", "GriefPrevention");
+        DEFAULTS.put("integrations.dynmap.update-interval-seconds", 300);
+        DEFAULTS.put("integrations.dynmap.show-trust-list", true);
+        DEFAULTS.put("integrations.dynmap.colors.stroke-weight", 3);
+        DEFAULTS.put("integrations.dynmap.colors.stroke-opacity", 1.0);
+        DEFAULTS.put("integrations.dynmap.colors.fill-opacity", 0.0);
+
+        // BlueMap claim markers. flat-view-only draws the heightless (2D) claims as flat
+        // ground polygons instead of full-height columns; shaped (GP3D) claims are
+        // unaffected and always render with their real height.
+        DEFAULTS.put("integrations.bluemap.enabled", true);
+        DEFAULTS.put("integrations.bluemap.marker-set-id", "gpexpansion.claims");
+        DEFAULTS.put("integrations.bluemap.layer-name", "GriefPrevention");
+        DEFAULTS.put("integrations.bluemap.update-interval-seconds", 300);
+        DEFAULTS.put("integrations.bluemap.flat-view-only", true);
+        DEFAULTS.put("integrations.bluemap.render-height", 63);
+        DEFAULTS.put("integrations.bluemap.depth-test", false);
+        DEFAULTS.put("integrations.bluemap.show-trust-list", true);
+        DEFAULTS.put("integrations.bluemap.colors.line-width", 2);
+        DEFAULTS.put("integrations.bluemap.colors.fill-opacity", 0.0);
     }
     
     public Config(JavaPlugin plugin) {
@@ -1184,6 +1213,22 @@ public class Config {
             return config.getBoolean("integrations.vault.ignore-vault-missing", true);
         }
         return config.getBoolean("integrations.vault.ignore-missing", true);
+    }
+
+    public boolean isDynmapIntegrationEnabled() {
+        return config.getBoolean("integrations.dynmap.enabled", true);
+    }
+
+    public boolean isBlueMapIntegrationEnabled() {
+        return config.getBoolean("integrations.bluemap.enabled", true);
+    }
+
+    public int getDynmapUpdateIntervalSeconds() {
+        return Math.max(15, config.getInt("integrations.dynmap.update-interval-seconds", 300));
+    }
+
+    public int getBlueMapUpdateIntervalSeconds() {
+        return Math.max(15, config.getInt("integrations.bluemap.update-interval-seconds", 300));
     }
 
     private String normalizedPermission(String path, String fallback) {

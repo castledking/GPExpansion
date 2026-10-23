@@ -39,6 +39,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class ClaimFlyListener implements Listener {
 
+    private static final String UNLIMITED_FLIGHT_PERMISSION = "griefprevention.claimfly.unlimited";
+
     private final GPExpansionPlugin plugin;
     private final GPBridge gpBridge;
     private final ClaimFlyManager claimFlyManager;
@@ -48,8 +50,10 @@ public class ClaimFlyListener implements Listener {
     // legitimately granted. We must only undo what we ourselves enabled.
     private final Set<UUID> claimFlightGranted = ConcurrentHashMap.newKeySet();
 
-    // Tracks players who had flight enabled by external means (Essentials /fly, etc.) before claimfly.
-    // We preserve their flight when they exit claims instead of disabling it.
+    // Tracks players whose current allow-flight state was enabled by external means (Essentials
+    // /fly, a gamemode permission, etc.) before we touched them. While this is set the flight is
+    // not ours: we must not revoke it when they leave the claim, and we must not bill it to the
+    // flight bank either. Settled by reconcileFlightForClaim once the external grant goes away.
     private final Set<UUID> externalFlightEnabled = ConcurrentHashMap.newKeySet();
 
     // Track last claim for each player (replaces PlayerData.lastClaim access)
@@ -66,11 +70,17 @@ public class ClaimFlyListener implements Listener {
     // /fly from another plugin and never revoke it.
     private final NamespacedKey claimFlightGrantKey;
 
+    // Persistent copy of externalFlightEnabled, for the same relog reason: after a relog the
+    // flight is still on but the in-memory marker is gone, so we would revoke flight that
+    // belongs to another plugin and would start charging them for it.
+    private final NamespacedKey externalFlightKey;
+
     public ClaimFlyListener(GPExpansionPlugin plugin) {
         this.plugin = plugin;
         this.gpBridge = new GPBridge();
         this.claimFlyManager = plugin.getClaimFlyManager();
         this.claimFlightGrantKey = new NamespacedKey(plugin, "claimfly_granted");
+        this.externalFlightKey = new NamespacedKey(plugin, "claimfly_external");
     }
 
     /**
@@ -89,6 +99,7 @@ public class ClaimFlyListener implements Listener {
         // Must run before anything reconciles, including the disabled-feature path, so a grant
         // from the previous session is recognised as ours and can be revoked.
         restoreClaimFlightGrant(player);
+        restoreExternalFlight(player);
 
         if (!isFeatureEnabled()) {
             // Still start the reconciler; it idles cheaply and picks the feature back up
@@ -223,6 +234,14 @@ public class ClaimFlyListener implements Listener {
 
         UUID playerID = player.getUniqueId();
 
+        // An external grant can run out while we are inside the claim (Essentials /fly timer,
+        // a gamemode permission removed by another plugin). Forget it now: otherwise the
+        // re-grant below resurrects flight nobody is paying for, and the stale marker then
+        // makes us leave that flight standing outside the claim forever.
+        if (!player.getAllowFlight()) {
+            clearExternalFlight(player);
+        }
+
         boolean canUseClaimFlight = claimFlyManager != null && claimFlyManager.canUseClaimFlight(player);
         boolean hasClaimAccess = claim != null && hasClaimFlightAccess(claim, playerID);
         boolean mayContinueAfterLeaving = claim == null
@@ -231,11 +250,13 @@ public class ClaimFlyListener implements Listener {
         boolean shouldGrantClaimFlight = canUseClaimFlight && (hasClaimAccess || mayContinueAfterLeaving);
 
         if (shouldGrantClaimFlight) {
-            // Check if player already has flight from external sources (Essentials /fly, etc.)
+            // Already flying when we got here means another plugin owns this flight. Only the
+            // first transition marks it, so a grant of ours that another plugin later reinstates
+            // is still treated as ours.
             if (player.getAllowFlight() && !claimFlightGranted.contains(playerID)) {
-                externalFlightEnabled.add(playerID);
+                markExternalFlight(player);
             }
-            
+
             if (!player.getAllowFlight()) {
                 player.setAllowFlight(true);
             }
@@ -290,8 +311,10 @@ public class ClaimFlyListener implements Listener {
                 playerLastClaim.remove(playerID);
             }
             if (claimFlightGranted.contains(playerID)
+                    && !externalFlightEnabled.contains(playerID)
                     && claimFlyManager != null
-                    && claimFlyManager.shouldConsumeFlightTime(p)) {
+                    && claimFlyManager.shouldConsumeFlightTime(p)
+                    && !isUnlimitedInsideAccessibleClaim(p, currentClaim)) {
                 claimFlyManager.consume(playerID, 40L * 50L);
             }
             reconcileFlightForClaim(p, currentClaim);
@@ -329,6 +352,18 @@ public class ClaimFlyListener implements Listener {
     }
 
     /**
+     * Holders of griefprevention.claimfly.unlimited keep their flight bank while flying inside a
+     * claim they own or are trusted in. Reuses the access rules that grant the flight in the first
+     * place, so the trust levels honoured here are the configured ones. Wilderness is never
+     * covered: with claim-flight.disable-on-leaving-claim turned off the flight outlives the claim
+     * and should still cost time.
+     */
+    private boolean isUnlimitedInsideAccessibleClaim(Player player, Object claim) {
+        if (claim == null || !player.hasPermission(UNLIMITED_FLIGHT_PERMISSION)) return false;
+        return hasClaimFlightAccess(claim, player.getUniqueId());
+    }
+
+    /**
      * The player's writable data container. Player inherits getPersistentDataContainer() twice:
      * writable through Entity, and as a read-only view through OfflinePlayer. The compilers pick
      * the writable one, but an editor's live analysis can resolve the view and flag every write,
@@ -341,6 +376,27 @@ public class ClaimFlyListener implements Listener {
     public void markClaimFlightGranted(Player player) {
         claimFlightGranted.add(player.getUniqueId());
         grantData(player).set(claimFlightGrantKey, PersistentDataType.BYTE, (byte) 1);
+    }
+
+    private void markExternalFlight(Player player) {
+        externalFlightEnabled.add(player.getUniqueId());
+        grantData(player).set(externalFlightKey, PersistentDataType.BYTE, (byte) 1);
+    }
+
+    private void clearExternalFlight(Player player) {
+        externalFlightEnabled.remove(player.getUniqueId());
+        grantData(player).remove(externalFlightKey);
+    }
+
+    /** Re-adopt an external grant recorded in a previous session, for the same relog reason as the claim-flight grant. */
+    private void restoreExternalFlight(Player player) {
+        if (!grantData(player).has(externalFlightKey, PersistentDataType.BYTE)) return;
+
+        if (player.getAllowFlight()) {
+            externalFlightEnabled.add(player.getUniqueId());
+        } else {
+            grantData(player).remove(externalFlightKey);
+        }
     }
 
     /**
@@ -363,9 +419,11 @@ public class ClaimFlyListener implements Listener {
         UUID playerID = player.getUniqueId();
         boolean wasGranted = claimFlightGranted.remove(playerID);
         grantData(player).remove(claimFlightGrantKey);
+        boolean external = externalFlightEnabled.contains(playerID);
+        clearExternalFlight(player);
         if (!wasGranted || !player.getAllowFlight()) return;
 
-        if (externalFlightEnabled.remove(playerID)) {
+        if (external) {
             return;
         }
 

@@ -385,6 +385,10 @@ public final class ClaimWaypointManager {
 
     private @Nullable Color resolveColor(@Nullable String colorName) {
         if (colorName == null) return null;
+        if (colorName.startsWith("#")) {
+            Integer rgb = codes.castled.gpexpansion.integration.map.MapColors.parseRgb(colorName);
+            return rgb == null ? null : Color.fromRGB(rgb);
+        }
         NamedTextColor named = NamedTextColor.NAMES.value(colorName.toLowerCase(Locale.ROOT));
         return named == null ? null : Color.fromRGB(named.value());
     }

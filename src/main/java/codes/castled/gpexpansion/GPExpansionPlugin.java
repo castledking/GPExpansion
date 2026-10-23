@@ -63,6 +63,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
     private ClaimFlyManager claimFlyManager;
     private codes.castled.gpexpansion.waypoint.ClaimWaypointManager claimWaypointManager;
     private codes.castled.gpexpansion.waypoint.WaypointModeStore waypointModeStore;
+    private codes.castled.gpexpansion.integration.map.ClaimMapIntegrationsService claimMapIntegrationsService;
 
     public codes.castled.gpexpansion.waypoint.WaypointModeStore getWaypointModeStore() {
         return waypointModeStore;
@@ -234,7 +235,16 @@ public final class GPExpansionPlugin extends JavaPlugin {
             debug("- Registered ClaimTeleportListener for teleport movement detection");
         }
         registerAccrualListener();
-        
+
+        // Dynmap / BlueMap claim boundary markers (optional, late-hooking when the map
+        // plugin enables after us).
+        if (configManager.isDynmapIntegrationEnabled()
+                || configManager.isBlueMapIntegrationEnabled()) {
+            claimMapIntegrationsService = new codes.castled.gpexpansion.integration.map.ClaimMapIntegrationsService(this);
+            claimMapIntegrationsService.start();
+            debug("- Started map claim boundary integration (Dynmap/BlueMap)");
+        }
+
         displayEnabledHeader();
         
         debug(() -> "GPExpansion enabled");
@@ -792,6 +802,10 @@ public final class GPExpansionPlugin extends JavaPlugin {
         if (claimFlyManager != null) {
             claimFlyManager.save();
         }
+        if (claimMapIntegrationsService != null) {
+            claimMapIntegrationsService.stop();
+            claimMapIntegrationsService = null;
+        }
         getLogger().info(() -> "GPExpansion disabled");
     }
 
@@ -836,6 +850,17 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Reload sign limit config and clear cached limits
         if (signLimitManager != null) {
             signLimitManager.reloadConfig();
+        }
+
+        // Restart map integrations so config toggles (and enable/disable) take effect.
+        if (claimMapIntegrationsService != null) {
+            claimMapIntegrationsService.stop();
+            claimMapIntegrationsService = null;
+        }
+        if (configManager.isDynmapIntegrationEnabled()
+                || configManager.isBlueMapIntegrationEnabled()) {
+            claimMapIntegrationsService = new codes.castled.gpexpansion.integration.map.ClaimMapIntegrationsService(this);
+            claimMapIntegrationsService.start();
         }
     }
 

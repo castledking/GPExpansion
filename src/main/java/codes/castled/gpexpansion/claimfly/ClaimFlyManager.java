@@ -13,6 +13,9 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ClaimFlyManager {
+    /** Lifts both the empty-bank gate and the per-tick deduction, inside claims the player can fly in. */
+    public static final String UNLIMITED_PERMISSION = "griefprevention.claimfly.unlimited";
+
     private final GPExpansionPlugin plugin;
     private final File file;
     private FileConfiguration data;
@@ -97,8 +100,15 @@ public class ClaimFlyManager {
         return plugin.getConfigManager().isClaimFlightEnabled();
     }
 
-    public boolean hasFlightAccess(UUID uuid) {
-        return isPassiveClaimFlightEnabled() || hasTime(uuid);
+    /**
+     * Whether the player may take off at all. The unlimited node lifts the bank requirement,
+     * so a holder is never stopped by an empty flight time. Needs a live player because
+     * OfflinePlayer cannot answer permission checks on this API.
+     */
+    public boolean hasFlightAccess(Player player) {
+        if (isPassiveClaimFlightEnabled()) return true;
+        if (player.hasPermission(UNLIMITED_PERMISSION)) return true;
+        return hasTime(player.getUniqueId());
     }
 
     public boolean isEnabled(UUID uuid) {
@@ -110,7 +120,7 @@ public class ClaimFlyManager {
         return isClaimFlightEnabled()
             && player.hasPermission("griefprevention.claimfly.use")
             && isEnabled(uuid)
-            && hasFlightAccess(uuid);
+            && hasFlightAccess(player);
     }
 
     public boolean toggle(UUID uuid) {

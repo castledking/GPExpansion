@@ -1040,10 +1040,12 @@ public class ClaimDataStore {
     }
 
     /**
-     * The claim's waypoint colour as a lowercase Adventure colour name, or empty for the default.
+     * The claim's waypoint colour as a lowercase Adventure colour name or {@code #rrggbb}
+     * hex, or empty for the default.
      *
-     * <p>Stored by name rather than RGB so the value stays readable in {@code claimdata.yml} and
-     * matches what the player typed in {@code /claim color}.
+     * <p>Stored by name/hex rather than RGB so the value stays readable in
+     * {@code claimdata.yml} and matches what the player typed in {@code /claim color}.
+     * The same value drives both the locator waypoint and the claim map colour.
      */
     public Optional<String> getWaypointColor(String claimId) {
         ClaimData data = claimData.get(claimId);
@@ -1065,15 +1067,21 @@ public class ClaimDataStore {
     }
 
     /**
-     * Accepts a colour name in any case and returns the canonical lowercase form, or null if it is
-     * not one of Minecraft's 16 named colours. Guards against a hand-edited YAML producing a value
-     * the waypoint layer cannot resolve.
+     * Accepts a colour name in any case or a hex value ({@code #RGB}/{@code #RRGGBB}/
+     * {@code #RRGGBBAA}) and returns the canonical lowercase form - an Adventure name or
+     * {@code #rrggbb} - or null for anything the waypoint layer cannot resolve. Guards
+     * against a hand-edited YAML producing a value that would otherwise break rendering.
      */
     private String normalizeWaypointColor(String color) {
         if (color == null) return null;
+        String s = color.trim();
+        if (s.startsWith("#")) {
+            Integer rgb = codes.castled.gpexpansion.integration.map.MapColors.parseRgb(s);
+            return rgb == null ? null : String.format("#%06x", rgb);
+        }
         return net.kyori.adventure.text.format.NamedTextColor.NAMES.value(
-            color.trim().toLowerCase(java.util.Locale.ROOT)) != null
-                ? color.trim().toLowerCase(java.util.Locale.ROOT)
+            s.toLowerCase(java.util.Locale.ROOT)) != null
+                ? s.toLowerCase(java.util.Locale.ROOT)
                 : null;
     }
 

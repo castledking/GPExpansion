@@ -1316,6 +1316,17 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     static final List<String> WAYPOINT_COLOR_NAMES = List.copyOf(
             net.kyori.adventure.text.format.NamedTextColor.NAMES.keys());
 
+    /**
+     * A colour the player may set: one of the 16 named colours, or a hex value
+     * ({@code #RGB}/{@code #RRGGBB}/{@code #RRGGBBAA}).
+     */
+    static boolean isValidClaimColor(String s) {
+        if (s.startsWith("#")) {
+            return codes.castled.gpexpansion.integration.map.MapColors.parseRgb(s) != null;
+        }
+        return WAYPOINT_COLOR_NAMES.contains(s);
+    }
+
     // /claim color <color|reset> [id] - Set the claim's locator-bar waypoint colour
     private boolean handleColor(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
@@ -1335,7 +1346,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
         String requested = args[0].trim().toLowerCase(Locale.ROOT);
         boolean clearing = requested.equals("reset") || requested.equals("none") || requested.equals("default");
-        if (!clearing && !WAYPOINT_COLOR_NAMES.contains(requested)) {
+        if (!clearing && !isValidClaimColor(requested)) {
             sender.sendMessage(plugin.getMessages().get("claim.color-invalid",
                 "{colors}", String.join(", ", WAYPOINT_COLOR_NAMES)));
             return true;
@@ -1364,7 +1375,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
         String display = clearing ? "&7default" : "&f" + requested;
         sender.sendMessage(parseColorCodes(
-            String.format("&aClaim %s waypoint color set to %s", ctx.claimId, display)));
+            String.format("&aClaim %s colour set to %s&7 (locator waypoint and claim map)", ctx.claimId, display)));
         return true;
     }
 

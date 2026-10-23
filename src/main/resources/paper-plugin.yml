@@ -37,6 +37,14 @@ dependencies:
       load: BEFORE
       required: false
       join-classpath: true
+    Dynmap:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    BlueMap:
+      load: BEFORE
+      required: false
+      join-classpath: true
     # Nexo omitted from load order to avoid circular dependency:
     # GriefPrevention -> GPExpansion -> Nexo -> Vulcan -> GSit -> GriefPrevention
     # Nexo is still used at runtime (glyph parsing in GUIs) via reflection when present.
@@ -545,6 +553,10 @@ permissions:
 
   griefprevention.claimfly.use:
     description: Grants flight when inside claims the player has access to
+    default: op
+
+  griefprevention.claimfly.unlimited:
+    description: Claim flight needs no flight time and deducts none while inside a claim the player can fly in
     default: op
 
   # griefprevention.transferclaim is registered by GriefPrevention itself; do not redeclare here.
