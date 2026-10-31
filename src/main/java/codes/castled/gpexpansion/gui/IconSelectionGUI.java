@@ -1,5 +1,7 @@
 package codes.castled.gpexpansion.gui;
 
+import codes.castled.gpexpansion.util.Mini;
+
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -68,7 +70,7 @@ public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listen
     @Override
     public Inventory createInventory() {
         // This method is required but we won't use it since we create the hopper directly in open()
-        return Bukkit.createInventory(null, InventoryType.CHEST, Component.text("Icon Selection"));
+        return Mini.createInventory(null, InventoryType.CHEST, Component.text("Icon Selection"));
     }
 
     @Override
@@ -80,7 +82,7 @@ public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listen
     public void open() {
         // Create a hopper inventory for icon selection
         String title = getString("title", "&6&lSelect Icon - Place item in center");
-        inventory = plugin.getServer().createInventory(this, InventoryType.HOPPER, colorize(title));
+        inventory = Mini.createInventory(this, InventoryType.HOPPER, colorize(title));
 
         // Fill with glass panes, leaving center empty
         ItemStack filler = createFiller();

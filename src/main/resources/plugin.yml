@@ -1,0 +1,739 @@
+name: GPExpansion
+version: ${project.version}
+main: codes.castled.gpexpansion.GPExpansionPlugin
+description: GriefPrevention Expansion
+api-version: '1.20'
+author: castledking
+website: https://castled.codes
+folia-supported: true
+
+# GPExpansion loads before GriefPrevention so /claim takeover and GP3D addon wiring
+# follow the exact same load order on Spigot as paper-plugin.yml (load: AFTER).
+loadbefore:
+  - GriefPrevention
+
+softdepend:
+  - Vault
+  - VaultUnlocked
+  - LuckPerms
+  - PlaceholderAPI
+  - ItemsAdder
+  - Oraxen
+  - Dynmap
+  - BlueMap
+
+# Commands are registered dynamically at runtime via CommandMap + PaperCommandWrapper
+# in GPExpansionPlugin#registerPluginCommands() (matching Paper's runtime command setup).
+
+permissions:
+  gpx.player:
+    description: Base permission for GPExpansion player commands (children permissions are dynamically managed)
+    default: true
+
+  # griefprevention.claims is registered by GriefPrevention itself; do not redeclare here.
+
+  griefprevention.claimslist.teleport:
+    description: Allows teleporting to claims directly from the list
+    default: op
+  
+  griefprevention.claimslistother.teleport:
+    description: Allows teleporting to other claims directly from the list
+    default: op
+
+  griefprevention.claim.name:
+    description: Allows using /claim name
+    default: op
+
+  griefprevention.claim.name.anywhere:
+    description: Allows using /claim name outside own claims
+    default: op
+
+  griefprevention.claim.name.other:
+    description: Allows using /claim name on other claims
+    default: op
+
+  griefprevention.claim.color:
+    description: Allows using /claim color to set the claim's locator-bar waypoint color
+    default: op
+
+  griefprevention.claim.waypoint.create.1:
+    description: Allows publishing 1 claim waypoint to all players (shift-click the global toggle)
+    default: false
+
+  griefprevention.claim.waypoint.create.5:
+    description: Allows publishing up to 5 claim waypoints to all players
+    default: false
+
+  griefprevention.claim.waypoint.create.*:
+    description: Allows publishing unlimited claim waypoints to all players
+    default: op
+
+  griefprevention.claim.waypoint.admin:
+    description: Shows admin claims on the locator bar (requires claim-waypoints.include-admin-claims)
+    default: op
+
+  griefprevention.claim.bar:
+    description: Allows choosing which claims appear on your vanilla locator bar (/claim bar or /claimbar)
+    default: true
+
+  griefprevention.claim.color.anywhere:
+    description: Allows using /claim color outside own claims
+    default: op
+
+  griefprevention.claim.color.other:
+    description: Allows using /claim color on other claims
+    default: op
+
+  griefprevention.claim.name.color.*:
+    description: Allows specific colors via & codes and MiniMessage tags
+    default: op
+
+  griefprevention.claim.name.format.*:
+    description: Allows specific formats via & codes and MiniMessage tags
+    default: op
+
+  griefprevention.claim.name.color.gradient:
+    description: Allows gradient/rainbow MiniMessage tags
+    default: op
+
+  # === CLAIM DESCRIPTION PERMISSIONS ===
+  griefprevention.claim.description:
+    description: Allows using /claim desc
+    default: op
+
+  griefprevention.claim.description.anywhere:
+    description: Allows using /claim desc outside own claims
+    default: op
+
+  griefprevention.claim.description.other:
+    description: Allows using /claim desc on other claims
+    default: op
+
+  griefprevention.claim.icon:
+    description: Allows using /claim icon
+    default: op
+
+  griefprevention.claim.icon.other:
+    description: Allows using /claim icon on other claims
+    default: op
+
+  griefprevention.claim.cancelrent:
+    description: Allows renters to cancel their active rental
+    default: true
+
+  griefprevention.claim.cancelrent.anywhere:
+    description: Allows cancelling your active rental by claim ID
+    default: true
+
+  griefprevention.claim.cancelrent.other:
+    description: Allows cancelling another player's active rental
+    default: op
+
+  # === CLAIM BAN PERMISSIONS ===
+  griefprevention.claim.ban:
+    description: Allows using /claim ban
+    default: op
+
+  griefprevention.claim.ban.anywhere:
+    description: Allows using /claim ban outside own claims
+    default: op
+
+  griefprevention.claim.ban.other:
+    description: Allows using /claim ban on other claims
+    default: op
+
+  griefprevention.claim.ban.public:
+    description: Allows using /claim ban public and /claim unban public
+    default: op
+
+  griefprevention.claim.ban.bypass:
+    description: Allows bypassing claim bans entirely (entry, teleport, interact)
+    default: op
+
+  griefprevention.claim.unban:
+    description: Allows using /claim unban
+    default: true
+
+  griefprevention.claim.unban.anywhere:
+    description: Allows using /claim unban outside own claims
+    default: true
+
+  griefprevention.claim.unban.other:
+    description: Allows using /claim unban on other claims
+    default: op
+
+  griefprevention.claim.banlist:
+    description: Allows using /claim banlist
+    default: op
+
+  griefprevention.claim.banlist.anywhere:
+    description: Allows using /claim banlist outside own claims
+    default: op
+
+  griefprevention.claim.banlist.other:
+    description: Allows using /claim banlist on other claims
+    default: op
+
+  griefprevention.trust.anywhere:
+    description: Allows using trust commands with an explicit claim ID
+    default: true
+
+  griefprevention.abandonclaim.anywhere:
+    description: Allows abandoning your claims by ID from anywhere
+    default: true
+
+  griefprevention.abandontoplevelclaim.anywhere:
+    description: Allows abandoning your top-level claims (and subdivisions) by ID from anywhere
+    default: true
+
+  # === RENT SIGN PERMISSIONS ===
+  griefprevention.sign.create.rent:
+    description: Allows creating rent signs
+    default: op
+
+  griefprevention.sign.use.rent:
+    description: Allows using rent signs
+    default: op
+
+  griefprevention.sign.create.rent.anywhere:
+    description: Allows creating rent signs outside own claims
+    default: op
+
+  griefprevention.sign.rent.money:
+    description: Allows using money economy for rent signs
+    default: op
+
+  griefprevention.sign.rent.exp:
+    description: Allows using exp economy for rent signs
+    default: op
+
+  griefprevention.sign.rent.claimblocks:
+    description: Allows using claimblocks economy for rent signs
+    default: op
+
+  griefprevention.sign.rent.item:
+    description: Allows using item economy for rent signs
+    default: op
+
+  griefprevention.sign.rent.limit.bypass:
+    description: Bypasses rent sign limits
+    default: op
+
+  # === SELL/BUY SIGN PERMISSIONS ===
+  griefprevention.sign.create.sell:
+    description: Allows creating sell/buy signs
+    default: op
+
+  griefprevention.sign.use.sell:
+    description: Allows using sell/buy signs
+    default: op
+
+  griefprevention.sign.create.sell.anywhere:
+    description: Allows creating sell signs outside own claims
+    default: op
+
+  griefprevention.sign.sell.money:
+    description: Allows using money economy for sell signs
+    default: op
+
+  griefprevention.sign.sell.exp:
+    description: Allows using exp economy for sell signs
+    default: op
+
+  griefprevention.sign.sell.claimblocks:
+    description: Allows using claimblocks economy for sell signs
+    default: op
+
+  griefprevention.sign.sell.item:
+    description: Allows using item economy for sell signs
+    default: op
+
+  griefprevention.sign.sell.limit.bypass:
+    description: Bypasses sell sign limits
+    default: op
+
+  griefprevention.sign.create.buy:
+    description: Allows creating buy signs (alias for sell)
+    default: op
+
+  griefprevention.sign.create.buy.anywhere:
+    description: Allows placing buy signs outside their target claim
+    default: op
+
+  griefprevention.sign.use.buy:
+    description: Allows using buy signs (alias for sell)
+    default: op
+
+  griefprevention.sign.create.buy.1:
+    description: Allows creating 1 buy sign
+    default: false
+
+  griefprevention.sign.create.buy.5:
+    description: Allows creating 5 buy signs
+    default: false
+
+  griefprevention.sign.create.buy.10:
+    description: Allows creating 10 buy signs
+    default: false
+
+  griefprevention.sign.create.buy.25:
+    description: Allows creating 25 buy signs
+    default: false
+
+  griefprevention.sign.create.buy.50:
+    description: Allows creating 50 buy signs
+    default: false
+
+  griefprevention.sign.create.buy.100:
+    description: Allows creating 100 buy signs
+    default: false
+
+  griefprevention.sign.create.rent.1:
+    description: Allows creating 1 rent sign
+    default: false
+
+  griefprevention.sign.create.rent.5:
+    description: Allows creating 5 rent signs
+    default: false
+
+  griefprevention.sign.create.rent.10:
+    description: Allows creating 10 rent signs
+    default: false
+
+  griefprevention.sign.create.rent.25:
+    description: Allows creating 25 rent signs
+    default: false
+
+  griefprevention.sign.create.rent.50:
+    description: Allows creating 50 rent signs
+    default: false
+
+  griefprevention.sign.create.rent.100:
+    description: Allows creating 100 rent signs
+    default: false
+
+  # === MAILBOX SIGN PERMISSIONS ===
+  griefprevention.sign.create.mailbox:
+    description: Allows creating mailbox signs
+    default: op
+
+  griefprevention.sign.create.mailbox.anywhere:
+    description: Allows placing mailbox signs outside the managed claim
+    default: op
+
+  griefprevention.sign.use.mailbox:
+    description: Allows using mailbox signs
+    default: op
+
+  griefprevention.sign.mailbox.money:
+    description: Allows using money economy for mailbox signs
+    default: op
+
+  griefprevention.sign.mailbox.exp:
+    description: Allows using exp economy for mailbox signs
+    default: op
+
+  griefprevention.sign.mailbox.claimblocks:
+    description: Allows using claimblocks economy for mailbox signs
+    default: op
+
+  griefprevention.sign.mailbox.item:
+    description: Allows using item economy for mailbox signs
+    default: op
+
+  griefprevention.sign.mailbox.limit.bypass:
+    description: Bypasses mailbox sign limits
+    default: op
+
+  griefprevention.sign.create.global:
+    description: Allows creating [global] claim signs
+    default: true
+
+  griefprevention.sign.use.global:
+    description: Allows using [global] claim signs
+    default: true
+
+  griefprevention.sign.create.mailbox.1:
+    description: Allows creating 1 mailbox sign
+    default: false
+
+  griefprevention.sign.create.mailbox.5:
+    description: Allows creating 5 mailbox signs
+    default: false
+
+  griefprevention.sign.create.mailbox.10:
+    description: Allows creating 10 mailbox signs
+    default: false
+
+  griefprevention.sign.create.mailbox.25:
+    description: Allows creating 25 mailbox signs
+    default: false
+
+  griefprevention.sign.create.mailbox.50:
+    description: Allows creating 50 mailbox signs
+    default: false
+
+  griefprevention.sign.create.mailbox.100:
+    description: Allows creating 100 mailbox signs
+    default: false
+
+  # === SELF MAILBOX PERMISSIONS ===
+  griefprevention.sign.create.self-mailbox:
+    description: Allows creating instant self mailboxes (wall sign on container)
+    default: op
+
+  griefprevention.sign.create.self-mailbox.1:
+    description: Allows creating 1 self mailbox per claim
+    default: false
+
+  griefprevention.sign.create.self-mailbox.2:
+    description: Allows creating 2 self mailboxes per claim
+    default: false
+
+  griefprevention.sign.create.self-mailbox.5:
+    description: Allows creating 5 self mailboxes per claim
+    default: false
+
+  griefprevention.sign.create.self-mailbox.10:
+    description: Allows creating 10 self mailboxes per claim
+    default: false
+
+  griefprevention.sign.admin:
+    description: Allows admin sign management
+    default: op
+
+  # === SIGN MOVE PERMISSIONS ===
+  griefprevention.sign.move.rent:
+    description: Allows claim owners and active tenants to move their rent signs
+    default: true
+
+  griefprevention.sign.move.rent.other:
+    description: Allows moving rent signs controlled by somebody else
+    default: false
+
+  griefprevention.sign.move.sell:
+    description: Allows claim owners to move their sell signs
+    default: true
+
+  griefprevention.sign.move.sell.other:
+    description: Allows moving sell signs controlled by somebody else
+    default: false
+
+  griefprevention.sign.move.mailbox:
+    description: Allows mailbox sellers and buyers to move their mailbox signs
+    default: true
+
+  griefprevention.sign.move.mailbox.other:
+    description: Allows moving mailbox signs controlled by somebody else
+    default: false
+
+  griefprevention.sign.move.global:
+    description: Allows global sign creators to move their signs
+    default: true
+
+  griefprevention.sign.move.global.other:
+    description: Allows moving global claim signs controlled by somebody else
+    default: false
+
+  griefprevention.sign.move.self-mailbox:
+    description: Allows creators to move their unshared self-mailbox signs
+    default: true
+
+  griefprevention.sign.move.self-mailbox.other:
+    description: Allows moving self-mailbox signs controlled by somebody else
+    default: false
+
+  griefprevention.admin:
+    description: Allows access to GPExpansion admin commands
+    default: op
+
+  gpx.admin:
+    description: Base permission for GPExpansion admin commands (children permissions are dynamically managed)
+    default: op
+
+  griefprevention.claimfly.use:
+    description: Grants flight when inside claims the player has access to
+    default: op
+
+  griefprevention.claimfly.unlimited:
+    description: Claim flight needs no flight time and deducts none while inside a claim the player can fly in
+    default: op
+
+  # griefprevention.transferclaim is registered by GriefPrevention itself; do not redeclare here.
+
+  # Claim info permissions
+  griefprevention.claiminfo:
+    description: Allows using /claiminfo command
+    default: op
+
+  griefprevention.claiminfo.other:
+    description: Allows viewing info for claims you don't own
+    default: op
+
+  # === CLAIM TELEPORT PERMISSIONS ===
+  griefprevention.claim.teleport:
+    description: Allows teleporting to claims
+    default: op
+
+  griefprevention.claim.teleport.other:
+    description: Allows teleporting other players to claims
+    default: op
+
+  griefprevention.claim.teleport.bypass.cooldown:
+    description: Bypasses the claim teleport cooldown
+    default: op
+
+  griefprevention.claim.teleport.bypass.delay:
+    description: Bypasses the claim teleport delay
+    default: op
+
+  griefprevention.claim.setspawn:
+    description: Allows setting teleport spawn point for your claims
+    default: op
+
+  griefprevention.claim.setspawn.other:
+    description: Allows setting spawn points for other players' claims
+    default: op
+
+  griefprevention.claim.gui.setclaimflag.own:
+    description: Allows opening claim flags GUI for own claims (legacy; prefer griefprevention.claim.gui.flags)
+    default: op
+
+  griefprevention.claim.gui.setclaimflag.anywhere:
+    description: Allows opening claim flags GUI for other claims (legacy; prefer griefprevention.claim.gui.flags.anywhere)
+    default: op
+
+  griefprevention.claim.gui.flags:
+    description: Allows opening the claim flags GUI (e.g. via claim menu or /claim flags [id])
+    default: op
+
+  griefprevention.claim.gui.flags.anywhere:
+    description: Use claim ID with /claim flags to open flags for your own claims when not standing in them
+    default: op
+
+  griefprevention.claim.gui.flags.other:
+    description: Allows admins to open the flags GUI for other players' claims
+    default: op
+
+  griefprevention.claim.gui.options:
+    description: Allows opening the claim options GUI (e.g. via claim menu or /claim options [id])
+    default: op
+
+  griefprevention.claim.gui.options.anywhere:
+    description: Use claim ID with /claim options to open options for your own claims when not standing in them
+    default: op
+
+  griefprevention.claim.gui.options.other:
+    description: Allows admins to open the options GUI for other players' claims
+    default: op
+
+  griefprevention.claim.gui.globallist:
+    description: Allows viewing the global public claim list GUI
+    default: op
+
+  griefprevention.claim.gui.return:
+    description: Allows using /claim ! to return to last viewed GUI
+    default: op
+
+  griefprevention.claim.toggleglobal:
+    description: Allows toggling public listing for your own claims
+    default: op
+
+  griefprevention.claim.toggleglobal.anywhere:
+    description: Allows using /claim global or /globalclaim with claim ID when not standing in the claim
+    default: op
+
+  griefprevention.claim.toggleglobal.other:
+    description: Allows toggling public listing for claims you don't own
+    default: op
+
+  griefprevention.approveclaim:
+    description: Allows approving pending global claim listings by ID
+    default: op
+
+  griefprevention.claim.global.limit.bypass:
+    description: Bypasses global claim listing limits
+    default: op
+
+  griefprevention.evict:
+    description: Allows evicting claim renters
+    default: op
+
+  griefprevention.evict.other:
+    description: Allows evicting renters from other claims
+    default: op
+
+  griefprevention.eviction.bypass:
+    description: Allows bypassing eviction protections
+    default: op
+
+  griefprevention.restoresnapshot:
+    description: Allows creating snapshots for rent claims; claims are restored from the latest snapshot on eviction
+    default: op
+
+  # === GLOBAL CLAIM LIMIT PERMISSIONS ===
+  griefprevention.claim.toggleglobal.*:
+    description: Allows unlimited global claims
+    default: op
+
+  griefprevention.claim.toggleglobal.1:
+    description: Allows up to 1 global claim (default)
+    default: false
+
+  griefprevention.claim.toggleglobal.5:
+    description: Allows up to 5 global claims
+    default: false
+
+  griefprevention.claim.toggleglobal.10:
+    description: Allows up to 10 global claims
+    default: false
+
+  griefprevention.claim.toggleglobal.25:
+    description: Allows up to 25 global claims
+    default: false
+
+  griefprevention.claim.toggleglobal.50:
+    description: Allows up to 50 global claims
+    default: false
+
+  griefprevention.claim.toggleglobal.100:
+    description: Allows up to 100 global claims
+    default: false
+
+  # === CLAIM COLOR/FORMAT PERMISSIONS (for /claim name and /claim desc) ===
+  griefprevention.claim.color.*:
+    description: Allows using all color codes in claim names and descriptions
+    default: op
+
+  griefprevention.claim.color.black:
+    description: Allows using &0 (black) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.dark_blue:
+    description: Allows using &1 (dark blue) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.dark_green:
+    description: Allows using &2 (dark green) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.dark_aqua:
+    description: Allows using &3 (dark aqua) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.dark_red:
+    description: Allows using &4 (dark red) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.dark_purple:
+    description: Allows using &5 (dark purple) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.gold:
+    description: Allows using &6 (gold) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.gray:
+    description: Allows using &7 (gray) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.dark_gray:
+    description: Allows using &8 (dark gray) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.blue:
+    description: Allows using &9 (blue) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.green:
+    description: Allows using &a (green) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.aqua:
+    description: Allows using &b (aqua) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.red:
+    description: Allows using &c (red) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.light_purple:
+    description: Allows using &d (light purple) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.yellow:
+    description: Allows using &e (yellow) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.color.white:
+    description: Allows using &f (white) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.format.*:
+    description: Allows using all formatting codes in claim names and descriptions
+    default: op
+
+  griefprevention.claim.format.bold:
+    description: Allows using &l (bold) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.format.italic:
+    description: Allows using &o (italic) in claim names/descriptions
+    default: op
+
+  griefprevention.claim.format.underline:
+    description: Allows using &n (underline) in claim names/descriptions
+    default: false
+
+  griefprevention.claim.format.strikethrough:
+    description: Allows using &m (strikethrough) in claim names/descriptions
+    default: false
+
+  griefprevention.claim.format.obfuscated:
+    description: Allows using &k (obfuscated/magic) in claim names/descriptions
+    default: false
+
+  griefprevention.claim.format.reset:
+    description: Allows using &r (reset) in claim names/descriptions
+    default: op
+
+  # === BUILT-IN CLAIM FLAGS & CLAIM MARKET PERMISSIONS ===
+  griefprevention.claim.flags.bypass:
+    description: Bypasses built-in GPExpansion claim flag restrictions and allows editing any flag
+    default: op
+
+  griefprevention.claim.listed:
+    description: Allows viewing and managing your active claim & mailbox listings (/claim listed)
+    default: true
+
+  griefprevention.claim.market:
+    description: Allows opening the Claim Market GUI (/claim market, /claimmarket, /claimshop)
+    default: true
+
+  griefprevention.claim.market.buy:
+    description: Allows renting or purchasing claims and mailboxes directly from the Claim Market GUI
+    default: true
+
+  griefprevention.claim.market.teleport:
+    description: Allows teleporting to market listings that permit market teleportation
+    default: true
+
+  griefprevention.claim.market.edit:
+    description: Allows editing price, visibility, teleport, and notes on your own market listings
+    default: true
+
+  griefprevention.claim.market.mail.deposit:
+    description: Allows remotely depositing gift items into mailboxes from the Claim Market GUI
+    default: true
+
+  griefprevention.claim.market.mail.letter:
+    description: Allows sending written letters into mailboxes from the Claim Market GUI
+    default: true
+
+  griefprevention.claim.market.mail.open-own:
+    description: Allows remotely opening your own mailboxes from My Claims or the Claim Market GUI
+    default: true
+
+  griefprevention.claim.market.admin:
+    description: Allows managing, editing, or removing any player's market listings and mail settings
+    default: op

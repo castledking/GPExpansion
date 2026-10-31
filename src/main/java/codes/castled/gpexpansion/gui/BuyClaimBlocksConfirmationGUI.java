@@ -55,7 +55,7 @@ public class BuyClaimBlocksConfirmationGUI extends BaseGUI {
         String title = applyPlaceholders(
                 getString("title", "&6Buy {amount} blocks for {totalCost}"),
                 placeholders);
-        this.inventory = Bukkit.createInventory(null, InventoryType.HOPPER, colorize(title));
+        this.inventory = Mini.createInventory(null, InventoryType.HOPPER, colorize(title));
 
         ItemStack filler = createFiller();
         // Fill all non-button slots so layout stays clean even if user customized indices.

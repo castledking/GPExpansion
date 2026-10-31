@@ -1,5 +1,7 @@
 package codes.castled.gpexpansion.gui;
 
+import codes.castled.gpexpansion.util.Mini;
+
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
@@ -127,7 +129,7 @@ public class ClaimTrustedPlayersGUI extends BaseGUI {
         SkullMeta meta = (SkullMeta) head.getItemMeta();
         if (meta != null) {
             meta.setOwningPlayer(Bukkit.getOfflinePlayer(info.playerId));
-            meta.displayName(colorize("&e" + info.playerName));
+            Mini.setDisplayName(meta, colorize("&e" + info.playerName));
 
             List<String> lore = new ArrayList<>();
             lore.add("&7Claim ID: &f" + claimId);
@@ -153,7 +155,7 @@ public class ClaimTrustedPlayersGUI extends BaseGUI {
             for (String line : lore) {
                 loreComponents.add(colorize(line));
             }
-            meta.lore(loreComponents);
+            Mini.setLore(meta, loreComponents);
             head.setItemMeta(meta);
         }
         return head;

@@ -82,8 +82,7 @@ public abstract class BaseGUI {
         // Ensure size is valid (multiple of 9, max 54)
         size = Math.min(54, Math.max(9, (size / 9) * 9));
         
-        String titleString = Mini.inventoryTitle(Mini.deserialize(title));
-        return Bukkit.createInventory(null, size, titleString);
+        return Mini.createInventory(null, size, colorize(title));
     }
     
     /**
@@ -96,8 +95,7 @@ public abstract class BaseGUI {
         // Ensure size is valid (multiple of 9, max 54)
         size = Math.min(54, Math.max(9, (size / 9) * 9));
         
-        String titleString = Mini.inventoryTitle(Mini.deserialize(processedTitle));
-        return Bukkit.createInventory(null, size, titleString);
+        return Mini.createInventory(null, size, colorize(processedTitle));
     }
     
     /**
@@ -162,7 +160,7 @@ public abstract class BaseGUI {
             String name = section.getString("name", "");
             if (!name.isEmpty()) {
                 name = applyPlaceholders(name, placeholders);
-                meta.displayName(colorize(name));
+                Mini.setDisplayName(meta, colorize(name));
             }
             
             // Lore
@@ -173,7 +171,7 @@ public abstract class BaseGUI {
                     line = applyPlaceholders(line, placeholders);
                     lore.add(colorize(line));
                 }
-                meta.lore(lore);
+                Mini.setLore(meta, lore);
             }
             
             // Custom model data
@@ -283,18 +281,17 @@ public abstract class BaseGUI {
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             if (name != null && !name.isEmpty()) {
-                meta.displayName(colorize(name));
+                Mini.setDisplayName(meta, colorize(name));
             }
             if (lore != null && !lore.isEmpty()) {
                 List<Component> loreComponents = new ArrayList<>();
                 for (String line : lore) {
                     loreComponents.add(colorize(line));
                 }
-                meta.lore(loreComponents);
+                Mini.setLore(meta, loreComponents);
             }
             if (enchantedGlow) {
-                meta.addEnchant(Enchantment.UNBREAKING, 1, true);
-                meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
+                Mini.applyEnchantGlow(meta);
             }
             item.setItemMeta(meta);
         }
@@ -331,7 +328,7 @@ public abstract class BaseGUI {
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             if (name != null && !name.isEmpty()) {
-                meta.displayName(colorize(name));
+                Mini.setDisplayName(meta, colorize(name));
             }
             List<Component> loreComponents = new ArrayList<>();
             if (lore != null) {
@@ -339,10 +336,9 @@ public abstract class BaseGUI {
                     loreComponents.add(colorize(line));
                 }
             }
-            meta.lore(loreComponents);
+            Mini.setLore(meta, loreComponents);
             if (enchantedGlow && !meta.hasEnchants()) {
-                meta.addEnchant(Enchantment.UNBREAKING, 1, true);
-                meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
+                Mini.applyEnchantGlow(meta);
             }
             item.setItemMeta(meta);
         }
@@ -415,7 +411,7 @@ public abstract class BaseGUI {
         ItemStack filler = new ItemStack(material);
         ItemMeta meta = filler.getItemMeta();
         if (meta != null) {
-            meta.displayName(Component.empty());
+            Mini.setDisplayName(meta, Component.empty());
             filler.setItemMeta(meta);
         }
         return filler;
@@ -438,7 +434,7 @@ public abstract class BaseGUI {
         }
         
         // Convert legacy color codes and return
-        return LegacyComponentSerializer.legacyAmpersand().deserialize(text)
+        return Mini.fromLegacyAmpersand(text)
             .decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false);
     }
     

@@ -53,7 +53,12 @@ final class WaypointPacketBridge {
         Constructor<?> vec3iConstructor = null;
         Throwable error = null;
         try {
-            Class<?> craftPlayer = Class.forName("org.bukkit.craftbukkit.entity.CraftPlayer");
+            Class<?> craftPlayer;
+            try {
+                craftPlayer = Class.forName("org.bukkit.craftbukkit.entity.CraftPlayer");
+            } catch (ClassNotFoundException ignored) {
+                craftPlayer = Class.forName(org.bukkit.Bukkit.getServer().getClass().getPackageName() + ".entity.CraftPlayer");
+            }
             getHandle = craftPlayer.getMethod("getHandle");
 
             Class<?> serverPlayer = Class.forName("net.minecraft.server.level.ServerPlayer");

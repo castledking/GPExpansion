@@ -68,7 +68,7 @@ public class ClaimOptionsGUI extends BaseGUI {
     public Inventory createInventory() {
         String title = getString("title", "&6&lClaim Options - #{id}").replace("{id}", claimId);
         // Fixed 45-slot layout required for item positions; config size override is ignored
-        inventory = Bukkit.createInventory(null, 45, colorize(title));
+        inventory = Mini.createInventory(null, 45, colorize(title));
         populateInventory();
         return inventory;
     }
@@ -191,12 +191,12 @@ public class ClaimOptionsGUI extends BaseGUI {
         lore.add(placeholders.get("{trust_action}"));
         org.bukkit.inventory.meta.ItemMeta meta = skull.getItemMeta();
         if (meta != null) {
-            meta.displayName(colorize("&a&lManage Trust"));
+            Mini.setDisplayName(meta, colorize("&a&lManage Trust"));
             List<net.kyori.adventure.text.Component> loreComponents = new ArrayList<>();
             for (String line : lore) {
                 loreComponents.add(colorize(line));
             }
-            meta.lore(loreComponents);
+            Mini.setLore(meta, loreComponents);
             skull.setItemMeta(meta);
         }
         return skull;
@@ -230,12 +230,11 @@ public class ClaimOptionsGUI extends BaseGUI {
             Component warning = plugin.getMessages().get("claim.abandon-subdivision-warning",
                 "{count}", String.valueOf(subcount),
                 "{plural}", subcount == 1 ? "" : "s");
-            item.editMeta(meta -> {
-                List<Component> lore = new ArrayList<>(meta.hasLore() ? meta.lore() : new ArrayList<>());
-                lore.add(Component.empty());
-                lore.add(warning);
-                meta.lore(lore);
-            });
+            org.bukkit.inventory.meta.ItemMeta abandonMeta = item.getItemMeta();
+            if (abandonMeta != null) {
+                Mini.appendLore(abandonMeta, List.of(Component.empty(), warning));
+                item.setItemMeta(abandonMeta);
+            }
         }
 
         return item;

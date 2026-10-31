@@ -188,26 +188,17 @@ public final class SignMoveManager implements Listener, CommandExecutor {
     }
 
     /**
-     * Paper-only listener for PlayerOpenSignEvent, registered only when the class exists.
-     * This avoids NoClassDefFoundError on Spigot which lacks this event.
+     * Hooks Paper's PlayerOpenSignEvent or Spigot's PlayerSignOpenEvent reflectively so placing a
+     * destination sign suppresses the vanilla sign editor popup on both platforms.
      */
-    public static final class PaperSignMoveListener implements Listener {
-        private final SignMoveManager manager;
-
-        public PaperSignMoveListener(SignMoveManager manager) {
-            this.manager = manager;
-        }
-
-        @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
-        public void onDestinationEditor(io.papermc.paper.event.player.PlayerOpenSignEvent event) {
-            PendingMove pending = manager.pendingMoves.get(event.getPlayer().getUniqueId());
-            Location recent = manager.recentDestinations.get(event.getPlayer().getUniqueId());
-            if ((pending != null && pending.destination != null
-                    && manager.sameBlock(pending.destination, event.getSign().getLocation()))
-                    || manager.sameBlock(recent, event.getSign().getLocation())) {
-                event.setCancelled(true);
-            }
-        }
+    public boolean registerSignOpenHook() {
+        return codes.castled.gpexpansion.platform.PaperEvents.registerSignOpen(plugin, this, (player, sign) -> {
+            PendingMove pending = pendingMoves.get(player.getUniqueId());
+            Location recent = recentDestinations.get(player.getUniqueId());
+            return (pending != null && pending.destination != null
+                    && sameBlock(pending.destination, sign.getLocation()))
+                    || sameBlock(recent, sign.getLocation());
+        });
     }
 
     private void completeMove(Player player, PendingMove pending, Location destination) {

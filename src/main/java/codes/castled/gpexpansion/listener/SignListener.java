@@ -1618,11 +1618,11 @@ public class SignListener implements Listener {
             
             // Compare display names
             if (metaA.hasDisplayName() != metaB.hasDisplayName()) return false;
-            if (metaA.hasDisplayName() && !Objects.equals(metaA.displayName(), metaB.displayName())) return false;
+            if (metaA.hasDisplayName() && !Objects.equals(metaA.getDisplayName(), metaB.getDisplayName())) return false;
             
             // Compare lore
             if (metaA.hasLore() != metaB.hasLore()) return false;
-            if (metaA.hasLore() && !Objects.equals(metaA.lore(), metaB.lore())) return false;
+            if (metaA.hasLore() && !Objects.equals(metaA.getLore(), metaB.getLore())) return false;
             
             // Compare enchantments
             if (!a.getEnchantments().equals(b.getEnchantments())) return false;
@@ -1634,8 +1634,8 @@ public class SignListener implements Listener {
     private String formatItemName(ItemStack item) {
         ItemMeta meta = item.getItemMeta();
         if (meta != null && meta.hasDisplayName()) {
-            Component displayName = meta.displayName();
-            return displayName != null ? LegacyComponentSerializer.legacySection().serialize(displayName) : StringUtils.capitalize(item.getType().toString().toLowerCase().replace('_', ' '));
+            String displayName = meta.getDisplayName();
+            return displayName != null && !displayName.isEmpty() ? displayName : StringUtils.capitalize(item.getType().toString().toLowerCase().replace('_', ' '));
         }
         return StringUtils.capitalize(item.getType().toString().toLowerCase().replace('_', ' '));
     }

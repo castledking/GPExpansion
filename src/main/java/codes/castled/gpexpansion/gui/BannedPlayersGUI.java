@@ -1,5 +1,7 @@
 package codes.castled.gpexpansion.gui;
 
+import codes.castled.gpexpansion.util.Mini;
+
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
@@ -115,7 +117,7 @@ public class BannedPlayersGUI extends BaseGUI {
         SkullMeta meta = (SkullMeta) head.getItemMeta();
         if (meta != null) {
             meta.setOwningPlayer(Bukkit.getOfflinePlayer(info.playerId));
-            meta.displayName(colorize("&c" + info.playerName));
+            Mini.setDisplayName(meta, colorize("&c" + info.playerName));
 
             List<String> lore = new ArrayList<>();
             lore.add("&7Claim: &f#" + claimId);
@@ -130,7 +132,7 @@ public class BannedPlayersGUI extends BaseGUI {
             for (String line : lore) {
                 loreCmp.add(colorize(line));
             }
-            meta.lore(loreCmp);
+            Mini.setLore(meta, loreCmp);
             head.setItemMeta(meta);
         }
         return head;

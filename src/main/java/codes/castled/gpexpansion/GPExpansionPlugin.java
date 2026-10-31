@@ -186,10 +186,8 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Register before the normal sign listeners so selection clicks are consumed first.
         signMoveManager = new SignMoveManager(this);
         Bukkit.getPluginManager().registerEvents(signMoveManager, this);
-        // Conditionally register Paper-only PlayerOpenSignEvent handler
-        if (codes.castled.gpexpansion.platform.PlatformDetection.classExists("io.papermc.paper.event.player.PlayerOpenSignEvent")) {
-            Bukkit.getPluginManager().registerEvents(new SignMoveManager.PaperSignMoveListener(signMoveManager), this);
-            debug("- Registered PaperSignMoveListener for PlayerOpenSignEvent");
+        if (signMoveManager.registerSignOpenHook()) {
+            debug("- Registered sign-open popup suppression hook for SignMoveManager");
         }
 
         registerPluginCommands();
@@ -227,10 +225,10 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Market unread mail join notifications
         Bukkit.getPluginManager().registerEvents(marketManager, this);
         registerClaimFlagListeners();
-        Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.gui.ChatPromptManager.LegacyListener(this, chatPromptManager), this);
-        if (codes.castled.gpexpansion.platform.PlatformDetection.classExists("io.papermc.paper.event.player.AsyncChatEvent")) {
-            Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.gui.ChatPromptManager.PaperListener(this, chatPromptManager), this);
-        }
+        codes.castled.gpexpansion.gui.ChatPromptManager.ChatListener chatPromptListener =
+            new codes.castled.gpexpansion.gui.ChatPromptManager.ChatListener(this, chatPromptManager);
+        Bukkit.getPluginManager().registerEvents(chatPromptListener, this);
+        chatPromptListener.registerPaperHook();
         // Join reminders
         Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.ReminderJoinListener(this), this);
         // Dynamic sign display ([Renew], [Evicted] countdown, item scroll)
@@ -248,11 +246,8 @@ public final class GPExpansionPlugin extends JavaPlugin {
             codes.castled.gpexpansion.listener.ClaimWaypointListener cwl =
                 new codes.castled.gpexpansion.listener.ClaimWaypointListener(this);
             Bukkit.getPluginManager().registerEvents(cwl, this);
-            // Conditionally register Paper-only WorldGameRuleChangeEvent handler
-            if (codes.castled.gpexpansion.platform.PlatformDetection.classExists("io.papermc.paper.event.world.WorldGameRuleChangeEvent")) {
-                Bukkit.getPluginManager().registerEvents(
-                    new codes.castled.gpexpansion.listener.ClaimWaypointListener.PaperGameRuleListener(cwl), this);
-                debug("- Registered PaperGameRuleListener for WorldGameRuleChangeEvent");
+            if (cwl.registerPaperGameRuleHook()) {
+                debug("- Registered WorldGameRuleChangeEvent hook for ClaimWaypointListener");
             }
             getServer().getMessenger().registerOutgoingPluginChannel(this,
                 codes.castled.gpexpansion.waypoint.ClaimWaypointManager.CLAIM_DATA_CHANNEL);
@@ -301,11 +296,20 @@ public final class GPExpansionPlugin extends JavaPlugin {
         debug("- Registered built-in claim flag listeners");
     }
 
+    private boolean accrualListenerRegistered = false;
+
     private void registerAccrualListener() {
+        if (accrualListenerRegistered) return;
         if (!Bukkit.getPluginManager().isPluginEnabled("GriefPrevention")) {
-            debug("- Skipped AccrualListener because GriefPrevention is not enabled");
+            if (Bukkit.getPluginManager().getPlugin("GriefPrevention") != null) {
+                // GPExpansion loads BEFORE GriefPrevention; retry once GP finishes enabling.
+                SchedulerAdapter.runLaterGlobal(this, this::registerAccrualListener, 1L);
+            } else {
+                debug("- Skipped AccrualListener because GriefPrevention is not installed");
+            }
             return;
         }
+        accrualListenerRegistered = true;
 
         try {
             Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.AccrualListener(this), this);
@@ -523,7 +527,12 @@ public final class GPExpansionPlugin extends JavaPlugin {
                     "claimmap",
                     "claimbar",
                     "claimmarket",
-                    "claimshop"
+                    "claimshop",
+                    "gpxconfirm",
+                    "mailbox",
+                    "rentclaim",
+                    "sellclaim",
+                    "cancelsetup"
             );
         } catch (ReflectiveOperationException e) {
             getLogger().warning("Failed to clean up duplicate command labels: " + e.getMessage());
@@ -588,24 +597,21 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
         setupWizardManager = new SetupWizardManager(this);
 
-        Bukkit.getPluginManager().registerEvents(new SetupChatListener(this, setupWizardManager), this);
-        debug("- Registered SetupChatListener for wizard commands");
-        // Conditionally register Paper-only AsyncChatEvent handler
-        if (codes.castled.gpexpansion.platform.PlatformDetection.classExists("io.papermc.paper.event.player.AsyncChatEvent")) {
-            Bukkit.getPluginManager().registerEvents(
-                new SetupChatListener.PaperSetupChatListener(this, setupWizardManager), this);
-            debug("- Registered PaperSetupChatListener for AsyncChatEvent");
+        SetupChatListener setupChatListener = new SetupChatListener(this, setupWizardManager);
+        Bukkit.getPluginManager().registerEvents(setupChatListener, this);
+        if (setupChatListener.registerPaperHook()) {
+            debug("- Registered AsyncChatEvent hook for SetupChatListener");
         }
+        debug("- Registered SetupChatListener for wizard commands");
 
         descriptionInputManager = new codes.castled.gpexpansion.gui.DescriptionInputManager(this);
-        Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.gui.DescriptionChatListener(this, descriptionInputManager), this);
-        debug("- Registered DescriptionChatListener for claim descriptions");
-        // Conditionally register Paper-only AsyncChatEvent handler
-        if (codes.castled.gpexpansion.platform.PlatformDetection.classExists("io.papermc.paper.event.player.AsyncChatEvent")) {
-            Bukkit.getPluginManager().registerEvents(
-                new codes.castled.gpexpansion.gui.DescriptionChatListener.PaperDescriptionChatListener(this, descriptionInputManager), this);
-            debug("- Registered PaperDescriptionChatListener for AsyncChatEvent");
+        codes.castled.gpexpansion.gui.DescriptionChatListener descChatListener =
+            new codes.castled.gpexpansion.gui.DescriptionChatListener(this, descriptionInputManager);
+        Bukkit.getPluginManager().registerEvents(descChatListener, this);
+        if (descChatListener.registerPaperHook()) {
+            debug("- Registered AsyncChatEvent hook for DescriptionChatListener");
         }
+        debug("- Registered DescriptionChatListener for claim descriptions");
 
         // Chat we capture for wizards/description input must not leak into Discord relay.
         new codes.castled.gpexpansion.listener.DiscordSRVChatCaptureBridge(this, player -> {

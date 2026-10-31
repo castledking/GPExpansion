@@ -1002,7 +1002,7 @@ public class MailboxListener implements Listener {
         // Virtual protocol: create virtual inventory with same size as real container (e.g. 54 for double chest),
         // so snapshot includes all slots and no items are lost when applying on close
         int containerSize = containerInv.getSize();
-        Inventory virtualInv = Bukkit.createInventory(null, containerSize, net.kyori.adventure.text.Component.text("Mailbox"));
+        Inventory virtualInv = Mini.createInventory(null, containerSize, net.kyori.adventure.text.Component.text("Mailbox"));
 
         Location containerLoc = containerBlock.getLocation();
         DepositSession session = new DepositSession(claimId, containerLoc, key, virtualInv);
@@ -1470,7 +1470,7 @@ public class MailboxListener implements Listener {
             Inventory containerInv = container.getInventory();
             int containerSize = containerInv.getSize();
             String title = isOwner ? "Your Mailbox" : "Send Gift";
-            Inventory virtualInv = Bukkit.createInventory(null, containerSize, Component.text(title));
+            Inventory virtualInv = Mini.createInventory(null, containerSize, Component.text(title));
             DepositSession session = new DepositSession(mailboxId, containerLoc, key, virtualInv);
             session.ownerSnapshot = isOwner;
             session.initialItemCount = countItems(containerInv);
@@ -2011,11 +2011,9 @@ public class MailboxListener implements Listener {
     
     private String formatItemName(ItemStack item) {
         if (item == null) return "Item";
-        if (item.getItemMeta() != null) {
-            // Use the new API to get the display name
-            if (item.getItemMeta().hasDisplayName()) {
-                return item.getItemMeta().displayName().toString();
-            }
+        String plainName = Mini.getDisplayNamePlain(item.getItemMeta());
+        if (plainName != null && !plainName.isEmpty()) {
+            return plainName;
         }
         String name = item.getType().name().toLowerCase().replace('_', ' ');
         return name.substring(0, 1).toUpperCase() + name.substring(1);

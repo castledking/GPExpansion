@@ -904,7 +904,7 @@ public final class MarketManager implements Listener {
         ItemMeta meta = paper.getItemMeta();
         if (meta != null) {
             LegacyComponentSerializer legacy = LegacyComponentSerializer.legacyAmpersand();
-            meta.displayName(legacy.deserialize("&e✉ Letter from &f" + senderName)
+            Mini.setDisplayName(meta, legacy.deserialize("&e✉ Letter from &f" + senderName)
                 .decoration(TextDecoration.ITALIC, false));
 
             List<Component> lore = new ArrayList<>();
@@ -916,9 +916,8 @@ public final class MarketManager implements Listener {
                 lore.add(Component.text(line, NamedTextColor.WHITE)
                     .decoration(TextDecoration.ITALIC, false));
             }
-            meta.lore(lore);
-            meta.addEnchant(Enchantment.UNBREAKING, 1, true);
-            meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
+            Mini.setLore(meta, lore);
+            Mini.applyEnchantGlow(meta);
             paper.setItemMeta(meta);
         }
         return paper;
@@ -1422,11 +1421,9 @@ public final class MarketManager implements Listener {
                      new org.bukkit.util.io.BukkitObjectInputStream(new ByteArrayInputStream(data))) {
                 Object obj = ois.readObject();
                 if (obj instanceof ItemStack stack) {
-                    if (stack.hasItemMeta() && stack.getItemMeta().hasDisplayName()) {
-                        Component dn = stack.getItemMeta().displayName();
-                        if (dn != null) {
-                            return net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(dn);
-                        }
+                    String plainName = Mini.getDisplayNamePlain(stack.getItemMeta());
+                    if (plainName != null && !plainName.isEmpty()) {
+                        return plainName;
                     }
                     String[] words = stack.getType().name().toLowerCase(Locale.ROOT).split("_");
                     StringBuilder sb = new StringBuilder();

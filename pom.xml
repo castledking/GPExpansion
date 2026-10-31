@@ -25,7 +25,7 @@
     <server.api.group>io.papermc.paper</server.api.group>
     <server.api.artifact>paper-api</server.api.artifact>
     <server.api.version>${paper.version}</server.api.version>
-    <adventure.minimessage.version>4.17.0</adventure.minimessage.version>
+    <adventure.minimessage.version>5.2.0</adventure.minimessage.version>
     <vault.api.version>1.7</vault.api.version>
     <griefprevention3d.version>18.2.7</griefprevention3d.version>
     <junit.version>5.11.4</junit.version>
@@ -92,12 +92,20 @@
 
   <dependencies>
     <!-- Server API. Paper by default; the spigot-compat profile compiles the same
-         sources against the Spigot API to catch any use of Paper-only interfaces. -->
+         sources against the Spigot API to catch any use of Paper-only interfaces.
+         Exclude Paper's Adventure 5.x so our shaded/relocated Adventure stays
+         self-consistent across Spigot, Paper 1.21.x, and Paper 26.2+. -->
     <dependency>
       <groupId>${server.api.group}</groupId>
       <artifactId>${server.api.artifact}</artifactId>
       <version>${server.api.version}</version>
       <scope>provided</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>net.kyori</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
 
     <!-- Vault API (optional economy) via JitPack -->
@@ -108,30 +116,39 @@
       <scope>provided</scope>
     </dependency>
 
-    <!-- MiniMessage for parsing colors/formatting -->
+    <!-- Shaded & relocated Adventure stack for cross-platform Paper + Spigot support -->
+    <dependency>
+      <groupId>net.kyori</groupId>
+      <artifactId>adventure-api</artifactId>
+      <version>${adventure.minimessage.version}</version>
+    </dependency>
     <dependency>
       <groupId>net.kyori</groupId>
       <artifactId>adventure-text-minimessage</artifactId>
       <version>${adventure.minimessage.version}</version>
     </dependency>
-
-    <!-- Legacy ampersand serializer used in Mini.deserializeToLegacy -->
     <dependency>
       <groupId>net.kyori</groupId>
       <artifactId>adventure-text-serializer-legacy</artifactId>
       <version>${adventure.minimessage.version}</version>
     </dependency>
-    <!-- Plain serializer for stripping formatting in chat/sign capture -->
     <dependency>
       <groupId>net.kyori</groupId>
       <artifactId>adventure-text-serializer-plain</artifactId>
       <version>${adventure.minimessage.version}</version>
     </dependency>
+
     <dependency>
       <groupId>me.clip</groupId>
       <artifactId>placeholderapi</artifactId>
       <version>2.11.6</version>
       <scope>provided</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>net.kyori</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>com.github.castledking</groupId>
@@ -227,14 +244,23 @@
                   -->
                   <excludes>
                     <exclude>com/magmaguy/**</exclude>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                    <exclude>META-INF/maven/**</exclude>
+                    <exclude>META-INF/versions/**</exclude>
+                    <exclude>org/jetbrains/**</exclude>
+                    <exclude>org/intellij/**</exclude>
+                    <exclude>org/jspecify/**</exclude>
+                    <exclude>com/google/auto/**</exclude>
+                    <exclude>com/google/errorprone/**</exclude>
                   </excludes>
                 </filter>
               </filters>
               <relocations>
                 <relocation>
-                  <pattern>net.kyori.adventure.text.minimessage</pattern>
-                  <shadedPattern
-                                    >codes.castled.gpexpansion.libs.minimessage</shadedPattern>
+                  <pattern>net.kyori</pattern>
+                  <shadedPattern>codes.castled.gpexpansion.libs.kyori</shadedPattern>
                 </relocation>
               </relocations>
             </configuration>
