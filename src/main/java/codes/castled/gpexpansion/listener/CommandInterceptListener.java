@@ -14,6 +14,7 @@ import codes.castled.gpexpansion.command.ClaimCommand;
 import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -172,20 +173,26 @@ public class CommandInterceptListener implements Listener {
         if (!plugin.isGp3dClaimMode()) return;
         String buffer = event.getBuffer();
         if (buffer == null) return;
-        String trimmed = buffer.trim();
-        if (!trimmed.startsWith("/claim") && !trimmed.startsWith("claim")) return;
+        String commandLine = buffer.stripLeading();
+        if (!commandLine.startsWith("/claim") && !commandLine.startsWith("claim")) return;
         // Parse args: first token is /claim or claim, rest are args
-        String afterCommand = trimmed.startsWith("/") ? trimmed.substring(1) : trimmed;
+        String afterCommand = commandLine.startsWith("/") ? commandLine.substring(1) : commandLine;
         int claimLen = "claim".length();
         if (afterCommand.length() > claimLen && !Character.isWhitespace(afterCommand.charAt(claimLen))) return;
-        String argsStr = afterCommand.length() > claimLen ? afterCommand.substring(claimLen).trim() : "";
-        String[] args = argsStr.isEmpty() ? new String[0] : argsStr.split("\\s+", -1);
+        String argsStr = afterCommand.length() > claimLen ? afterCommand.substring(claimLen).stripLeading() : "";
+        boolean hasTrailingSpace = !argsStr.isEmpty() && Character.isWhitespace(argsStr.charAt(argsStr.length() - 1));
+        String[] args = argsStr.isBlank() ? new String[0] : argsStr.trim().split("\\s+");
+        if (hasTrailingSpace) {
+            args = Arrays.copyOf(args, args.length + 1);
+            args[args.length - 1] = "";
+        }
         if (args.length == 0) return;
         String first = (args[0] != null ? args[0].trim() : "").toLowerCase(Locale.ROOT);
         if (!"snapshot".equals(first) && !"evict".equals(first)
                 && !"info".equals(first) && !"movesign".equals(first)
                 && !"market".equals(first) && !"shop".equals(first)
-                && !"listed".equals(first) && !"removelisting".equals(first)) return;
+                && !"listed".equals(first) && !"removelisting".equals(first)
+                && !"bar".equals(first)) return;
         ClaimCommand claimCmd = plugin.getClaimCommand();
         if (claimCmd == null) return;
         List<String> ours = claimCmd.completeTab(event.getSender(), "claim", "claim", args);

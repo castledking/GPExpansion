@@ -2,6 +2,8 @@ package codes.castled.gpexpansion.command;
 import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
@@ -974,7 +976,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
     }
 
-    private record ClaimListOptions(
+    record ClaimListOptions(
             boolean showTrustedClaims,
             boolean showSubclaims,
             boolean showOwnerListToConsole,
@@ -983,6 +985,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             boolean showArea,
             boolean showName,
             boolean showClaimBlockSummary,
+            boolean showId,
+            boolean showIdOnHover,
+            boolean showDivider,
+            boolean pageButtons,
+            boolean clickTeleport,
+            String clickTeleportPermission,
             int pageSize
     ) {
         static ClaimListOptions from(org.bukkit.configuration.file.FileConfiguration config) {
@@ -995,10 +1003,18 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                     config.getBoolean("claim-list.show-area", true),
                     config.getBoolean("claim-list.show-name", true),
                     config.getBoolean("claim-list.show-claim-block-summary", true),
+                    config.getBoolean("claim-list.show-id", true),
+                    config.getBoolean("claim-list.show-id-on-hover", false),
+                    config.getBoolean("claim-list.show-divider", true),
+                    config.getBoolean("claim-list.page-buttons", true),
+                    config.getBoolean("claim-list.click-teleport", true),
+                    config.getString("claim-list.click-teleport-permission", "griefprevention.claimslist.teleport"),
                     Math.max(1, config.getInt("claim-list.page-size", 10))
             );
         }
     }
+
+    record ClaimListRow(Object claim, @Nullable String parentId, boolean subclaim, boolean trusted) {}
 
     // Helper methods for command handling
     private boolean handleList(CommandSender sender, String[] args) {
@@ -1006,6 +1022,9 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         String[] listArgs = args;
         if (listArgs.length > 0 && listArgs[0].equalsIgnoreCase("list")) {
             listArgs = Arrays.copyOfRange(listArgs, 1, listArgs.length);
+        }
+        if (listArgs.length == 2 && listArgs[0].equalsIgnoreCase("_teleport")) {
+            return handleListTeleport(sender, listArgs[1], listOptions);
         }
 
         Player senderPlayer = sender instanceof Player ? (Player) sender : null;
@@ -1056,126 +1075,273 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
         boolean viewingOther = senderPlayer == null || !senderPlayer.getUniqueId().equals(targetId);
         List<Object> claims = gp.getClaimsFor(targetId);
-        codes.castled.gpexpansion.storage.ClaimDataStore store = plugin.getClaimDataStore();
-        if (viewingOther) {
-            Mini.send(sender, plugin.getMessages().get("claim.list-player-header",
-                "{player}", targetName));
+        List<ClaimListRow> rows = new ArrayList<>();
+        LinkedHashMap<Object, List<Object>> grouped = new LinkedHashMap<>();
+        for (Object claim : claims) {
+            Object parent = toMainClaim(claim);
+            if (claim != parent && gp.isOwner(claim, targetId)) {
+                grouped.computeIfAbsent(parent, key -> new ArrayList<>()).add(claim);
+            } else if (claim == parent) {
+                grouped.computeIfAbsent(parent, key -> new ArrayList<>());
+            }
         }
+        for (Map.Entry<Object, List<Object>> entry : grouped.entrySet()) {
+            Object parent = entry.getKey();
+            String parentId = gp.getClaimId(parent).orElse("?");
+            rows.add(new ClaimListRow(parent, null, false, false));
+            if (listOptions.showSubclaims()) {
+                List<Object> subs = new ArrayList<>(entry.getValue());
+                for (Object sub : getSubclaims(parent)) {
+                    if (gp.isOwner(sub, targetId) && !subs.contains(sub)) {
+                        subs.add(sub);
+                    }
+                }
+                for (Object sub : subs) {
+                    rows.add(new ClaimListRow(sub, parentId, true, false));
+                }
+            }
+        }
+
+        List<Object> trusted = listOptions.showTrustedClaims()
+                ? getTrustedClaimsFor(targetId).stream()
+                        .filter(c -> !gp.isOwner(c, targetId))
+                        .distinct()
+                        .collect(Collectors.toList())
+                : Collections.emptyList();
+        List<Object> addedTrusted = new ArrayList<>();
+        for (Object claim : trusted) {
+            if (addedTrusted.contains(claim)) continue;
+            Object parent = toMainClaim(claim);
+            boolean subclaim = parent != claim;
+            if (subclaim && !listOptions.showSubclaims()) continue;
+            rows.add(new ClaimListRow(claim, subclaim ? gp.getClaimId(parent).orElse("?") : null, subclaim, true));
+            addedTrusted.add(claim);
+            if (listOptions.showSubclaims()) {
+                for (Object sub : getSubclaims(claim)) {
+                    if (trusted.contains(sub) && !addedTrusted.contains(sub)) {
+                        rows.add(new ClaimListRow(sub, gp.getClaimId(claim).orElse("?"), true, true));
+                        addedTrusted.add(sub);
+                    }
+                }
+            }
+        }
+
+        int totalPages = Math.max(1, (int) Math.ceil(rows.size() / (double) listOptions.pageSize()));
+        int page = Math.min(Math.max(1, requestedPage), totalPages);
+        if (listOptions.showDivider()) {
+            Mini.send(sender, plugin.getMessages().get("claim.list-divider"));
+        }
+        if (viewingOther) {
+            Mini.send(sender, plugin.getMessages().get("claim.list-player-header", "{player}", targetName));
+        }
+        Mini.send(sender, plugin.getMessages().get("claim.list-header", "{count}", String.valueOf(rows.size())));
         if (listOptions.showClaimBlockSummary()) {
-            gp.getPlayerClaimStats(targetId).ifPresent(stats -> {
-                Mini.send(sender, plugin.getMessages().get("claim.blocks-total",
+            gp.getPlayerClaimStats(targetId).ifPresent(stats -> Mini.send(sender, plugin.getMessages().get(
+                    "claim.blocks-total",
                     "{accrued}", String.valueOf(stats.accrued),
                     "{bonus}", String.valueOf(stats.bonus),
-                    "{total}", String.valueOf(stats.total)));
-            });
+                    "{total}", String.valueOf(stats.total))));
+        }
+        if (rows.isEmpty()) {
+            Mini.send(sender, plugin.getMessages().get("claim.list-empty"));
         }
 
-        // Group claims by their parent claim, but only include subclaims that the player owns
-        LinkedHashMap<Object, List<Object>> grouped = new LinkedHashMap<>();
-        for (Object c : claims) {
-            Object parent = toMainClaim(c);
-            if (c != parent) { // This is a subclaim
-                // Only add subclaims that the player owns
-                if (gp.isOwner(c, targetId)) {
-                    grouped.computeIfAbsent(parent, k -> new ArrayList<>()).add(c);
-                }
+        int from = (page - 1) * listOptions.pageSize();
+        int to = Math.min(rows.size(), from + listOptions.pageSize());
+        boolean trustedHeaderShown = false;
+        for (ClaimListRow row : rows.subList(from, to)) {
+            if (row.trusted() && !trustedHeaderShown) {
+                Mini.send(sender, plugin.getMessages().get(
+                        "claim.list-trusted-header",
+                        "{count}", String.valueOf(addedTrusted.size())));
+                trustedHeaderShown = true;
             }
-        }
-
-        // Also add parent claims (including those where player only owns subclaims)
-        for (Object c : claims) {
-            Object parent = toMainClaim(c);
-            if (c == parent) { // This is a parent claim
-                grouped.computeIfAbsent(parent, k -> new ArrayList<>());
-            }
-        }
-
-        Mini.send(sender, plugin.getMessages().get("claim.list-header",
-            "{count}", String.valueOf(grouped.size())));
-
-        List<Map.Entry<Object, List<Object>>> groupedEntries = new ArrayList<>(grouped.entrySet());
-        int totalPages = Math.max(1, (int) Math.ceil(groupedEntries.size() / (double) listOptions.pageSize()));
-        int page = Math.min(Math.max(1, requestedPage), totalPages);
-        if (totalPages > 1) {
-            Mini.send(sender, plugin.getMessages().get("claim.list-page",
-                "{page}", String.valueOf(page),
-                "{pages}", String.valueOf(totalPages)));
-        }
-
-        int fromIndex = Math.min(groupedEntries.size(), (page - 1) * listOptions.pageSize());
-        int toIndex = Math.min(groupedEntries.size(), fromIndex + listOptions.pageSize());
-        for (Map.Entry<Object, List<Object>> e : groupedEntries.subList(fromIndex, toIndex)) {
-            Object parent = e.getKey();
-            String id = gp.getClaimId(parent).orElse("?");
-            String parentName = store.getCustomName(id).orElse("unnamed");
-            String name = formatClaimLine(parent, id, parentName, listOptions);
-            Mini.send(sender, parseColorCodes(name));
-
-            if (listOptions.showSubclaims()) {
-                // Get subclaims for this parent that the player owns
-                List<Object> subs = e.getValue();
-                if (subs.isEmpty()) {
-                    // If no subclaims in the grouped list, check if there are any subclaims the player owns
-                    List<Object> allSubs = getSubclaims(parent);
-                    for (Object sub : allSubs) {
-                        if (gp.isOwner(sub, targetId)) {
-                            subs.add(sub);
-                        }
-                    }
-                }
-
-                for (Object sub : subs) {
-                    String subId = gp.getClaimId(sub).orElse("");
-                    String subName = store.getCustomName(subId).orElse("");
-                    String subLine = formatSubclaimLine(sub, id, subName, listOptions);
-                    // Parse color codes in the line
-                    Mini.send(sender, parseColorCodes("    " + subLine));
-                }
-            }
-        }
-
-        if (listOptions.showTrustedClaims()) {
-            // Get trusted claims and filter out any that the player owns
-            List<Object> trusted = getTrustedClaimsFor(targetId).stream()
-                .filter(c -> !gp.isOwner(c, targetId))
-                .collect(Collectors.toList());
-
-            if (!trusted.isEmpty()) {
-                Mini.send(sender, plugin.getMessages().get("claim.list-trusted-header",
-                    "{count}", String.valueOf(trusted.size())));
-                for (Object c : trusted) {
-                    String id = gp.getClaimId(c).orElse("?");
-                    String parentId = gp.getClaimId(toMainClaim(c)).orElse("?");
-                    String name = store.getCustomName(id).orElse("unnamed");
-                    String line = formatTrustedClaimLine(c, id, name, parentId, targetId, listOptions);
-                    // Parse color codes in the line
-                    Mini.send(sender, parseColorCodes(line));
-
-                    if (listOptions.showSubclaims()) {
-                        // Show subclaims of trusted claims if the player is trusted on them
-                        List<Object> trustedSubs = getSubclaims(c);
-                        for (Object sub : trustedSubs) {
-                            if (gp.getClaimsWhereTrusted(targetId).contains(sub)) {
-                                String subId = gp.getClaimId(sub).orElse("");
-                                String subName = store.getCustomName(subId).orElse("");
-                                String subLine = formatSubclaimLine(sub, id, subName, listOptions);
-                                Mini.send(sender, parseColorCodes("  " + subLine));
-                            }
-                        }
-                    }
-                }
-            }
+            Mini.send(sender, formatInteractiveClaimRow(sender, row, listOptions));
         }
 
         if (listOptions.showClaimBlockSummary()) {
-            gp.getPlayerClaimStats(targetId).ifPresent(stats -> {
-                Mini.send(sender, plugin.getMessages().get("claim.blocks-remaining",
-                    "{remaining}", String.valueOf(stats.remaining)));
-            });
+            gp.getPlayerClaimStats(targetId).ifPresent(stats -> Mini.send(sender, plugin.getMessages().get(
+                    "claim.blocks-remaining",
+                    "{remaining}", String.valueOf(stats.remaining))));
+        }
+        sendClaimListPages(sender, targetName, viewingOther, page, totalPages, listOptions);
+        if (listOptions.showDivider()) {
+            Mini.send(sender, plugin.getMessages().get("claim.list-divider"));
         }
         return true;
     }
-    
+
+    private boolean canTeleportFromList(CommandSender sender, Object claim, ClaimListOptions options) {
+        if (!(sender instanceof Player player) || !options.clickTeleport()) return false;
+        if (gp.hasBuildOrInventoryTrust(claim, player.getUniqueId())) {
+            if (options.clickTeleportPermission() != null
+                    && !options.clickTeleportPermission().isBlank()
+                    && sender.hasPermission(options.clickTeleportPermission())) {
+                return true;
+            }
+        }
+        return sender.hasPermission("griefprevention.claimslistother")
+                && sender.hasPermission("griefprevention.claimslistother.teleport");
+    }
+
+    private boolean handleListTeleport(CommandSender sender, String id, ClaimListOptions options) {
+        Optional<Object> claim = gp.findClaimById(id);
+        if (claim.isEmpty() || !canTeleportFromList(sender, claim.get(), options)) {
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+        return handleTeleport(sender, new String[] { id }, true);
+    }
+
+    private Component formatInteractiveClaimRow(CommandSender sender, ClaimListRow row, ClaimListOptions options) {
+        Object claim = row.claim();
+        String id = gp.getClaimId(claim).orElse("?");
+        String name = plugin.getClaimDataStore().getCustomName(id)
+                .filter(n -> !n.isBlank())
+                .orElse(plugin.getMessages().getRaw("claim.list-unnamed"));
+        boolean validId = !id.isEmpty() && !"?".equals(id) && id.chars().noneMatch(Character::isWhitespace);
+        boolean canTeleport = validId && canTeleportFromList(sender, claim, options);
+        return buildClaimRowComponent(
+                plugin.getMessages()::getRaw,
+                row.subclaim(),
+                id,
+                name,
+                row.parentId(),
+                gp.getClaimWorld(claim).orElse("unknown"),
+                gp.getClaimCorners(claim).map(c -> (c.x1 + c.x2) / 2).orElse(0),
+                gp.getClaimCorners(claim).map(c -> (c.z1 + c.z2) / 2).orElse(0),
+                gp.getClaimArea(claim),
+                canTeleport,
+                options
+        );
+    }
+
+    private static String applyTemplate(java.util.function.Function<String, String> rawLookup, String path, String... replacements) {
+        String text = rawLookup.apply(path);
+        if (text == null) text = "";
+        for (int i = 0; i + 1 < replacements.length; i += 2) {
+            text = text.replace(replacements[i], replacements[i + 1]);
+        }
+        return text;
+    }
+
+    static Component buildClaimRowComponent(
+            java.util.function.Function<String, String> rawLookup,
+            boolean subclaim,
+            String id,
+            String name,
+            @Nullable String parentId,
+            String world,
+            int centerX,
+            int centerZ,
+            long area,
+            boolean canTeleport,
+            ClaimListOptions options
+    ) {
+        Component hover = Component.empty()
+                .append(Mini.fromLegacyAmpersand(applyTemplate(rawLookup, "claim.list-hover-id", "{id}", id)));
+        if (canTeleport) {
+            hover = hover.append(Component.newline())
+                    .append(Mini.fromLegacyAmpersand(applyTemplate(rawLookup, "claim.list-hover-teleport")));
+        }
+
+        boolean showName = options.showName() || !options.showId() || options.showIdOnHover();
+        boolean showId = options.showId() && !options.showIdOnHover();
+
+        String rawPrefix = applyTemplate(rawLookup, subclaim ? "claim.list-subclaim-prefix" : "claim.list-entry-prefix");
+        Component prefixPart = Mini.fromLegacyAmpersand(rawPrefix);
+
+        Component idPart = Mini.fromLegacyAmpersand(applyTemplate(rawLookup, "claim.list-entry-id", "{id}", id))
+                .hoverEvent(HoverEvent.showText(hover));
+
+        String rawName = applyTemplate(rawLookup, "claim.list-entry-name", "{name}", name);
+        if (!showId && rawPrefix.endsWith(" ") && rawName.startsWith(" ")) {
+            rawName = rawName.substring(1);
+        }
+        Component namePart = Mini.fromLegacyAmpersand(rawName)
+                .hoverEvent(HoverEvent.showText(hover));
+
+        if (canTeleport) {
+            ClickEvent click = ClickEvent.runCommand("/claim list _teleport " + id);
+            idPart = idPart.clickEvent(click);
+            namePart = namePart.clickEvent(click);
+        }
+
+        Component result = Component.empty().append(prefixPart);
+        if (showId) {
+            result = result.append(idPart);
+        }
+        if (showName) {
+            result = result.append(namePart);
+        }
+        if (options.showWorld()) {
+            result = result.append(Mini.fromLegacyAmpersand(applyTemplate(rawLookup, "claim.list-entry-world", "{world}", world)));
+        }
+        if (options.showCoordinates()) {
+            result = result.append(Mini.fromLegacyAmpersand(applyTemplate(rawLookup,
+                    "claim.list-entry-coordinates",
+                    "{x}", String.valueOf(centerX),
+                    "{z}", String.valueOf(centerZ))));
+        }
+        if (options.showArea()) {
+            result = result.append(Mini.fromLegacyAmpersand(applyTemplate(rawLookup,
+                    "claim.list-entry-area",
+                    "{area}", String.valueOf(area))));
+        }
+        if (subclaim && parentId != null && !parentId.isEmpty() && !options.showIdOnHover()) {
+            result = result.append(Mini.fromLegacyAmpersand(applyTemplate(rawLookup,
+                    "claim.list-entry-parent",
+                    "{parent}", parentId)));
+        }
+        return result;
+    }
+
+    private void sendClaimListPages(CommandSender sender, String targetName, boolean viewingOther, int page, int pages, ClaimListOptions options) {
+        Mini.send(sender, buildClaimListPageComponent(
+                plugin.getMessages()::getRaw,
+                targetName,
+                viewingOther,
+                sender instanceof Player,
+                page,
+                pages,
+                options
+        ));
+    }
+
+    static Component buildClaimListPageComponent(
+            java.util.function.Function<String, String> rawLookup,
+            String targetName,
+            boolean viewingOther,
+            boolean interactiveSender,
+            int page,
+            int pages,
+            ClaimListOptions options
+    ) {
+        Component pageLabel = Mini.fromLegacyAmpersand(applyTemplate(rawLookup,
+                "claim.list-page",
+                "{page}", String.valueOf(page),
+                "{pages}", String.valueOf(pages)));
+        if (options.pageButtons() && pages > 1 && interactiveSender) {
+            String commandPrefix = "/claim list " + (viewingOther ? targetName + " " : "");
+            Component previous = Mini.fromLegacyAmpersand(applyTemplate(rawLookup,
+                    page > 1 ? "claim.list-page-previous" : "claim.list-page-previous-disabled"));
+            Component next = Mini.fromLegacyAmpersand(applyTemplate(rawLookup,
+                    page < pages ? "claim.list-page-next" : "claim.list-page-next-disabled"));
+            if (page > 1) {
+                previous = previous
+                        .clickEvent(ClickEvent.runCommand(commandPrefix + (page - 1)))
+                        .hoverEvent(HoverEvent.showText(Mini.fromLegacyAmpersand(applyTemplate(rawLookup, "claim.list-page-previous-hover"))));
+            }
+            if (page < pages) {
+                next = next
+                        .clickEvent(ClickEvent.runCommand(commandPrefix + (page + 1)))
+                        .hoverEvent(HoverEvent.showText(Mini.fromLegacyAmpersand(applyTemplate(rawLookup, "claim.list-page-next-hover"))));
+            }
+            return Component.empty().append(previous).append(pageLabel).append(next);
+        }
+        return pageLabel;
+    }
+
     private boolean handleAdminClaimsList(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) {
             return true;
@@ -3251,6 +3417,10 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     
     // /claim tp|teleport <claimId> [player]
     private boolean handleTeleport(CommandSender sender, String[] args) {
+        return handleTeleport(sender, args, false);
+    }
+
+    private boolean handleTeleport(CommandSender sender, String[] args, boolean fromClaimList) {
         if (args.length < 1) {
             Mini.send(sender, plugin.getMessages().get("claim.teleport-usage"));
             return true;
@@ -3274,7 +3444,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         } else {
             // Teleporting self
             if (!requirePlayer(sender)) return true;
-            if (!sender.hasPermission("griefprevention.claim.teleport")) {
+            if (!fromClaimList && !sender.hasPermission("griefprevention.claim.teleport")) {
                 Mini.send(sender, plugin.getMessages().get("general.no-permission"));
                 return true;
             }

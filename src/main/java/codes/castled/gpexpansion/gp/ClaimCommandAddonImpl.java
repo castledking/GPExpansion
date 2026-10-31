@@ -4,6 +4,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
+import codes.castled.gpexpansion.waypoint.WaypointBarMode;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -119,6 +120,16 @@ public class ClaimCommandAddonImpl {
         switch (sub) {
             case "info":
                 if (args != null && args.length == 1) out.add("[claimId]");
+                break;
+            case "bar":
+                if (sender.hasPermission("griefprevention.claim.bar") && args != null && args.length <= 1) {
+                    String prefix = (args.length == 1 && args[0] != null) ? args[0].toLowerCase(Locale.ROOT) : "";
+                    for (String mode : WaypointBarMode.ARGUMENTS) {
+                        if (mode.toLowerCase(Locale.ROOT).startsWith(prefix)) {
+                            out.add(mode);
+                        }
+                    }
+                }
                 break;
             case "movesign":
                 if (args != null && args.length == 1 && "cancel".startsWith(args[0].toLowerCase(Locale.ROOT))) {
@@ -286,6 +297,9 @@ public class ClaimCommandAddonImpl {
         }
         if (sender.hasPermission("griefprevention.claiminfo")) {
             out.add("info");
+        }
+        if (sender.hasPermission("griefprevention.claim.bar")) {
+            out.add("bar");
         }
         if (sender.hasPermission("griefprevention.sign.move.rent")
                 || sender.hasPermission("griefprevention.sign.move.sell")

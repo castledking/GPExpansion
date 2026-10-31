@@ -65,6 +65,23 @@ public class Config {
         // GUI settings
         DEFAULTS.put("gui.enabled", true);
 
+        // Claim list settings
+        DEFAULTS.put("claim-list.show-owner-list-to-console", true);
+        DEFAULTS.put("claim-list.show-trusted-claims", true);
+        DEFAULTS.put("claim-list.show-subclaims", true);
+        DEFAULTS.put("claim-list.show-world", true);
+        DEFAULTS.put("claim-list.show-coordinates", true);
+        DEFAULTS.put("claim-list.show-area", true);
+        DEFAULTS.put("claim-list.show-id", true);
+        DEFAULTS.put("claim-list.show-id-on-hover", false);
+        DEFAULTS.put("claim-list.show-name", true);
+        DEFAULTS.put("claim-list.show-claim-block-summary", true);
+        DEFAULTS.put("claim-list.show-divider", true);
+        DEFAULTS.put("claim-list.click-teleport", true);
+        DEFAULTS.put("claim-list.click-teleport-permission", "griefprevention.claimslist.teleport");
+        DEFAULTS.put("claim-list.page-size", 10);
+        DEFAULTS.put("claim-list.page-buttons", true);
+
         // Built-in claim flags settings (no GPFlags required)
         DEFAULTS.put("claim-flags.enabled", true);
         DEFAULTS.put("claim-flags.deny-message", "actionbar");
@@ -418,7 +435,8 @@ public class Config {
                 while (j < lineList.size() && lineList.get(j).trim().isEmpty()) j++;
                 if (j < lineList.size()) {
                     String next = lineList.get(j).trim();
-                    if (next.equals("permission-tracking:") || next.startsWith("# Permission tracking")) {
+                    if (next.equals("permission-tracking:") || next.startsWith("# Permission tracking")
+                            || next.equals("admin-commands:") || next.startsWith("# Admin command permissions")) {
                         return false;
                     }
                 }
@@ -488,6 +506,14 @@ public class Config {
             modified = true;
             if (isDebugEnabled()) {
                 plugin.getLogger().info("Added missing config option: player-commands (from default)");
+            }
+        }
+
+        if (!config.contains("admin-commands") && defaultConfig != null && defaultConfig.contains("admin-commands")) {
+            config.set("admin-commands", defaultConfig.getList("admin-commands"));
+            modified = true;
+            if (isDebugEnabled()) {
+                plugin.getLogger().info("Added missing config option: admin-commands (from default)");
             }
         }
 
