@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.util;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
@@ -506,6 +507,245 @@ public class Messages {
         // Empty line for formatting
         DEFAULTS.put("general.empty-line", "");
         
+        // Synced lang.yml defaults
+        DEFAULTS.put("admin.gpx-info", "&e/gpx info &7- Show plugin information");
+        DEFAULTS.put("claim.ban-already", "&eClaim {id} already has a public ban.");
+        DEFAULTS.put("claim.ban-public", "&aClaim {id} is now public-banned.");
+        DEFAULTS.put("claim.bar-usage", "&eUsage: {usage}");
+        DEFAULTS.put("claim.color-invalid", "&cUnknown color. Valid colors: &e{colors}&c, a &e#RRGGBB&c hex value, or &ereset&c.");
+        DEFAULTS.put("claim.color-no-permission", "&cYou lack permission: &egriefprevention.claim.color");
+        DEFAULTS.put("claim.color-usage", "&eUsage: /claim color <color|#hex|reset> [claimId]");
+        DEFAULTS.put("claim.inner-subdivision-too-close", "&cThis subdivision must stay at least one block inside its parent on all sides.");
+        DEFAULTS.put("claim.list-divider", "&8&m───────────────────────────");
+        DEFAULTS.put("claim.list-entry-area", " &8· &7{area} blocks");
+        DEFAULTS.put("claim.list-entry-coordinates", " &8· &7x{x}, z{z}");
+        DEFAULTS.put("claim.list-entry-id", "&6#{id}");
+        DEFAULTS.put("claim.list-entry-name", " &e{name}");
+        DEFAULTS.put("claim.list-entry-parent", " &8(Child of #{parent})");
+        DEFAULTS.put("claim.list-entry-prefix", "&8 • ");
+        DEFAULTS.put("claim.list-entry-world", " &8· &7{world}");
+        DEFAULTS.put("claim.list-hover-id", "&7Claim ID: &6{id}");
+        DEFAULTS.put("claim.list-hover-teleport", "&eClick to teleport");
+        DEFAULTS.put("claim.list-no-admin", "&7No admin claims found.");
+        DEFAULTS.put("claim.list-page-next", "  &6Next »");
+        DEFAULTS.put("claim.list-page-next-disabled", "  &8Next »");
+        DEFAULTS.put("claim.list-page-next-hover", "&eGo to the next page");
+        DEFAULTS.put("claim.list-page-previous", "&6« Previous  ");
+        DEFAULTS.put("claim.list-page-previous-disabled", "&8« Previous  ");
+        DEFAULTS.put("claim.list-page-previous-hover", "&eGo to the previous page");
+        DEFAULTS.put("claim.list-subclaim-prefix", "&8   └ ");
+        DEFAULTS.put("claim.list-unnamed", "Unnamed claim");
+        DEFAULTS.put("claim.name-cleared", "&aClaim name cleared.");
+        DEFAULTS.put("claim.name-invalid-chars", "&cClaim name contains invalid characters.");
+        DEFAULTS.put("claim.name-too-long", "&cClaim name is too long (max {max} characters).");
+        DEFAULTS.put("claim.resize-fail-overlap-subdivision", "&cYou can't create a subdivision here because it would overlap another subdivision. Consider /abandonclaim to delete it, or use your shovel at a corner to resize it.");
+        DEFAULTS.put("claim.resize-fail-subdivision", "&cCannot resize claim: The new boundaries would exclude an existing subdivision. Please remove or move the subdivision first.");
+        DEFAULTS.put("claim.resize-too-narrow", "&cThis new size would be too small. Claims must be at least &e{min} &cblocks wide.");
+        DEFAULTS.put("claim.resize-too-small-area", "&cThis claim would be too small. Any claim must use at least &e{min} &ctotal claim blocks.");
+        DEFAULTS.put("claim.transfer-at-limit", "&c{player} has reached their maximum claim limit.");
+        DEFAULTS.put("claim.transfer-cannot-afford", "&cYou need &e{fee}&c to transfer this claim.");
+        DEFAULTS.put("claim.transfer-claim-missing", "&cCould not locate this claim.");
+        DEFAULTS.put("claim.transfer-failed", "&cFailed to transfer claim {id}.");
+        DEFAULTS.put("claim.transfer-fee-free", "Free");
+        DEFAULTS.put("claim.transfer-gui-success", "&aTransferred claim &6#{id}&a to &f{player}&a!");
+        DEFAULTS.put("claim.transfer-gui-success-fee", "&aTransferred claim &6#{id}&a to &f{player}&a for &e{fee}&a!");
+        DEFAULTS.put("claim.transfer-needs-blocks", "&c{player} needs &e{blocks}&c more claim blocks to receive this claim.");
+        DEFAULTS.put("claim.transfer-no-economy", "&cEconomy is unavailable to process the transfer fee.");
+        DEFAULTS.put("claim.transfer-not-owner", "&cOnly the claim owner can transfer ownership.");
+        DEFAULTS.put("claim.transfer-player-not-found", "&cPlayer not found or has never joined: &e{player}");
+        DEFAULTS.put("claim.transfer-received-from", "&a{player} transferred ownership of claim &6#{id}&a to you!");
+        DEFAULTS.put("claim.transfer-self", "&cYou already own this claim.");
+        DEFAULTS.put("claim.transfer-top-level-only", "&cOnly top-level claims can be transferred (not subdivisions).");
+        DEFAULTS.put("claim.transfer-unavailable-disabled", "&cPlayer claim transfers are disabled on this server.");
+        DEFAULTS.put("claim.transfer-unavailable-fork", "&cPlayer claim transfers require GriefPrevention3D with TransferClaim enabled.");
+        DEFAULTS.put("claim.trust-anywhere-required", "&cYou need &egriefprevention.trust.anywhere &cto use a claim ID with trust commands.");
+        DEFAULTS.put("claim.trust-usage", "&eUsage: /claim trust <player> [build|access|containers|manage] [claimId]");
+        DEFAULTS.put("claim.trustlist-empty", "&7No players are trusted in this claim.");
+        DEFAULTS.put("claim.trustlist-entry", "&7- &e{player}&7: {level}");
+        DEFAULTS.put("claim.trustlist-header", "&6=== Trust List for Claim {id} ===");
+        DEFAULTS.put("claim.unban-public", "&aClaim {id} is no longer public-banned.");
+        DEFAULTS.put("claim.waypoint-disabled", "&cClaim waypoints are disabled on this server.");
+        DEFAULTS.put("claim.waypoint-hidden", "&aClaim {id}'s waypoint is back to owner and trusted only.");
+        DEFAULTS.put("claim.waypoint-limit-reached", "&cYou already publish {used}/{max} claim waypoints. Hide one first.");
+        DEFAULTS.put("claim.waypoint-published", "&aClaim {id}'s waypoint is now shown to everyone.");
+        DEFAULTS.put("commands.mailbox-cmd-help", "&7/mailbox help - Show this help");
+        DEFAULTS.put("commands.mailbox-cmd-setup", "&7/mailbox - Start setup wizard (no claim ID needed)");
+        DEFAULTS.put("commands.mailbox-commands-title", "&eCommands:");
+        DEFAULTS.put("commands.mailbox-help-step1", "&71. Place a container (chest/barrel) in a claim you own or rent");
+        DEFAULTS.put("commands.mailbox-help-step2", "&72. Run &e/mailbox&7 to start the setup wizard (choose self or buyable)");
+        DEFAULTS.put("commands.mailbox-help-step3", "&73. Or create a [Mailbox] sign manually: line 0 &e[Mailbox]&7, line 1 empty or &ekind;amount&7 for buyable");
+        DEFAULTS.put("commands.mailbox-help-step4", "&74. Put the sign on the container as a wall sign");
+        DEFAULTS.put("commands.mailbox-help-title", "&6Mailbox Usage:");
+        DEFAULTS.put("commands.rentclaim-cmd-hint", "&7(If no ID provided, uses current claim)");
+        DEFAULTS.put("commands.rentclaim-cmd-setup", "&7/rentclaim [id] - Start rental sign setup wizard");
+        DEFAULTS.put("commands.rentclaim-help-desc", "&7Creates a rental sign for your claim");
+        DEFAULTS.put("commands.rentclaim-help-title", "&6Rent Claim Usage:");
+        DEFAULTS.put("commands.sellclaim-cmd-hint", "&7(If no ID provided, uses current claim)");
+        DEFAULTS.put("commands.sellclaim-cmd-setup", "&7/sellclaim [id] - Start sell sign setup wizard");
+        DEFAULTS.put("commands.sellclaim-help-desc", "&7Creates a sell sign for your claim");
+        DEFAULTS.put("commands.sellclaim-help-title", "&6Sell Claim Usage:");
+        DEFAULTS.put("flags.denied", "&c{flag} is disabled in this claim.");
+        DEFAULTS.put("flags.filter-mode", "&aSet &6{flag}&a filter mode to &e{mode}&a.");
+        DEFAULTS.put("flags.filter-prompt", "&eEnter {kind} for &6{flag}&e (space/comma separated, prefix &f-&e to remove, &fclear&e to empty, or &fcancel&e):");
+        DEFAULTS.put("flags.filter-rejected", "&eIgnored unrecognized entries: &f{entries}");
+        DEFAULTS.put("flags.filter-updated", "&aUpdated &6{flag}&a filter (&e{count}&a entries).");
+        DEFAULTS.put("flags.reset", "&eReset flag &6{flag}&e to its default.");
+        DEFAULTS.put("flags.reset-all", "&aReset all custom flags on claim &6#{id}&a.");
+        DEFAULTS.put("flags.state-allowed", "&aallowed");
+        DEFAULTS.put("flags.state-denied", "&cdenied");
+        DEFAULTS.put("general.error", "&cAn unexpected error occurred.");
+        DEFAULTS.put("general.reload-fail", "&cFailed to reload configuration: {error}");
+        DEFAULTS.put("general.unknown-player", "&cUnknown player: {player}");
+        DEFAULTS.put("gui.prompt-cancelled", "&eInput cancelled.");
+        DEFAULTS.put("mailbox.container-break-confirm", "&eBreak the container again while sneaking within 10 seconds to confirm removing this mailbox.");
+        DEFAULTS.put("mailbox.container-evict-required", "&cThis container is a sold mailbox. Use &e/claim evict mailbox {id} &cto reclaim it.");
+        DEFAULTS.put("mailbox.container-protected", "&cThis container is a protected mailbox.");
+        DEFAULTS.put("mailbox.container-sneak-to-break", "&eSneak while breaking to remove your mailbox container.");
+        DEFAULTS.put("mailbox.create-failed", "&cCould not create mailbox subdivision.");
+        DEFAULTS.put("mailbox.nested-not-allowed", "&cMailboxes cannot be created inside another subdivision.");
+        DEFAULTS.put("mailbox.purchased", "&aYou have purchased this mailbox!");
+        DEFAULTS.put("market.abandon-blocked-footer", "&eClick the [EVICT] or [CANCEL] actions above before abandoning this claim.");
+        DEFAULTS.put("market.abandon-blocked-header", "&cCannot abandon or delete claim &6#{id}&c — resolve active listings first:");
+        DEFAULTS.put("market.already-rented", "&cThat claim is already being rented by another player.");
+        DEFAULTS.put("market.banned-from-claim", "&cYou are banned from that claim.");
+        DEFAULTS.put("market.cannot-buy-own", "&cYou cannot buy or rent your own listing.");
+        DEFAULTS.put("market.disabled", "&cThe Claim Market is disabled on this server.");
+        DEFAULTS.put("market.evict-mailbox-completed", "&aCompleted mailbox eviction for &e{id}&a (former buyer: &f{player}&a).");
+        DEFAULTS.put("market.evict-mailbox-completed-notify", "&cYour mailbox &e{id}&c has been reclaimed after the eviction notice expired.");
+        DEFAULTS.put("market.evict-mailbox-finalize-hint", "&aRun &e/claim evict mailbox {id}&a again to finalize removal.");
+        DEFAULTS.put("market.evict-mailbox-not-sold", "&cMailbox &e{id}&c does not have an active buyer to evict.");
+        DEFAULTS.put("market.evict-mailbox-notice-received", "&cYou received a {duration} eviction notice for mailbox &e{id}&c.");
+        DEFAULTS.put("market.evict-mailbox-self", "&cYou own that mailbox yourself; sneak-break the sign or container to remove it.");
+        DEFAULTS.put("market.evict-mailbox-usage", "&eUsage: /claim evict mailbox <mailboxId> [player]");
+        DEFAULTS.put("market.evict-mailbox-wrong-player", "&cThat mailbox belongs to &e{player}&c.");
+        DEFAULTS.put("market.gui-purchase-disabled", "&eDirect GUI purchases are disabled. Travel to the sign in person:");
+        DEFAULTS.put("market.invalid-price", "&cInvalid price: &e{reason}");
+        DEFAULTS.put("market.letter-mailbox-full", "&c{player}'s mailbox is full — letter could not be delivered.");
+        DEFAULTS.put("market.letter-prompt", "&eWrite your letter to &f{player}&e in chat (or type &ccancel&e to cancel):");
+        DEFAULTS.put("market.letter-sent", "&aDelivered your written letter to &f{player}&a's mailbox!");
+        DEFAULTS.put("market.listing-gone", "&cThat listing's sign is no longer available.");
+        DEFAULTS.put("market.mail-accepting-off", "&eMailbox &6{id}&e will no longer accept remote gifts or letters.");
+        DEFAULTS.put("market.mail-accepting-on", "&aMailbox &e{id}&a is now accepting remote gifts and letters.");
+        DEFAULTS.put("market.mail-disabled", "&cRemote mailbox delivery is disabled on this server.");
+        DEFAULTS.put("market.mail-letters-disabled", "&cSending written letters is disabled on this server.");
+        DEFAULTS.put("market.mail-not-accepting", "&cThat mailbox is not currently accepting remote gifts or letters.");
+        DEFAULTS.put("market.mail-owner-remote-disabled", "&cRemote opening of your own mailbox is not permitted.");
+        DEFAULTS.put("market.mail-received-gift", "&d✉ &f{player}&a deposited a gift in your mailbox (&e{id}&a)!");
+        DEFAULTS.put("market.mail-received-letter", "&d✉ &f{player}&a sent a written letter to your mailbox (&e{id}&a)!");
+        DEFAULTS.put("market.mail-unread-join", "&d✉ &aYou received &e{count}&a mailbox delivery(s) while offline! Check &f/claim&a -> &fMy Claims (Mailboxes)&a.");
+        DEFAULTS.put("market.mailbox-evict-required", "&cThis mailbox has been purchased. Use &e{command}&c to start a mailbox eviction notice.");
+        DEFAULTS.put("market.note-cleared", "&eMarket listing note cleared.");
+        DEFAULTS.put("market.note-prompt", "&eType a short market tagline in chat (max {max} chars), or type &ccancel&e to cancel:");
+        DEFAULTS.put("market.note-updated", "&aMarket listing note updated!");
+        DEFAULTS.put("market.price-updated", "&aUpdated listing price for claim &6#{id}&a to &e{price}&a.");
+        DEFAULTS.put("market.removelisting-not-found", "&cNo active for-sale listing found matching: &e{id}");
+        DEFAULTS.put("market.removelisting-success", "&aRemoved market listing and sign for claim &6#{id}&a.");
+        DEFAULTS.put("market.removelisting-usage", "&eUsage: /claim removelisting <listingKey|claimId>");
+        DEFAULTS.put("market.teleport-not-allowed", "&cTeleportation is not enabled for this market listing.");
+        DEFAULTS.put("market.teleport-toggled-off", "&eMarket preview teleport disabled for claim &6#{id}&e.");
+        DEFAULTS.put("market.teleport-toggled-on", "&aMarket preview teleport enabled for claim &6#{id}&a.");
+        DEFAULTS.put("market.travel-instructions", "&7Sign Location: &f{world} &7@ &ex{x}, y{y}, z{z}");
+        DEFAULTS.put("market.untrust-blocked-footer", "&eUse the [EVICT] or [CANCEL] buttons above to resolve the listings first.");
+        DEFAULTS.put("market.untrust-blocked-header-all", "&cCannot untrust &f{player}&c — active listings exist in your claims:");
+        DEFAULTS.put("market.untrust-blocked-header-single", "&cCannot untrust &f{player}&c — they have active listings in this claim:");
+        DEFAULTS.put("market.visibility-off", "&eListing for claim &6#{id}&e is now hidden from the Claim Market.");
+        DEFAULTS.put("market.visibility-on", "&aListing for claim &6#{id}&a is now visible on the Claim Market.");
+        DEFAULTS.put("migration.console-backup-created", "&8[&6GPX&8] &7Backup created: {backup-file}");
+        DEFAULTS.put("migration.console-deprecated-file", "&8[&6GPX&8] &eDeprecated file found: {file} - This file is safe to delete.");
+        DEFAULTS.put("migration.console-file-recreated", "&8[&6GPX&8] &7Recreated file: {file} with new format");
+        DEFAULTS.put("migration.console-migration-complete", "&8[&6GPX&8] &aConfiguration migration completed successfully!");
+        DEFAULTS.put("migration.console-migration-failed", "&8[&6GPX&8] &cConfiguration migration failed: {error}");
+        DEFAULTS.put("migration.console-starting", "&8[&6GPX&8] &7Starting configuration migration from version {old} to {new}...");
+        DEFAULTS.put("migration.ingame-deprecated-files", "&8[&6GPX&8] &eSome deprecated files were detected. Check console for details.");
+        DEFAULTS.put("migration.ingame-migration-complete", "&8[&6GPX&8] &aConfiguration has been migrated to the new version!");
+        DEFAULTS.put("permissions.use-sign-denied", "&cYou don't have permission to use {signtype} signs.");
+        DEFAULTS.put("permissions.use-sign-denied-detail", "&7  Missing: &e{permission}");
+        DEFAULTS.put("sign-creation.claim-already-for-sale", "&cThis claim is already for sale.");
+        DEFAULTS.put("sign-creation.claim-already-rented", "&cThis claim is already being rented.");
+        DEFAULTS.put("sign-creation.gp3d-required", "&cMailbox signs require GP3D (GriefPrevention 3D) to be installed.");
+        DEFAULTS.put("sign-creation.invalid-format", "&cInvalid sign format. {details}");
+        DEFAULTS.put("sign-creation.mailbox-must-be-subdivision", "&cMailbox signs must reference a 3D subdivision.");
+        DEFAULTS.put("sign-creation.mailbox-sign-created", "&aMailbox sign created successfully!");
+        DEFAULTS.put("sign-creation.mailbox-wrong-size", "&cMailbox signs must reference a 1x1x1 subdivision (current: {width}x{height}x{depth}).");
+        DEFAULTS.put("sign-creation.not-claim-owner", "&cYou must be the owner of this claim to create this sign.");
+        DEFAULTS.put("sign-creation.not-in-claim", "&cThis sign must be placed inside a claim.");
+        DEFAULTS.put("sign-creation.rent-sign-created", "&aRent sign created successfully!");
+        DEFAULTS.put("sign-creation.sell-sign-created", "&aSell sign created successfully!");
+        DEFAULTS.put("sign-creation.unsafe-location", "&cThis location is not safe for a spawn point. Please place the sign in a safer area.");
+        DEFAULTS.put("sign-destruction.cannot-destroy-active-rental", "&cYou cannot destroy this sign while the claim is being rented.");
+        DEFAULTS.put("sign-destruction.cannot-destroy-not-owner", "&cYou cannot destroy this sign - you are not the claim owner.");
+        DEFAULTS.put("sign-destruction.confirm-destroy-mailbox", "&eAre you sure you want to destroy this mailbox sign? Type &6/confirm&e to confirm.");
+        DEFAULTS.put("sign-destruction.confirm-destroy-rent", "&eAre you sure you want to destroy this rent sign? Type &6/confirm&e to confirm.");
+        DEFAULTS.put("sign-destruction.confirm-destroy-sell", "&eAre you sure you want to destroy this sell sign? Type &6/confirm&e to confirm.");
+        DEFAULTS.put("sign-destruction.mailbox-sign-destroyed", "&aMailbox sign destroyed.");
+        DEFAULTS.put("sign-destruction.rent-sign-destroyed", "&aRent sign destroyed.");
+        DEFAULTS.put("sign-destruction.sell-sign-destroyed", "&aSell sign destroyed.");
+        DEFAULTS.put("sign-interaction.buy-already-owner", "&cYou already own this claim.");
+        DEFAULTS.put("sign-interaction.buy-cannot-afford", "&cYou cannot afford this claim. Cost: {cost}");
+        DEFAULTS.put("sign-interaction.buy-claim-unavailable", "&cThis claim is not available for purchase.");
+        DEFAULTS.put("sign-interaction.buy-success", "&aCongratulations! You now own this claim!");
+        DEFAULTS.put("sign-interaction.mailbox-collected", "&aCollected {amount} from the mailbox!");
+        DEFAULTS.put("sign-interaction.mailbox-deposit-fail", "&cFailed to deposit: {reason}");
+        DEFAULTS.put("sign-interaction.mailbox-deposit-success", "&aDeposited {amount} into the mailbox!");
+        DEFAULTS.put("sign-interaction.mailbox-empty", "&eThe mailbox is empty.");
+        DEFAULTS.put("sign-interaction.rent-already-renting", "&cYou are already renting this claim.");
+        DEFAULTS.put("sign-interaction.rent-cannot-afford", "&cYou cannot afford this rental. Cost: {cost}");
+        DEFAULTS.put("sign-interaction.rent-claim-unavailable", "&cThis claim is not available for rent.");
+        DEFAULTS.put("sign-interaction.rent-extended", "&aRental extended by {duration}. Total: {total}");
+        DEFAULTS.put("sign-interaction.rent-max-reached", "&eYou have reached the maximum rental duration.");
+        DEFAULTS.put("sign-interaction.snapshot-restoring", "&eSnapshot is restoring, please wait a few seconds...");
+        DEFAULTS.put("sign-move.cancelled", "&eSign moving cancelled.");
+        DEFAULTS.put("sign-move.destination-failed", "&cThe destination sign could not be placed. Try placing another sign.");
+        DEFAULTS.put("sign-move.expired", "&eSign moving timed out. Run &6/moveclaimsign &eagain.");
+        DEFAULTS.put("sign-move.failed", "&cThe sign could not be prepared for moving.");
+        DEFAULTS.put("sign-move.no-permission", "&cYou cannot move that sign. Missing permission: &e{permission}");
+        DEFAULTS.put("sign-move.not-managed", "&cThat is not a GPExpansion rent, sell, mailbox, global, or self-mailbox sign.");
+        DEFAULTS.put("sign-move.nothing-to-cancel", "&7You are not currently moving a sign.");
+        DEFAULTS.put("sign-move.place-destination", "&aSelected the {type} sign. &ePlace another sign where it should move.");
+        DEFAULTS.put("sign-move.same-location", "&cPlace the destination sign at a different location.");
+        DEFAULTS.put("sign-move.select-source", "&eRight-click the managed sign you want to move. &7Use &6/moveclaimsign cancel &7to cancel.");
+        DEFAULTS.put("sign-move.select-source-sign", "&cThat is not a sign. Right-click the managed sign you want to move.");
+        DEFAULTS.put("sign-move.success", "&aMoved the {type} sign. The old sign has been cleared.");
+        DEFAULTS.put("sign-protection.confirm-alternative", "&7You can also confirm by &6sneak + right clicking &7the sign.");
+        DEFAULTS.put("sign-protection.renter-warning", "&eWarning: &f{renter} &eis currently renting this from you. Try &n/claim evict {renter}&e while standing in the claim to start the eviction process.");
+        DEFAULTS.put("sign-protection.renter-warning-hover", "Click to run /claim evict {renter}");
+        DEFAULTS.put("sign-protection.sneak-to-manage", "&eSneak and break to manage this sign.");
+        DEFAULTS.put("sign-protection.trust-removal-warning", "&eWarning: trust will be removed for &6{player}");
+        DEFAULTS.put("snapshot.claim-too-large", "&cThis claim is too large to snapshot. Maximum 128 blocks on each axis (X, Y, Z). Subdivide or use a smaller claim.");
+        DEFAULTS.put("snapshot.create-failed", "&cFailed to create snapshot.");
+        DEFAULTS.put("snapshot.created", "&aSnapshot created: &e{id}&a.");
+        DEFAULTS.put("snapshot.list-empty", "&eNo snapshots found. This claim will not be restored on eviction.");
+        DEFAULTS.put("snapshot.list-entry", "&7- &e{id} &7({date})");
+        DEFAULTS.put("snapshot.list-header", "&eSnapshots ({count}):");
+        DEFAULTS.put("snapshot.not-available-for-rent", "&cThis claim is currently rented. Snapshots can only be created for claims available for rent.");
+        DEFAULTS.put("snapshot.remove-failed", "&cFailed to remove snapshot.");
+        DEFAULTS.put("snapshot.remove-usage", "&cUsage: /claim snapshot remove <snapshotId>");
+        DEFAULTS.put("snapshot.removed", "&aSnapshot removed: &e{id}&a.");
+        DEFAULTS.put("snapshot.restore-prompt", "&eYou have snapshot restore enabled. Run &6/claim snapshot create {claimId}&e to save the claim state before listing it for rent.");
+        DEFAULTS.put("snapshot.restored-on-eviction", "&aClaim restored from snapshot on eviction.");
+        DEFAULTS.put("snapshot.usage", "&eUsage: /claim snapshot [list|remove|create] [claimId|all]. &7list = current claim, list <id> = that claim, list all = all claims.");
+        DEFAULTS.put("update-checker.console-check-failed", "&8[&6GPX&8] &cFailed to check for updates: {error}");
+        DEFAULTS.put("update-checker.console-checking", "&8[&6GPX&8] &7Checking for updates on SpigotMC...");
+        DEFAULTS.put("update-checker.console-download-link", "&8[&6GPX&8] &7Download: {url}");
+        DEFAULTS.put("update-checker.console-up-to-date", "&8[&6GPX&8] &aYou are running the latest version!");
+        DEFAULTS.put("update-checker.console-update-available", "&8[&6GPX&8] &eUpdate available! Current: {current}, Latest: {latest}");
+        DEFAULTS.put("update-checker.ingame-check-failed", "&8[&6GPX&8] &cFailed to check for updates");
+        DEFAULTS.put("update-checker.ingame-download-link", "&8[&6GPX&8] &7Download at: &e&n{url}");
+        DEFAULTS.put("update-checker.ingame-update-available", "&8[&6GPX&8] &e&lUPDATE AVAILABLE!&r &7Current: {current}, Latest: {latest}");
+        DEFAULTS.put("wizard.already-in-wizard", "&cYou are already in a setup wizard. Use &e/cancelsetup&c to cancel.");
+        DEFAULTS.put("wizard.auto-paste-expired", "&eAuto-paste mode has expired. Run the wizard again if needed.");
+        DEFAULTS.put("wizard.mailbox-complete", "&a✓ Mailbox sign format ready!\n&7The next sign you place will be automatically configured.\n&7Type &e/cancelsetup&7 to cancel auto-paste mode.");
+        DEFAULTS.put("wizard.mailbox-enter-amount", "&eWhat's the deposit amount?");
+        DEFAULTS.put("wizard.rent-complete", "&a✓ Rent sign format ready!\n&7The next sign you place will be automatically configured.\n&7Type &e/cancelsetup&7 to cancel auto-paste mode.");
+        DEFAULTS.put("wizard.rent-enter-amount", "&eWhat's the price per rental period?");
+        DEFAULTS.put("wizard.rent-enter-duration", "&eHow long should each rental period be?");
+        DEFAULTS.put("wizard.rent-enter-duration-hint", "&7Format: &e<number><s/m/h/d/w>&7 (e.g., &e1d&7 for 1 day, &e1w&7 for 1 week)");
+        DEFAULTS.put("wizard.rent-enter-max-duration", "&eWhat's the maximum total rental time?");
+        DEFAULTS.put("wizard.rent-enter-max-duration-hint", "&7Format: &e<number><s/m/h/d/w>&7 (e.g., &e30d&7 for 30 days, &e12w&7 for 12 weeks)");
+        DEFAULTS.put("wizard.sell-complete", "&a✓ Sell sign format ready!\n&7The next sign you place will be automatically configured.\n&7Type &e/cancelsetup&7 to cancel auto-paste mode.");
+        DEFAULTS.put("wizard.sell-enter-amount", "&eWhat's the sale price?");
+        DEFAULTS.put("wizard.timeout", "&cSetup wizard timed out.");
+
         // Version for migration tracking
         DEFAULTS.put("version", "0.1.3a");
     }
@@ -845,14 +1085,14 @@ public class Messages {
      * Send a message to a player.
      */
     public void send(Player player, String path) {
-        player.sendMessage(get(path));
+        Mini.send(player, get(path));
     }
     
     /**
      * Send a message to a player with placeholders.
      */
     public void send(Player player, String path, String... replacements) {
-        player.sendMessage(get(path, replacements));
+        Mini.send(player, get(path, replacements));
     }
     
     /**
@@ -861,7 +1101,7 @@ public class Messages {
     public void sendPrefixed(Player player, String path) {
         String prefix = getRaw("general.prefix");
         String message = getRaw(path);
-        player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(prefix + message));
+        Mini.send(player, LegacyComponentSerializer.legacyAmpersand().deserialize(prefix + message));
     }
     
     /**
@@ -870,7 +1110,7 @@ public class Messages {
     public void sendPrefixed(Player player, String path, String... replacements) {
         String prefix = getRaw("general.prefix");
         String message = getRaw(path, replacements);
-        player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(prefix + message));
+        Mini.send(player, LegacyComponentSerializer.legacyAmpersand().deserialize(prefix + message));
     }
     
     /**

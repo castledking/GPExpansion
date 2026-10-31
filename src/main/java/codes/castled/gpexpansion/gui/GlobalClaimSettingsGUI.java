@@ -145,6 +145,10 @@ public class GlobalClaimSettingsGUI extends BaseGUI {
             lore.add("&eClick to select icon");
         }
         
+        ItemStack iconItem = dataStore.getIconItem(claimId).orElse(null);
+        if (iconItem != null) {
+            return restyleItem(iconItem, name, lore, false);
+        }
         return createItem(display, name, lore);
     }
     
@@ -367,14 +371,14 @@ public class GlobalClaimSettingsGUI extends BaseGUI {
         } else if (slot == iconSlot) {
             // Open icon selection GUI
             player.closeInventory();
-            new IconSelectionGUI(plugin, player,
+            new IconSelectionGUI(plugin, player, plugin.getClaimDataStore().getIconItem(claimId).orElse(null),
                 icon -> {
-                    if (!ClaimCustomizationUtil.isIconMaterialAllowed(plugin, icon)) {
-                        plugin.getMessages().send(player, "claim.icon-denied", "{icon}", icon.name());
+                    if (!ClaimCustomizationUtil.isIconAllowed(plugin, icon)) {
+                        plugin.getMessages().send(player, "claim.icon-denied", "{icon}", icon.getType().name());
                         manager.openGlobalClaimSettings(player, claim, claimId, fromSign);
                         return;
                     }
-                    plugin.getClaimDataStore().setIcon(claimId, icon);
+                    plugin.getClaimDataStore().setIcon(claimId, icon, player);
                     plugin.getClaimDataStore().save();
                     plugin.getMessages().send(player, "gui.icon-set", "{id}", claimId);
                     manager.openGlobalClaimSettings(player, claim, claimId, fromSign);

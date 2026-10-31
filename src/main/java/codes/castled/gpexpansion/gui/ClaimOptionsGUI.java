@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.gui;
+import codes.castled.gpexpansion.util.Mini;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -28,13 +29,14 @@ public class ClaimOptionsGUI extends BaseGUI {
     private boolean confirmAbandon;
 
     private int summarySlot = 4;
-    private int teleportSlot = 20;
-    private int resizeSlot = 22;
-    private int trustSlot = 24;
+    private int teleportSlot = 19;
+    private int resizeSlot = 21;
+    private int trustSlot = 23;
+    private int globalSettingsSlot = 25;
     private int abandonSlot = 36;
     private int viewChildrenSlot = 38;
     private int claimFlagsSlot = 40;
-    private int globalSettingsSlot = 42;
+    private int transferSlot = 42;
     private int backSlot = 44;
 
     public ClaimOptionsGUI(GUIManager manager, Player player, Object claim, String claimId) {
@@ -57,6 +59,7 @@ public class ClaimOptionsGUI extends BaseGUI {
             viewChildrenSlot = config.getInt("items.view-children.slot", viewChildrenSlot);
             claimFlagsSlot = config.getInt("items.claim-flags.slot", claimFlagsSlot);
             globalSettingsSlot = config.getInt("items.global-settings.slot", globalSettingsSlot);
+            transferSlot = config.getInt("items.transfer.slot", transferSlot);
             backSlot = config.getInt("items.back.slot", backSlot);
         }
     }
@@ -82,6 +85,7 @@ public class ClaimOptionsGUI extends BaseGUI {
         inventory.setItem(viewChildrenSlot, createViewChildrenItem());
         inventory.setItem(claimFlagsSlot, createClaimFlagsItem());
         inventory.setItem(globalSettingsSlot, createGlobalSettingsItem());
+        inventory.setItem(transferSlot, createTransferItem());
         inventory.setItem(backSlot, createBackItem());
     }
 
@@ -185,14 +189,16 @@ public class ClaimOptionsGUI extends BaseGUI {
         lore.add("");
         lore.add(placeholders.get("{trust_status}"));
         lore.add(placeholders.get("{trust_action}"));
-        skull.editMeta(meta -> {
+        org.bukkit.inventory.meta.ItemMeta meta = skull.getItemMeta();
+        if (meta != null) {
             meta.displayName(colorize("&a&lManage Trust"));
             List<net.kyori.adventure.text.Component> loreComponents = new ArrayList<>();
             for (String line : lore) {
                 loreComponents.add(colorize(line));
             }
             meta.lore(loreComponents);
-        });
+            skull.setItemMeta(meta);
+        }
         return skull;
     }
 
@@ -255,11 +261,19 @@ public class ClaimOptionsGUI extends BaseGUI {
     }
 
     private ItemStack createClaimFlagsItem() {
-        boolean canAccess = ClaimFlagsGUI.canAccess(player, claim, gp);
+        boolean canAccess = FlagsGUI.canAccess(plugin, player, claim, gp);
+        boolean builtin = plugin.getClaimFlagManager() != null && plugin.getClaimFlagManager().isEnabled();
+        int setCount = builtin ? plugin.getClaimFlagStore().countSet(claimId) : 0;
 
         Map<String, String> placeholders = new HashMap<>();
-        placeholders.put("{flags_status}", canAccess ? "&aGPFlags available" : "&cGPFlags unavailable or no access");
-        placeholders.put("{flags_action}", canAccess ? "&eClick to manage claim flags" : "&8Requires GPFlags and claim access");
+        if (builtin) {
+            placeholders.put("{flags_status}", setCount > 0 ? "&a" + setCount + " flag" + (setCount == 1 ? "" : "s") + " set" : "&7No flags set");
+            placeholders.put("{flags_action}", canAccess ? "&eClick to manage claim flags" : "&8You must own or manage this claim");
+        } else {
+            placeholders.put("{flags_status}", canAccess ? "&aGPFlags available" : "&cGPFlags unavailable or no access");
+            placeholders.put("{flags_action}", canAccess ? "&eClick to manage claim flags" : "&8Requires GPFlags and claim access");
+        }
+        placeholders.put("{flags_set}", String.valueOf(setCount));
 
         if (config != null && config.contains("items.claim-flags")) {
             return createItemFromConfig("items.claim-flags", placeholders);
@@ -284,6 +298,106 @@ public class ClaimOptionsGUI extends BaseGUI {
         lore.add("");
         lore.add("&eClick to open global settings");
         return createItem(Material.ENDER_CHEST, "&6&lGlobal Settings", lore);
+    }
+
+    /**
+     * Transfer Ownership is always shown. It only works on GriefPrevention3D with
+     * Claims.TransferClaim.Enabled; elsewhere it explains why it is unavailable.
+     */
+    private ItemStack createTransferItem() {
+        codes.castled.gpexpansion.transfer.ClaimTransferService transfers = plugin.getClaimTransferService();
+        codes.castled.gpexpansion.transfer.ClaimTransferService.Availability availability = transfers.availability();
+        String state;
+        if (availability == codes.castled.gpexpansion.transfer.ClaimTransferService.Availability.UNSUPPORTED) {
+            state = "unsupported";
+        } else if (availability == codes.castled.gpexpansion.transfer.ClaimTransferService.Availability.DISABLED) {
+            state = "disabled";
+        } else if (gp.isSubdivision(claim)) {
+            state = "subdivision";
+        } else if (transfers.checkSender(player, claim).isPresent()) {
+            state = "no-access";
+        } else {
+            state = "available";
+        }
+        boolean available = state.equals("available");
+        String fee = transfers.formatFee(transfers.fee(player));
+
+        Map<String, String> placeholders = new HashMap<>();
+        placeholders.put("{transfer_status}", getString("items.transfer.states." + state + ".status",
+            defaultTransferStatus(state)).replace("{fee}", fee));
+        placeholders.put("{transfer_action}", getString("items.transfer.states." + state + ".action",
+            defaultTransferAction(state)).replace("{fee}", fee));
+        placeholders.put("{fee}", fee);
+
+        String materialName = getString("items.transfer.material", "TRIAL_KEY");
+        if (!available) {
+            String unavailableMaterial = getString("items.transfer.unavailable-material", "");
+            if (!unavailableMaterial.isBlank()) {
+                materialName = unavailableMaterial;
+            }
+        }
+        Material material = Material.matchMaterial(materialName);
+        if (material == null || !material.isItem()) {
+            // TRIAL_KEY only exists from 1.20.5; older servers get a tripwire hook.
+            material = Material.matchMaterial("TRIAL_KEY") != null ? Material.matchMaterial("TRIAL_KEY") : Material.TRIPWIRE_HOOK;
+        }
+
+        String name = applyPlaceholders(getString("items.transfer.name", "&e&lTransfer Ownership"), placeholders);
+        List<String> loreTemplate = getStringList("items.transfer.lore");
+        if (loreTemplate.isEmpty()) {
+            loreTemplate = List.of("&7Give this claim to another player.", "", "{transfer_status}", "{transfer_action}");
+        }
+        List<String> lore = new ArrayList<>();
+        for (String line : loreTemplate) {
+            lore.add(applyPlaceholders(line, placeholders));
+        }
+        return createItem(material, name, lore);
+    }
+
+    private static String defaultTransferStatus(String state) {
+        return switch (state) {
+            case "available" -> "&aCost: &f{fee}";
+            case "subdivision" -> "&cOnly top-level claims can change owner";
+            case "no-access" -> "&cOnly the owner can give this claim away";
+            default -> "&cUnavailable";
+        };
+    }
+
+    private static String defaultTransferAction(String state) {
+        return switch (state) {
+            case "available" -> "&eClick to choose the new owner";
+            case "unsupported" -> "&8Requires GriefPrevention3D with TransferClaim enabled";
+            case "disabled" -> "&8Claim transfers are turned off on this server";
+            default -> "&8Transfer the parent claim instead";
+        };
+    }
+
+    private void startTransfer() {
+        codes.castled.gpexpansion.transfer.ClaimTransferService transfers = plugin.getClaimTransferService();
+        java.util.Optional<codes.castled.gpexpansion.transfer.ClaimTransferService.Problem> problem = transfers.checkSender(player, claim);
+        if (problem.isPresent()) {
+            transfers.send(player, problem.get());
+            return;
+        }
+        player.closeInventory();
+        SignInputGUI.openPlayerName(plugin, player, "New owner",
+            name -> {
+                OfflinePlayer recipient = transfers.resolveRecipient(name);
+                if (recipient == null) {
+                    plugin.getMessages().send(player, "claim.transfer-player-not-found", "{player}", name);
+                    manager.openClaimOptions(player, claim, claimId);
+                    return;
+                }
+                java.util.Optional<codes.castled.gpexpansion.transfer.ClaimTransferService.Problem> recipientProblem =
+                    transfers.checkTransfer(player, claim, recipient);
+                if (recipientProblem.isPresent()) {
+                    transfers.send(player, recipientProblem.get());
+                    manager.openClaimOptions(player, claim, claimId);
+                    return;
+                }
+                manager.openGUI(player, new ClaimTransferConfirmGUI(manager, player, claim, claimId, recipient));
+            },
+            () -> manager.openClaimOptions(player, claim, claimId));
     }
 
     private ItemStack createBackItem() {
@@ -320,7 +434,7 @@ public class ClaimOptionsGUI extends BaseGUI {
             if (!canManageClaim()) {
                 plugin.getMessages().send(player, "general.no-permission");
             } else if (!gp.canResizeClaim(claim)) {
-                player.sendMessage(colorize("&cResize is not available on this GriefPrevention build."));
+                Mini.send(player, colorize("&cResize is not available on this GriefPrevention build."));
             } else {
                 manager.openClaimResize(player, claim, claimId);
             }
@@ -358,7 +472,7 @@ public class ClaimOptionsGUI extends BaseGUI {
         }
 
         if (slot == claimFlagsSlot) {
-            if (ClaimFlagsGUI.canAccess(player, claim, gp)) {
+            if (FlagsGUI.canAccess(plugin, player, claim, gp)) {
                 manager.openClaimFlags(player, claim, claimId);
             } else {
                 plugin.getMessages().send(player, "general.no-permission");
@@ -368,6 +482,11 @@ public class ClaimOptionsGUI extends BaseGUI {
 
         if (slot == globalSettingsSlot) {
             manager.openGlobalClaimSettings(player, claim, claimId);
+            return;
+        }
+
+        if (slot == transferSlot) {
+            startTransfer();
             return;
         }
 

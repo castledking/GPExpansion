@@ -5484,6 +5484,26 @@ public class GPBridge {
         return null;
     }
 
+    /**
+     * GriefPrevention's own claim-count limit check for an online player, which honours
+     * permission-based limits. Returns null when the running fork has no such check.
+     */
+    public Boolean isAtClaimCountLimit(Player player) {
+        if (gpInstance == null || dataStore == null || player == null) return null;
+        try {
+            Object playerData = dataStore.getClass().getMethod("getPlayerData", UUID.class)
+                .invoke(dataStore, player.getUniqueId());
+            for (Method method : gpInstance.getClass().getMethods()) {
+                if (method.getName().equals("isAtClaimCountLimit") && method.getParameterCount() == 2) {
+                    Object result = method.invoke(gpInstance, player, playerData);
+                    return result instanceof Boolean b ? b : null;
+                }
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+        return null;
+    }
+
     /** Is GP's "buy/sell claim blocks" economy feature enabled (config_economy_claimBlocksEnabled)? */
     public boolean isClaimBlocksEconomyEnabled() {
         Boolean v = getGpConfigBoolean("config_economy_claimBlocksEnabled");
@@ -5600,7 +5620,7 @@ public class GPBridge {
         }
     }
 
-    private Integer getGpConfigInt(String fieldName) {
+    public Integer getGpConfigInt(String fieldName) {
         if (gpInstance == null) return null;
         try {
             Field field = gpInstance.getClass().getField(fieldName);
@@ -5616,7 +5636,7 @@ public class GPBridge {
         return null;
     }
 
-    private Boolean getGpConfigBoolean(String fieldName) {
+    public Boolean getGpConfigBoolean(String fieldName) {
         if (gpInstance == null) return null;
         try {
             Field field = gpInstance.getClass().getField(fieldName);

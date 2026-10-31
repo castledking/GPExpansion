@@ -243,7 +243,11 @@ public final class ClaimWaypointManager {
 
         // The locatorBar game rule gates the vanilla pipeline server-side; sending packets past it
         // would override an explicit server choice. Absent means enabled, matching vanilla.
-        boolean barEnabled = !Boolean.FALSE.equals(viewer.getWorld().getGameRuleValue(GameRule.LOCATOR_BAR));
+        // (GameRule.LOCATOR_BAR is read reflectively: the constant exists only in newer
+        // Paper APIs, and the check compiles against the Spigot compat profile too.)
+        GameRule<Boolean> locatorRule = locatorBarRule();
+        boolean barEnabled = locatorRule == null
+            || !Boolean.FALSE.equals(viewer.getWorld().getGameRuleValue(locatorRule));
         long range = plugin.getConfigManager().getClaimWaypointTransmitRange();
         // The bar mode narrows the vanilla packet path only. CrowBar clients render their own
         // waypoints from the channel payload, so the mode is meaningless for them and stays on
@@ -490,6 +494,20 @@ public final class ClaimWaypointManager {
     }
 
     // ------------------------------------------------------------------ diagnostics
+
+    /**
+     * The vanilla locator-bar game rule, or null when this server does not define it
+     * (the constant is a Paper API addition; plain Spigot builds lack it).
+     */
+    @SuppressWarnings("unchecked")
+    public static @org.jetbrains.annotations.Nullable GameRule<Boolean> locatorBarRule() {
+        try {
+            java.lang.reflect.Field field = GameRule.class.getField("LOCATOR_BAR");
+            return (GameRule<Boolean>) field.get(null);
+        } catch (ReflectiveOperationException | SecurityException ignored) {
+            return null;
+        }
+    }
 
     /** The vanilla waypoints currently sent to a player, keyed by claim ID. For diagnostics only. */
     public Map<String, SentWaypoint> sentWaypoints(UUID playerId) {

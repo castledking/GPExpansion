@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.config;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
@@ -432,13 +433,13 @@ public class VersionManager {
     private void notifyAdminsAboutMigration() {
         Bukkit.getOnlinePlayers().stream()
             .filter(player -> player.hasPermission("gpx.admin"))
-            .forEach(player -> player.sendMessage(
+            .forEach(player -> Mini.send(player, 
                 plugin.getMessages().get("migration.ingame-migration-complete")
             ));
         
         Bukkit.getOnlinePlayers().stream()
             .filter(player -> player.hasPermission("gpx.admin"))
-            .forEach(player -> player.sendMessage(
+            .forEach(player -> Mini.send(player, 
                 plugin.getMessages().get("migration.ingame-deprecated-files")
             ));
     }
@@ -1152,7 +1153,7 @@ public class VersionManager {
      * Handle the result of update check
      */
     private void handleUpdateCheckResult(String latestVersion) {
-        String currentVersion = plugin.getPluginMeta().getVersion();
+        String currentVersion = plugin.getDescription().getVersion();
         
         // Update last check time
         FileConfiguration config = plugin.getConfig();
@@ -1188,7 +1189,7 @@ public class VersionManager {
         Bukkit.getOnlinePlayers().stream()
             .filter(player -> player.hasPermission("gpx.admin"))
             .forEach(player -> {
-                player.sendMessage(plugin.getMessages().get("update-checker.ingame-update-available", 
+                Mini.send(player, plugin.getMessages().get("update-checker.ingame-update-available", 
                     "{current}", currentVersion, "{latest}", latestVersion));
                 
                 // Create clickable link using Kyori Adventure API
@@ -1197,7 +1198,7 @@ public class VersionManager {
                 
                 // Add click event to make the URL clickable
                 Component clickableComponent = linkMessage.clickEvent(ClickEvent.openUrl(downloadUrl));
-                player.sendMessage(clickableComponent);
+                Mini.send(player, clickableComponent);
             });
     }
     

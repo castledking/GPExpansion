@@ -301,7 +301,11 @@ public class ClaimFlagsGUI extends BaseGUI {
         
         // Navigation
         if (slot == backSlot) {
-            manager.openClaimOptions(player, claim, claimId);
+            if (plugin.getClaimFlagManager() != null && plugin.getClaimFlagManager().isEnabled()) {
+                manager.openGUI(player, new FlagsGUI(manager, player, claim, claimId));
+            } else {
+                manager.openClaimOptions(player, claim, claimId);
+            }
             return;
         }
         

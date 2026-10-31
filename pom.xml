@@ -21,6 +21,10 @@
       #setWaypointColor landed after 1.21.6, and Attribute.WAYPOINT_TRANSMIT_RANGE in 1.21.6.
     -->
     <paper.version>26.2.build.40-alpha</paper.version>
+    <spigot.version>1.21.4-R0.1-SNAPSHOT</spigot.version>
+    <server.api.group>io.papermc.paper</server.api.group>
+    <server.api.artifact>paper-api</server.api.artifact>
+    <server.api.version>${paper.version}</server.api.version>
     <adventure.minimessage.version>4.17.0</adventure.minimessage.version>
     <vault.api.version>1.7</vault.api.version>
     <griefprevention3d.version>18.2.7</griefprevention3d.version>
@@ -67,12 +71,32 @@
     </repository>
   </repositories>
 
+  <profiles>
+    <!-- Compiles the module against the Spigot API instead of Paper. Any compile
+         error points at a Paper-only API touchpoint that needs a Spigot fallback. -->
+    <profile>
+      <id>spigot-compat</id>
+      <properties>
+        <server.api.group>org.spigotmc</server.api.group>
+        <server.api.artifact>spigot-api</server.api.artifact>
+        <server.api.version>${spigot.version}</server.api.version>
+      </properties>
+      <repositories>
+        <repository>
+          <id>spigotmc-repo</id>
+          <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
+        </repository>
+      </repositories>
+    </profile>
+  </profiles>
+
   <dependencies>
-    <!-- Paper API provided by the server -->
+    <!-- Server API. Paper by default; the spigot-compat profile compiles the same
+         sources against the Spigot API to catch any use of Paper-only interfaces. -->
     <dependency>
-      <groupId>io.papermc.paper</groupId>
-      <artifactId>paper-api</artifactId>
-      <version>${paper.version}</version>
+      <groupId>${server.api.group}</groupId>
+      <artifactId>${server.api.artifact}</artifactId>
+      <version>${server.api.version}</version>
       <scope>provided</scope>
     </dependency>
 
@@ -95,6 +119,12 @@
     <dependency>
       <groupId>net.kyori</groupId>
       <artifactId>adventure-text-serializer-legacy</artifactId>
+      <version>${adventure.minimessage.version}</version>
+    </dependency>
+    <!-- Plain serializer for stripping formatting in chat/sign capture -->
+    <dependency>
+      <groupId>net.kyori</groupId>
+      <artifactId>adventure-text-serializer-plain</artifactId>
       <version>${adventure.minimessage.version}</version>
     </dependency>
     <dependency>
@@ -159,10 +189,21 @@
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.11.0</version>
         <configuration>
           <release>25</release>
+          <compilerArgs>
+            <arg>-Xmaxerrs</arg>
+            <arg>2000</arg>
+            <arg>-Xmaxwarns</arg>
+            <arg>2000</arg>
+          </compilerArgs>
         </configuration>
       </plugin>
       <plugin>

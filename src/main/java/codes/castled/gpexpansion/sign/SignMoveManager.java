@@ -1,10 +1,12 @@
 package codes.castled.gpexpansion.sign;
+import codes.castled.gpexpansion.util.Mini;
+import codes.castled.gpexpansion.util.PdcCodec;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
-import io.papermc.paper.event.player.PlayerOpenSignEvent;
+// Paper-only import is used via a guarded nested listener; do not import at class level
 import net.kyori.adventure.text.Component;
 import org.bukkit.DyeColor;
 import org.bukkit.Location;
@@ -74,7 +76,7 @@ public final class SignMoveManager implements Listener, CommandExecutor {
 
     public boolean run(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage(plugin.getMessages().get("general.player-only"));
+            Mini.send(sender, plugin.getMessages().get("general.player-only"));
             return true;
         }
 
@@ -167,18 +169,6 @@ public final class SignMoveManager implements Listener, CommandExecutor {
             () -> completeMove(player, pending, destination), 1L);
     }
 
-    /** Prevent the normal sign editor from overwriting the copied sign text. */
-    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
-    public void onDestinationEditor(PlayerOpenSignEvent event) {
-        PendingMove pending = pendingMoves.get(event.getPlayer().getUniqueId());
-        Location recent = recentDestinations.get(event.getPlayer().getUniqueId());
-        if ((pending != null && pending.destination != null
-                && sameBlock(pending.destination, event.getSign().getLocation()))
-                || sameBlock(recent, event.getSign().getLocation())) {
-            event.setCancelled(true);
-        }
-    }
-
     /** Fallback for clients which submit sign text without a PlayerOpenSignEvent. */
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onDestinationText(SignChangeEvent event) {
@@ -195,6 +185,29 @@ public final class SignMoveManager implements Listener, CommandExecutor {
     public void onQuit(PlayerQuitEvent event) {
         pendingMoves.remove(event.getPlayer().getUniqueId());
         recentDestinations.remove(event.getPlayer().getUniqueId());
+    }
+
+    /**
+     * Paper-only listener for PlayerOpenSignEvent, registered only when the class exists.
+     * This avoids NoClassDefFoundError on Spigot which lacks this event.
+     */
+    public static final class PaperSignMoveListener implements Listener {
+        private final SignMoveManager manager;
+
+        public PaperSignMoveListener(SignMoveManager manager) {
+            this.manager = manager;
+        }
+
+        @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+        public void onDestinationEditor(io.papermc.paper.event.player.PlayerOpenSignEvent event) {
+            PendingMove pending = manager.pendingMoves.get(event.getPlayer().getUniqueId());
+            Location recent = manager.recentDestinations.get(event.getPlayer().getUniqueId());
+            if ((pending != null && pending.destination != null
+                    && manager.sameBlock(pending.destination, event.getSign().getLocation()))
+                    || manager.sameBlock(recent, event.getSign().getLocation())) {
+                event.setCancelled(true);
+            }
+        }
     }
 
     private void completeMove(Player player, PendingMove pending, Location destination) {
@@ -222,7 +235,8 @@ public final class SignMoveManager implements Listener, CommandExecutor {
         }
 
         try {
-            destinationSign.getPersistentDataContainer().readFromBytes(snapshot.persistentData, false);
+            codes.castled.gpexpansion.util.PdcCodec.decode(snapshot.persistentData,
+                destinationSign.getPersistentDataContainer());
             restoreSide(destinationSign.getSide(Side.FRONT), snapshot.front);
             restoreSide(destinationSign.getSide(Side.BACK), snapshot.back);
             destinationSign.setWaxed(snapshot.waxed);
@@ -235,6 +249,9 @@ public final class SignMoveManager implements Listener, CommandExecutor {
         }
 
         updateStoredLocation(snapshot, destination);
+        if (plugin.getMarketManager() != null) {
+            plugin.getMarketManager().relocateListing(snapshot.source, destination);
+        }
         pendingMoves.remove(player.getUniqueId(), pending);
 
         Location recentDestination = destination.clone();
@@ -281,12 +298,13 @@ public final class SignMoveManager implements Listener, CommandExecutor {
                 managed.remove(key);
             }
         }
-        return managed.serializeToBytes();
+        return PdcCodec.encode(managed);
     }
 
     private SideSnapshot sideSnapshot(SignSide side) {
         return new SideSnapshot(
-            List.of(side.line(0), side.line(1), side.line(2), side.line(3)),
+            List.of(Mini.signLine(side, 0), Mini.signLine(side, 1),
+                Mini.signLine(side, 2), Mini.signLine(side, 3)),
             side.getColor(),
             side.isGlowingText()
         );
@@ -294,7 +312,7 @@ public final class SignMoveManager implements Listener, CommandExecutor {
 
     private void restoreSide(SignSide side, SideSnapshot snapshot) {
         for (int line = 0; line < 4; line++) {
-            side.line(line, snapshot.lines.get(line));
+            Mini.signLine(side, line, snapshot.lines.get(line));
         }
         side.setColor(snapshot.color);
         side.setGlowingText(snapshot.glowing);
@@ -315,8 +333,8 @@ public final class SignMoveManager implements Listener, CommandExecutor {
         if (!expectedKind.equals(currentKind) || !snapshot.claimId.equals(currentClaim)) return;
 
         for (int line = 0; line < 4; line++) {
-            sourceSign.getSide(Side.FRONT).line(line, Component.empty());
-            sourceSign.getSide(Side.BACK).line(line, Component.empty());
+            Mini.signLine(sourceSign.getSide(Side.FRONT), line, Component.empty());
+            Mini.signLine(sourceSign.getSide(Side.BACK), line, Component.empty());
         }
         String pluginNamespace = plugin.getName().toLowerCase(Locale.ROOT);
         for (NamespacedKey key : List.copyOf(pdc.getKeys())) {

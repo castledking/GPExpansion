@@ -65,6 +65,28 @@ public class Config {
         // GUI settings
         DEFAULTS.put("gui.enabled", true);
 
+        // Built-in claim flags settings (no GPFlags required)
+        DEFAULTS.put("claim-flags.enabled", true);
+        DEFAULTS.put("claim-flags.deny-message", "actionbar");
+        DEFAULTS.put("claim-flags.disabled-flags", java.util.List.of());
+        DEFAULTS.put("claim-flags.spawn-flags-ignore-reasons", java.util.List.of("CUSTOM", "COMMAND", "SPAWNER_EGG"));
+
+        // Claim Market settings
+        DEFAULTS.put("market.enabled", true);
+        DEFAULTS.put("market.auto-list-signs", true);
+        DEFAULTS.put("market.allow-gui-purchase", true);
+        DEFAULTS.put("market.allow-teleport", true);
+        DEFAULTS.put("market.default-allow-teleport", true);
+        DEFAULTS.put("market.teleport-after-purchase", true);
+        DEFAULTS.put("market.default-sort", "newest");
+        DEFAULTS.put("market.max-note-length", 120);
+        DEFAULTS.put("market.mail.enabled", true);
+        DEFAULTS.put("market.mail.default-accepts-mail", true);
+        DEFAULTS.put("market.mail.allow-remote-deposit", true);
+        DEFAULTS.put("market.mail.allow-owner-remote-open", true);
+        DEFAULTS.put("market.mail.allow-letters", true);
+        DEFAULTS.put("market.mail.max-letter-length", 240);
+
         // Global claim list settings
         DEFAULTS.put("global-claims.enabled", true);
         DEFAULTS.put("global-claims.allow-teleport", true);
@@ -998,6 +1020,67 @@ public class Config {
     
     public boolean isGUIEnabled() {
         return config.getBoolean("gui.enabled", true);
+    }
+
+    public boolean areClaimFlagsEnabled() {
+        return config.getBoolean("claim-flags.enabled", true);
+    }
+
+    public boolean isMarketEnabled() {
+        return config.getBoolean("market.enabled", true);
+    }
+
+    public boolean isMarketAutoListSigns() {
+        return config.getBoolean("market.auto-list-signs", true);
+    }
+
+    public boolean isMarketGuiPurchaseAllowed() {
+        return config.getBoolean("market.allow-gui-purchase", true);
+    }
+
+    public boolean isMarketTeleportAllowed() {
+        return config.getBoolean("market.allow-teleport", true);
+    }
+
+    public boolean isMarketDefaultAllowTeleport() {
+        return config.getBoolean("market.default-allow-teleport", true);
+    }
+
+    public boolean isMarketTeleportAfterPurchase() {
+        return config.getBoolean("market.teleport-after-purchase", true);
+    }
+
+    public String getMarketDefaultSort() {
+        String value = config.getString("market.default-sort", "newest");
+        return value == null ? "newest" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    public int getMarketMaxNoteLength() {
+        return Math.max(16, config.getInt("market.max-note-length", 120));
+    }
+
+    public boolean isMarketMailEnabled() {
+        return config.getBoolean("market.mail.enabled", true);
+    }
+
+    public boolean isMarketMailDefaultAccepts() {
+        return config.getBoolean("market.mail.default-accepts-mail", true);
+    }
+
+    public boolean isMarketMailDepositAllowed() {
+        return config.getBoolean("market.mail.allow-remote-deposit", true);
+    }
+
+    public boolean isMarketMailOwnerRemoteOpenAllowed() {
+        return config.getBoolean("market.mail.allow-owner-remote-open", true);
+    }
+
+    public boolean isMarketMailLettersAllowed() {
+        return config.getBoolean("market.mail.allow-letters", true);
+    }
+
+    public int getMarketMailLetterMaxLength() {
+        return Math.max(32, config.getInt("market.mail.max-letter-length", 240));
     }
 
     public boolean isGlobalClaimsEnabled() {

@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.confirm;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
@@ -112,12 +113,12 @@ public class ConfirmationService {
                 .append(Component.text("]", NamedTextColor.DARK_GRAY));
 
         // Send the messages with improved header/footer
-        player.sendMessage(headerLine);
-        player.sendMessage(header);
-        player.sendMessage(plugin.getMessages().get("general.empty-line"));
-        player.sendMessage(buttons);
-        player.sendMessage(plugin.getMessages().get("sign-interaction.confirmation-command-hint"));
-        player.sendMessage(headerLine);
+        Mini.send(player, headerLine);
+        Mini.send(player, header);
+        Mini.send(player, plugin.getMessages().get("general.empty-line"));
+        Mini.send(player, buttons);
+        Mini.send(player, plugin.getMessages().get("sign-interaction.confirmation-command-hint"));
+        Mini.send(player, headerLine);
     }
 
     /** Get the latest pending confirmation token for a player (for tokenless /gpxconfirm). */
@@ -141,26 +142,29 @@ public class ConfirmationService {
             plugin.getMessages().send(player, "sign-interaction.confirmation-cancelled");
             return true;
         }
-        // Execute action now (Folia safe)
+        // Execute action now (Folia safe: inspect signLoc on its own region thread first)
         if (p.action == Action.BUY) {
-            // BUY does not require interacting with the sign block; run on player's entity thread and global thread for command
             performBuy(player, p.claimId, p.kind, p.ecoAmtRaw, p.signLoc);
             return true;
         } else if (p.action == Action.RENT) {
             if (p.signLoc == null || p.signLoc.getWorld() == null) return false;
-            
-            // Check if there's a pending eviction - if so, the renter cannot extend when configured.
+
             ClaimDataStore.EvictionData eviction = plugin.getClaimDataStore().getEviction(p.claimId).orElse(null);
             if (eviction != null && plugin.getConfigManager().areRentRenewalsDeniedDuringEviction()) {
                 plugin.getMessages().send(player, "sign-interaction.renewal-denied-eviction");
                 return true;
             }
-            
-            // Charge on player's entity thread first
-            plugin.getSchedulerFacade().runAtEntity(player, () -> {
-                if (!signListener.charge(player, EcoKind.valueOf(p.kind), p.ecoAmtRaw, null)) return; // message already sent on failure
-                // Then update the sign and store on the sign's region thread
-                plugin.getSchedulerFacade().runAtLocation(p.signLoc, () -> completeRent(player, p.claimId, p.perClick, p.maxCap, p.signLoc, p.kind, p.ecoAmtRaw));
+
+            plugin.getSchedulerFacade().runAtLocation(p.signLoc, () -> {
+                if (!(p.signLoc.getBlock().getState() instanceof Sign rentSign)) {
+                    plugin.getSchedulerFacade().runAtEntity(player, () -> plugin.getMessages().send(player, "market.listing-gone"));
+                    return;
+                }
+                PersistentDataContainer rentPdc = rentSign.getPersistentDataContainer();
+                plugin.getSchedulerFacade().runAtEntity(player, () -> {
+                    if (!signListener.charge(player, EcoKind.valueOf(p.kind), p.ecoAmtRaw, rentPdc)) return;
+                    plugin.getSchedulerFacade().runAtLocation(p.signLoc, () -> completeRent(player, p.claimId, p.perClick, p.maxCap, p.signLoc, p.kind, p.ecoAmtRaw));
+                });
             });
             return true;
         } else {
@@ -170,23 +174,30 @@ public class ConfirmationService {
 
     @SuppressWarnings("all")
     private void performBuy(Player player, String claimId, String kind, String ecoAmtRaw, Location signLoc) {
-        plugin.getSchedulerFacade().runAtEntity(player, () -> {
-            // Check if this is a mailbox purchase by checking the sign's PDC directly
-            boolean isMailbox = false;
-            PersistentDataContainer signPdc = null;
-            if (signLoc != null && signLoc.getBlock().getState() instanceof Sign sign) {
-                signPdc = sign.getPersistentDataContainer();
-                String signType = signPdc.get(new org.bukkit.NamespacedKey(plugin, "sign.kind"), PersistentDataType.STRING);
-                isMailbox = "MAILBOX".equals(signType);
-            }
-            
-            if (isMailbox) {
-                // This is a mailbox, handle through MailboxListener (pass sign location)
-                if (!plugin.getMailboxListener().handlePurchaseConfirmation(player, claimId, signLoc)) {
-                    return; // Error message already sent
+        if (signLoc != null && signLoc.getWorld() != null) {
+            plugin.getSchedulerFacade().runAtLocation(signLoc, () -> {
+                boolean isMailbox = false;
+                PersistentDataContainer signPdc = null;
+                if (signLoc.getBlock().getState() instanceof Sign sign) {
+                    signPdc = sign.getPersistentDataContainer();
+                    String signType = signPdc.get(new org.bukkit.NamespacedKey(plugin, "sign.kind"), PersistentDataType.STRING);
+                    isMailbox = "MAILBOX".equals(signType);
                 }
-                return;
-            }
+                if (isMailbox) {
+                    plugin.getMailboxListener().handlePurchaseConfirmation(player, claimId, signLoc);
+                    return;
+                }
+                final PersistentDataContainer capturedPdc = signPdc;
+                plugin.getSchedulerFacade().runAtEntity(player, () -> completeClaimBuyOnEntity(player, claimId, kind, ecoAmtRaw, signLoc, capturedPdc));
+            });
+            return;
+        }
+        plugin.getSchedulerFacade().runAtEntity(player, () -> completeClaimBuyOnEntity(player, claimId, kind, ecoAmtRaw, null, null));
+    }
+
+    @SuppressWarnings("all")
+    private void completeClaimBuyOnEntity(Player player, String claimId, String kind, String ecoAmtRaw, Location signLoc, PersistentDataContainer signPdc) {
+        {
             
             GPBridge gpBridge = new GPBridge();
             java.util.Optional<Object> claimOpt = gpBridge.findClaimById(claimId);
@@ -243,10 +254,10 @@ public class ConfirmationService {
                             return;
                         }
                         // Update sign to show owned status
-                        sign.getSide(Side.FRONT).line(0, LegacyComponentSerializer.legacyAmpersand().deserialize("&2&l[Owned]"));
-                        sign.getSide(Side.FRONT).line(1, LegacyComponentSerializer.legacyAmpersand().deserialize("&0" + player.getName()));
-                        sign.getSide(Side.FRONT).line(2, Component.text("", NamedTextColor.BLACK));
-                        sign.getSide(Side.FRONT).line(3, Component.text("", NamedTextColor.BLACK));
+                        Mini.signLine(sign.getSide(Side.FRONT), 0, LegacyComponentSerializer.legacyAmpersand().deserialize("&2&l[Owned]"));
+                        Mini.signLine(sign.getSide(Side.FRONT), 1, LegacyComponentSerializer.legacyAmpersand().deserialize("&0" + player.getName()));
+                        Mini.signLine(sign.getSide(Side.FRONT), 2, Component.text("", NamedTextColor.BLACK));
+                        Mini.signLine(sign.getSide(Side.FRONT), 3, Component.text("", NamedTextColor.BLACK));
                         sign.update(true);
                         plugin.getLogger().info("Updated buy sign at " + signLoc + " after claim purchase by " + player.getName());
                     }
@@ -254,7 +265,10 @@ public class ConfirmationService {
             }
 
             plugin.getMessages().send(player, "sign-interaction.buy-success-claim", "{id}", claimId);
-        });
+            if (plugin.getMarketManager() != null) {
+                plugin.getMarketManager().onPurchaseCompleted(player, claimId, formatEcoAmount(kind, ecoAmtRaw), signLoc);
+            }
+        }
     }
 
     public void executeBuy(Player player, String claimId, String kind, String ecoAmtRaw, Location signLoc) {
@@ -291,26 +305,22 @@ public class ConfirmationService {
         if (claimOpt.isPresent()) {
             Object claim = claimOpt.get();
             
-            // Grant build trust to the player for this claim using GPBridge direct method
-            boolean trusted = gpBridge.trust(player, player.getName(), claim);
-            boolean containerTrustEnabled = plugin.getConfigManager().isRentContainerTrustGranted();
-            boolean accessTrustEnabled = plugin.getConfigManager().isRentAccessTrustGranted();
-            boolean containerTrusted = containerTrustEnabled && gpBridge.grantInventoryTrust(player, player.getName(), claim);
-            boolean accessTrusted = accessTrustEnabled && gpBridge.grantAccessTrust(player, player.getName(), claim);
-            if (trusted || containerTrusted || accessTrusted) {
-                gpBridge.saveClaim(claim); // Persist so trust survives server restarts
+            List<GPBridge.TrustLevel> trustLevels = new ArrayList<>();
+            trustLevels.add(GPBridge.TrustLevel.BUILD);
+            if (plugin.getConfigManager().isRentContainerTrustGranted()) {
+                trustLevels.add(GPBridge.TrustLevel.CONTAINERS);
             }
+            if (plugin.getConfigManager().isRentAccessTrustGranted()) {
+                trustLevels.add(GPBridge.TrustLevel.ACCESS);
+            }
+            boolean trusted = codes.castled.gpexpansion.gp.TrustManager.create(gpBridge)
+                .giveTrust(player, player, claim, trustLevels.toArray(new GPBridge.TrustLevel[0]));
             if (trusted) {
                 plugin.getLogger().info("Granted trust permissions to " + player.getName() + " for claim " + claimId);
             } else {
                 plugin.getLogger().warning("Failed to grant trust permissions to " + player.getName() + " for claim " + claimId);
             }
-            if (containerTrustEnabled && !containerTrusted) {
-                plugin.getLogger().warning("Failed to grant container trust to " + player.getName() + " for claim " + claimId);
-            }
-            if (accessTrustEnabled && !accessTrusted) {
-                plugin.getLogger().warning("Failed to grant access trust to " + player.getName() + " for claim " + claimId);
-            }
+            handleOwnerPayment(claim, player.getName(), claimId, kind, ecoAmtRaw, false);
 
             if (newRental && plugin.getConfigManager().isRentSnapshotAutoCreateOnRentalStart()) {
                 RentalSnapshotUtil.createSnapshot(plugin, claimId, claim, "rental start");
@@ -335,10 +345,10 @@ public class ConfirmationService {
 
             String ecoFormatted = formatEcoAmount(kind, ecoAmtRaw);
 
-            s.getSide(Side.FRONT).line(0, LegacyComponentSerializer.legacyAmpersand().deserialize("&c&l[Rented]"));
-            s.getSide(Side.FRONT).line(1, LegacyComponentSerializer.legacyAmpersand().deserialize("&0" + renterName));
-            s.getSide(Side.FRONT).line(2, LegacyComponentSerializer.legacyAmpersand().deserialize("&0" + ecoFormatted + "&0/" + per));
-            s.getSide(Side.FRONT).line(3, LegacyComponentSerializer.legacyAmpersand().deserialize("&0Max: " + maxCapPdc));
+            Mini.signLine(s.getSide(Side.FRONT), 0, LegacyComponentSerializer.legacyAmpersand().deserialize("&c&l[Rented]"));
+            Mini.signLine(s.getSide(Side.FRONT), 1, LegacyComponentSerializer.legacyAmpersand().deserialize("&0" + renterName));
+            Mini.signLine(s.getSide(Side.FRONT), 2, LegacyComponentSerializer.legacyAmpersand().deserialize("&0" + ecoFormatted + "&0/" + per));
+            Mini.signLine(s.getSide(Side.FRONT), 3, LegacyComponentSerializer.legacyAmpersand().deserialize("&0Max: " + maxCapPdc));
 
             s.update(true);
         }
@@ -358,6 +368,9 @@ public class ConfirmationService {
             "{id}", claimId,
             "{duration}", formatDuration(addedMillis),
             "{cost}", costFormatted);
+        if (plugin.getMarketManager() != null) {
+            plugin.getMarketManager().onRentCompleted(player, claimId, signLoc);
+        }
     }
 
     private void handleOwnerPayment(Object claim, String renterName, String claimId, String kind, String amount, boolean isPurchase) {

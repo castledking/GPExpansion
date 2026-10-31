@@ -11,14 +11,14 @@ filler:
 # Slot positions for non-admin view (3 items centered)
 slots:
   owned-claims: 11
-  trusted-claims: 13
+  claim-market: 13
   global-list: 15
 
 # Slot positions for admin view (4 items centered)
-# Admins see all options: My Claims, Trusted Claims, Global List, Admin Menu
+# Admins see all options: My Claims, Claim Market, Global List, Admin Menu
 slots-admin:
   admin-owned-claims: 10
-  admin-trusted-claims: 12
+  admin-claim-market: 12
   admin-global-list: 14
   admin-menu: 16
 
@@ -28,17 +28,19 @@ items:
     material: DIAMOND
     name: "&b&lMy Claims"
     lore:
-      - "&7View all claims you own"
+      - "&7View owned, trusted, rented, bought,"
+      - "&7mailbox, and listed claims"
       - ""
       - "&eClick to view your claims"
   
-  trusted-claims:
+  claim-market:
     material: EMERALD
-    name: "&a&lTrusted Claims"
+    name: "&a&lClaim Market"
     lore:
-      - "&7View claims you are trusted in"
+      - "&7Browse claims & mailboxes for rent or sale"
+      - "&7and send remote gifts or letters."
       - ""
-      - "&eClick to view trusted claims"
+      - "&eClick to open Claim Market"
   
   global-list:
     material: ENDER_EYE

@@ -61,7 +61,7 @@ accruals:
     world_the_end: 0.5
 
 # =============================================================================
-# Commands and Dynamic Player Permissions
+# Commands and Dynamic Player/Admin Permissions
 # =============================================================================
 
 # Player command permissions dynamically assigned to the gpx.player permission.
@@ -73,6 +73,7 @@ player-commands:
   - claim.description
   - claim.description.anywhere
   - claim.icon
+  - claim.color
   - claim.ban
   - claim.ban.anywhere
   - claim.unban
@@ -81,22 +82,29 @@ player-commands:
   - claim.banlist.anywhere
   - claim.cancelrent
   - claim.cancelrent.anywhere
+  - evict
   - abandonclaim.anywhere
   - abandontoplevelclaim.anywhere
+  - trust.anywhere
   - sign.create.rent
+  - sign.create.rent.anywhere
   - sign.use.rent
   - sign.rent.money
   - sign.create.sell
+  - sign.create.sell.anywhere
   - sign.use.sell
   - sign.sell.money
   - sign.create.buy
+  - sign.create.buy.anywhere
   - sign.use.buy
   - sign.create.mailbox
+  - sign.create.mailbox.anywhere
   - sign.use.mailbox
   - sign.mailbox.money
   - sign.create.self-mailbox
   - claiminfo
   # - claim.teleport
+  # - claimslist.teleport
   - claim.setspawn
   - claim.gui.setclaimflag.own
   - claim.gui.globallist
@@ -106,7 +114,11 @@ player-commands:
   - claim.toggleglobal.1
   - claim.gui.return
   - claim.gui.flags
+  - claim.gui.flags.anywhere
   - claim.gui.options
+  - claim.gui.options.anywhere
+  - claim.gui.setclaimflag.anywhere
+  - claim.color.anywhere
   - claim.color.black
   - claim.color.dark_blue
   - claim.color.dark_green
@@ -127,6 +139,46 @@ player-commands:
   - claim.format.italic
   - claim.format.reset
   - claim.bar
+  - claim.market
+  - claim.market.buy
+  - claim.market.teleport
+  - claim.market.edit
+  - claim.market.mail.deposit
+  - claim.market.mail.letter
+  - claim.market.mail.open-own
+  - claim.listed
+
+# Admin command permissions dynamically assigned to gpx.admin. Entries use the
+# same griefprevention.<permission> prefix as player-commands.
+admin-commands:
+  - claimslistother
+  - claimslistother.teleport
+  - admin
+  - sign.admin
+  - approveclaim
+  - claim.name.other
+  - claim.color.other
+  - claim.description.other
+  - claim.icon.other
+  - claim.ban.other
+  - claim.unban.other
+  - claim.banlist.other
+  - claim.cancelrent.other
+  - claiminfo.other
+  - claim.teleport
+  - claim.teleport.other
+  - claim.setspawn.other
+  - claim.gui.flags.other
+  - claim.gui.options.other
+  - claim.toggleglobal.other
+  - evict.other
+  - sign.move.rent.other
+  - sign.move.sell.other
+  - sign.move.mailbox.other
+  - sign.move.global.other
+  - sign.move.self-mailbox.other
+  - claim.flags.bypass
+  - claim.market.admin
 
 permission-tracking:
   # Track player permission changes for sign limits and accrual profile changes.
@@ -335,9 +387,76 @@ claim-list:
   show-world: true
   show-coordinates: true
   show-area: true
+  show-id: true
+  # Hide IDs in the list and show them when hovering over the claim name.
+  show-id-on-hover: false
   show-name: true
   show-claim-block-summary: true
+  show-divider: true
+  click-teleport: true
+  # Permission for clicking your own or trusted claims. Other players' claims
+  # require griefprevention.claimslistother and claimslistother.teleport.
+  click-teleport-permission: griefprevention.claimslist.teleport
+  # Counts each visible claim and subdivision, including trusted claims.
   page-size: 10
+  page-buttons: true
+
+# =============================================================================
+# Built-in Claim Flags (No GPFlags Required)
+# =============================================================================
+
+claim-flags:
+  # Enable GPExpansion's built-in claim flags system (/claim flags and Claim Options -> Claim Flags).
+  # When false, GPExpansion falls back to GPFlags if installed.
+  enabled: true
+  # Where flag denial notices are displayed to blocked players: actionbar, chat, or none.
+  deny-message: actionbar
+  # Optional list of flag IDs (e.g. player_fly, mob_spawn) to hide and disable server-wide.
+  disabled-flags: []
+  # CreatureSpawnEvent.SpawnReason values ignored by mob_spawn / animal_spawn flags.
+  spawn-flags-ignore-reasons:
+    - CUSTOM
+    - COMMAND
+    - SPAWNER_EGG
+
+# =============================================================================
+# Claim Market & Remote Mailbox Delivery
+# =============================================================================
+
+market:
+  # Master toggle for /claim market (/claimmarket, /claimshop) and the Main Menu Market button.
+  enabled: true
+  # Automatically list newly created [Rent], [Sell], and buyable [Mailbox] signs on the Claim Market.
+  # Owners can always toggle visibility per listing in the Market Listing Editor.
+  auto-list-signs: true
+  # Allow renting and buying claims/mailboxes directly from the Market GUI.
+  # When false, clicking a listing displays world/x/y/z travel instructions instead.
+  allow-gui-purchase: true
+  # Master switch allowing prospective buyers to teleport to listings from the Market GUI.
+  allow-teleport: true
+  # Default per-listing allow-teleport state when a new sign is created.
+  default-allow-teleport: true
+  # Automatically teleport buyers/renters to the claim after completing a GUI transaction
+  # (if teleport is enabled and the player holds griefprevention.claim.market.teleport or griefprevention.claim.teleport).
+  teleport-after-purchase: true
+  # Default sort order in /claim market: newest, price_asc, price_desc, area_desc.
+  default-sort: newest
+  # Maximum character length for custom listing taglines/notes.
+  max-note-length: 120
+
+  mail:
+    # Enable the "Send Gift / Letter" filter in /claim market for sold & self-owned mailboxes.
+    enabled: true
+    # Whether mailboxes accept remote gifts and letters by default (owners can toggle per mailbox).
+    default-accepts-mail: true
+    # Allow players to deposit gift items remotely into mailboxes from the Market GUI.
+    allow-remote-deposit: true
+    # Allow mailbox owners to open and retrieve items from their own mailboxes remotely in My Claims / Market.
+    allow-owner-remote-open: true
+    # Allow players to send written PAPER letters via chat prompt into mailboxes.
+    allow-letters: true
+    # Maximum character length for written letters.
+    max-letter-length: 240
 
 global-claims:
   enabled: true

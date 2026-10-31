@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.command;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
@@ -59,12 +60,12 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
     /** Execute claim-info handling from either /claiminfo or the /claim info alias. */
     public boolean run(@NotNull CommandSender sender, @NotNull String[] args) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage(plugin.getMessages().get("general.player-only"));
+            Mini.send(sender, plugin.getMessages().get("general.player-only"));
             return true;
         }
         
         if (!player.hasPermission("griefprevention.claiminfo")) {
-            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
             return true;
         }
         
@@ -75,8 +76,8 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
             // Use claim at player's location
             Optional<Object> claimOpt = gp.getClaimAt(player.getLocation());
             if (!claimOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
-                sender.sendMessage(plugin.getMessages().get("claim.provide-id"));
+                Mini.send(sender, plugin.getMessages().get("claim.not-standing-in-claim"));
+                Mini.send(sender, plugin.getMessages().get("claim.provide-id"));
                 return true;
             }
             claim = claimOpt.get();
@@ -86,7 +87,7 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
             claimId = args[0];
             Optional<Object> claimOpt = gp.findClaimById(claimId);
             if (!claimOpt.isPresent()) {
-                player.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", claimId));
+                Mini.send(player, plugin.getMessages().get("claim.not-found", "{id}", claimId));
                 return true;
             }
             claim = claimOpt.get();
@@ -136,25 +137,25 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
         }
         
         // Send header
-        player.sendMessage(plugin.getMessages().get("claim.info-header"));
+        Mini.send(player, plugin.getMessages().get("claim.info-header"));
         
         // Basic info
-        player.sendMessage(plugin.getMessages().get("claim.info-id", "{id}", claimId));
+        Mini.send(player, plugin.getMessages().get("claim.info-id", "{id}", claimId));
         
         if (claimName != null && !claimName.isEmpty()) {
-            player.sendMessage(plugin.getMessages().get("claim.info-name", "{name}", claimName));
+            Mini.send(player, plugin.getMessages().get("claim.info-name", "{name}", claimName));
         }
         
-        player.sendMessage(plugin.getMessages().get("claim.info-owner", "{owner}", ownerName));
-        player.sendMessage(plugin.getMessages().get("claim.info-world", "{world}", worldName));
-        player.sendMessage(plugin.getMessages().get("claim.info-location", "{x}", coords.split(", ")[0].replace("x", ""), "{z}", coords.split(", ")[1].replace("z", "")));
+        Mini.send(player, plugin.getMessages().get("claim.info-owner", "{owner}", ownerName));
+        Mini.send(player, plugin.getMessages().get("claim.info-world", "{world}", worldName));
+        Mini.send(player, plugin.getMessages().get("claim.info-location", "{x}", coords.split(", ")[0].replace("x", ""), "{z}", coords.split(", ")[1].replace("z", "")));
         
         // Size info
         String sizeStr = dimensions[0] + " x " + dimensions[2] + " (" + area + " blocks)";
-        player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
+        Mini.send(player, LegacyComponentSerializer.legacyAmpersand().deserialize(
             "&7Size: &e" + sizeStr));
         
-        player.sendMessage(plugin.getMessages().get("claim.info-type", "{type}", claimType));
+        Mini.send(player, plugin.getMessages().get("claim.info-type", "{type}", claimType));
         
         // Check for sign usage (rent/sell/mailbox)
         checkSignUsage(player, claim, claimId);
@@ -163,14 +164,14 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
         if (!gp.isSubdivision(claim)) {
             List<Object> subclaims = gp.getSubclaims(claim);
             if (!subclaims.isEmpty()) {
-                player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
+                Mini.send(player, LegacyComponentSerializer.legacyAmpersand().deserialize(
                     "&7Subdivisions: &e" + subclaims.size()));
             }
         } else {
             // Show parent claim ID
             gp.getParentClaim(claim).ifPresent(parent -> {
                 String parentId = gp.getClaimId(parent).orElse("?");
-                player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
+                Mini.send(player, LegacyComponentSerializer.legacyAmpersand().deserialize(
                     "&7Parent Claim: &e" + parentId));
             });
         }
@@ -261,19 +262,19 @@ public class ClaimInfoCommand implements CommandExecutor, TabCompleter {
         
         // Display sign usage info
         if (hasRentSign || hasSellSign || hasMailboxSign) {
-            player.sendMessage(plugin.getMessages().get("general.empty-line"));
-            player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize("&6=== Sign Usage ==="));
+            Mini.send(player, plugin.getMessages().get("general.empty-line"));
+            Mini.send(player, LegacyComponentSerializer.legacyAmpersand().deserialize("&6=== Sign Usage ==="));
             
             if (hasRentSign) {
-                player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
+                Mini.send(player, LegacyComponentSerializer.legacyAmpersand().deserialize(
                     "&7Rent Sign: &a" + (rentStatus != null ? rentStatus : "Yes")));
             }
             if (hasSellSign) {
-                player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
+                Mini.send(player, LegacyComponentSerializer.legacyAmpersand().deserialize(
                     "&7Sell Sign: &a" + (sellStatus != null ? sellStatus : "Yes")));
             }
             if (hasMailboxSign) {
-                player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(
+                Mini.send(player, LegacyComponentSerializer.legacyAmpersand().deserialize(
                     "&7Mailbox Sign: &aYes"));
             }
         }

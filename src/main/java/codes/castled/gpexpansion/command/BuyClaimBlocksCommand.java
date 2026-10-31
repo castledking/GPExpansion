@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.command;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -43,28 +44,28 @@ public class BuyClaimBlocksCommand implements TabExecutor {
         }
 
         if (!gp.isAvailable()) {
-            player.sendMessage(Component.text("GriefPrevention is not available.", NamedTextColor.RED));
+            Mini.send(player, Component.text("GriefPrevention is not available.", NamedTextColor.RED));
             return true;
         }
         if (!gp.isClaimBlocksEconomyEnabled()) {
-            player.sendMessage(Component.text(gp.getGPMessageOr("EconomyDisabled",
+            Mini.send(player, Component.text(gp.getGPMessageOr("EconomyDisabled",
                     "Economy features are disabled on this server."), NamedTextColor.RED));
             return true;
         }
         if (!plugin.getEconomyManager().isEconomyAvailable()) {
             if (!plugin.getEconomyManager().isVaultPluginInstalled()) {
-                player.sendMessage(Component.text(gp.getGPMessageOr("EconomyNoVault",
+                Mini.send(player, Component.text(gp.getGPMessageOr("EconomyNoVault",
                         "Economy support requires Vault (or VaultUnlocked) to be installed."), NamedTextColor.RED));
             } else {
                 // Vault/VaultUnlocked is installed, but no economy plugin has registered a provider.
-                player.sendMessage(Component.text("Vault is installed, but no economy provider plugin"
+                Mini.send(player, Component.text("Vault is installed, but no economy provider plugin"
                         + " is registered (e.g. TNE, EssentialsX, CMI). Install one and reload.", NamedTextColor.RED));
             }
             return true;
         }
 
         if (args.length < 1) {
-            player.sendMessage(Component.text(gp.getGPMessageOr("EconomyBuyBlocksUsage",
+            Mini.send(player, Component.text(gp.getGPMessageOr("EconomyBuyBlocksUsage",
                     "Usage: /" + label + " <amount>"), NamedTextColor.RED));
             return true;
         }
@@ -74,14 +75,14 @@ public class BuyClaimBlocksCommand implements TabExecutor {
             amount = Integer.parseInt(args[0]);
             if (amount <= 0) throw new NumberFormatException();
         } catch (NumberFormatException e) {
-            player.sendMessage(Component.text(gp.getGPMessageOr("EconomyInvalidAmount",
+            Mini.send(player, Component.text(gp.getGPMessageOr("EconomyInvalidAmount",
                     "Please specify a valid positive number of blocks."), NamedTextColor.RED));
             return true;
         }
 
         double costPerBlock = gp.getClaimBlocksPurchaseCost();
         if (costPerBlock <= 0) {
-            player.sendMessage(Component.text("Claim block purchase cost is not configured.", NamedTextColor.RED));
+            Mini.send(player, Component.text("Claim block purchase cost is not configured.", NamedTextColor.RED));
             return true;
         }
         double totalCost = amount * costPerBlock;
@@ -89,14 +90,14 @@ public class BuyClaimBlocksCommand implements TabExecutor {
         if (!plugin.getEconomyManager().hasMoney(player, totalCost)) {
             String fmtCost = plugin.getEconomyManager().formatMoney(totalCost);
             String fmtBalance = plugin.getEconomyManager().formatMoney(plugin.getEconomyManager().getBalance(player));
-            player.sendMessage(Component.text(gp.getGPMessageOr("EconomyNotEnoughMoney",
+            Mini.send(player, Component.text(gp.getGPMessageOr("EconomyNotEnoughMoney",
                     "You don't have enough money. Cost: " + fmtCost + ", Your balance: " + fmtBalance,
                     fmtCost, fmtBalance), NamedTextColor.RED));
             return true;
         }
 
         if (plugin.getGUIManager() == null) {
-            player.sendMessage(Component.text("GUI subsystem is unavailable; cannot open confirmation.", NamedTextColor.RED));
+            Mini.send(player, Component.text("GUI subsystem is unavailable; cannot open confirmation.", NamedTextColor.RED));
             return true;
         }
         plugin.getGUIManager().openGUI(player,

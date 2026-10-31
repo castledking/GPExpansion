@@ -1,0 +1,40 @@
+# Claim Transfer Confirmation GUI
+# Opened from the Transfer Ownership button in the claim options menu after typing
+# the new owner's name. Placeholders: {id}, {name}, {player}, {player_uuid}, {area}, {fee}
+
+title: "&6&lGive Claim #{id}?"
+size: 27
+
+filler:
+  material: GRAY_STAINED_GLASS_PANE
+
+items:
+  confirm:
+    material: LIME_STAINED_GLASS_PANE
+    name: "&a&lConfirm Transfer"
+    lore:
+      - "&7Give &f{name} &7to &e{player}&7."
+      - "&7Cost: &f{fee}"
+      - ""
+      - "&cYou will no longer own this claim."
+      - "&eClick to confirm"
+    slot: 11
+
+  recipient:
+    material: PLAYER_HEAD
+    skull-owner: "{player_uuid}"
+    name: "&e&l{player}"
+    lore:
+      - "&7New owner of claim &6#{id}"
+      - ""
+      - "&7Claim: &f{name}"
+      - "&7Area: &f{area} blocks"
+      - "&7Cost: &f{fee}"
+    slot: 13
+
+  cancel:
+    material: RED_STAINED_GLASS_PANE
+    name: "&c&lCancel"
+    lore:
+      - "&7Keep this claim"
+    slot: 15

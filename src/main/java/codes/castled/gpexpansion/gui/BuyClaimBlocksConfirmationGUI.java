@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.gui;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
@@ -167,7 +168,7 @@ public class BuyClaimBlocksConfirmationGUI extends BaseGUI {
         if (tax.tax > 0) {
             plugin.getTaxManager().depositTax(tax.tax);
             if (plugin.getConfigManager().shouldNotifyTaxPayer()) {
-                player.sendMessage(plugin.getMessages().get("tax.payer-notify",
+                Mini.send(player, plugin.getMessages().get("tax.payer-notify",
                     "{tax}", plugin.getEconomyManager().formatMoney(tax.tax)));
             }
         }
@@ -183,6 +184,6 @@ public class BuyClaimBlocksConfirmationGUI extends BaseGUI {
 
     /** Translate &-codes and send the resulting Component to the player. */
     private void sendLegacy(String text) {
-        player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(text));
+        Mini.send(player, LegacyComponentSerializer.legacyAmpersand().deserialize(text));
     }
 }

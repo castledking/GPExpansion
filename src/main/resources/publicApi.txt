@@ -120,6 +120,8 @@ Obtain with: GPExpansionPlugin.getInstance().getMetadataService()
   Optional<String>   getDescription(Claim claim)
   Optional<Material> getIcon(String claimId)
   Optional<Material> getIcon(Claim claim)
+  Optional<ItemStack> getIconItem(String claimId)   (full item: custom model
+                                                     data, head texture, etc.)
   Collection<ClaimMetadata> getAllMetadata()
 
 Notes:

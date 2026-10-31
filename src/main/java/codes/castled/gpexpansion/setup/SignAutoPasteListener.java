@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.setup;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
@@ -148,7 +149,9 @@ public class SignAutoPasteListener implements Listener {
             runOnPlayer(player, () -> {
                 Block b = loc.getBlock();
                 if (b.getState() instanceof Sign openSign) {
-                    player.sendSignChange(loc, components);
+                    player.sendSignChange(loc, components.stream()
+                        .map(c -> net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().serialize(c))
+                        .toArray(String[]::new));
                     try {
                         player.openSign(openSign, Side.FRONT);
                     } catch (NoSuchMethodError | NoClassDefFoundError e) {
@@ -187,7 +190,7 @@ public class SignAutoPasteListener implements Listener {
                     boolean hanging = event.getBlock().getType().name().contains("HANGING");
                     String[] lines = data.getSignLines(plugin, hanging);
                     for (int i = 0; i < 4 && i < lines.length; i++) {
-                        event.line(i, LegacyComponentSerializer.legacyAmpersand().deserialize(lines[i] != null ? lines[i] : ""));
+                        Mini.eventLine(event, i, LegacyComponentSerializer.legacyAmpersand().deserialize(lines[i] != null ? lines[i] : ""));
                     }
                     plugin.getMessages().send(player, "wizard.autopaste-format-filled");
                 }

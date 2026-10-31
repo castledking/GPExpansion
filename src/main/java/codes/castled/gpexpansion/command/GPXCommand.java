@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.command;
+import codes.castled.gpexpansion.util.Mini;
 
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
@@ -13,6 +14,7 @@ import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.permission.PermissionManager;
 import codes.castled.gpexpansion.permission.SignLimitManager;
 import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
+import codes.castled.gpexpansion.waypoint.ClaimWaypointManager;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -36,7 +38,7 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         // Check permission
         if (!sender.hasPermission("griefprevention.admin")) {
-            sender.sendMessage(plugin.getMessages().get("admin.no-permission"));
+            Mini.send(sender, plugin.getMessages().get("admin.no-permission"));
             return true;
         }
         
@@ -52,7 +54,7 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
             plugin.reloadAll();
             // Delay success message to let migration logs appear first
             SchedulerAdapter.runLaterGlobal(plugin, () ->
-                sender.sendMessage(plugin.getMessages().get("general.reload-success")), 20L);
+                Mini.send(sender, plugin.getMessages().get("general.reload-success")), 20L);
             return true;
         }
         
@@ -63,9 +65,9 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
             plugin.saveConfig();
             codes.castled.gpexpansion.gp.GPBridge.setDebug(!current);
             if (!current) {
-                sender.sendMessage(plugin.getMessages().get("admin.debug-enabled"));
+                Mini.send(sender, plugin.getMessages().get("admin.debug-enabled"));
             } else {
-                sender.sendMessage(plugin.getMessages().get("admin.debug-disabled"));
+                Mini.send(sender, plugin.getMessages().get("admin.debug-disabled"));
             }
             return true;
         }
@@ -85,7 +87,7 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         }
         
         if (args.length < 5) {
-            sender.sendMessage(plugin.getMessages().get("commands.gpx-max-usage"));
+            Mini.send(sender, plugin.getMessages().get("commands.gpx-max-usage"));
             return true;
         }
         
@@ -94,17 +96,17 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         String playerName = args[3];
         
         if (!type.equals("sell") && !type.equals("rent") && !type.equals("mailbox") && !type.equals("self-mailboxes") && !type.equals("globals") && !type.equals("waypoints")) {
-            sender.sendMessage(plugin.getMessages().get("commands.gpx-max-invalid-type"));
+            Mini.send(sender, plugin.getMessages().get("commands.gpx-max-invalid-type"));
             return true;
         }
         
         if (!action.equals("add") && !action.equals("take") && !action.equals("set")) {
-            sender.sendMessage(plugin.getMessages().get("commands.gpx-max-invalid-action"));
+            Mini.send(sender, plugin.getMessages().get("commands.gpx-max-invalid-action"));
             return true;
         }
         
         if (args.length < 5) {
-            sender.sendMessage(plugin.getMessages().get("commands.gpx-max-amount-required"));
+            Mini.send(sender, plugin.getMessages().get("commands.gpx-max-amount-required"));
             return true;
         }
         
@@ -112,18 +114,18 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         try {
             amount = Integer.parseInt(args[4]);
             if (amount < 0) {
-                sender.sendMessage(plugin.getMessages().get("commands.gpx-max-amount-positive"));
+                Mini.send(sender, plugin.getMessages().get("commands.gpx-max-amount-positive"));
                 return true;
             }
         } catch (NumberFormatException e) {
-            sender.sendMessage(plugin.getMessages().get("commands.gpx-max-amount-invalid"));
+            Mini.send(sender, plugin.getMessages().get("commands.gpx-max-amount-invalid"));
             return true;
         }
         
         // Get target player
         Player target = Bukkit.getPlayer(playerName);
         if (target == null) {
-            sender.sendMessage(plugin.getMessages().get("commands.player-not-online", "{player}", playerName));
+            Mini.send(sender, plugin.getMessages().get("commands.player-not-online", "{player}", playerName));
             return true;
         }
         
@@ -152,11 +154,11 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                 } else {
                     signLimitManager.addMailboxLimit(target, amount);
                 }
-                sender.sendMessage(plugin.getMessages().get("commands.gpx-max-added",
+                Mini.send(sender, plugin.getMessages().get("commands.gpx-max-added",
                     "{amount}", String.valueOf(amount),
                     "{player}", target.getName(),
                     "{type}", limitType));
-                target.sendMessage(plugin.getMessages().get("commands.gpx-max-added-player",
+                Mini.send(target, plugin.getMessages().get("commands.gpx-max-added-player",
                     "{amount}", String.valueOf(amount),
                     "{type}", limitType));
                 break;
@@ -175,11 +177,11 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                 } else {
                     signLimitManager.takeMailboxLimit(target, amount);
                 }
-                sender.sendMessage(plugin.getMessages().get("commands.gpx-max-removed",
+                Mini.send(sender, plugin.getMessages().get("commands.gpx-max-removed",
                     "{amount}", String.valueOf(amount),
                     "{player}", target.getName(),
                     "{type}", limitType));
-                target.sendMessage(plugin.getMessages().get("commands.gpx-max-removed-player",
+                Mini.send(target, plugin.getMessages().get("commands.gpx-max-removed-player",
                     "{amount}", String.valueOf(amount),
                     "{type}", limitType));
                 break;
@@ -198,11 +200,11 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
                 } else {
                     signLimitManager.setMailboxLimit(target, amount);
                 }
-                sender.sendMessage(plugin.getMessages().get("commands.gpx-max-set",
+                Mini.send(sender, plugin.getMessages().get("commands.gpx-max-set",
                     "{amount}", String.valueOf(amount),
                     "{player}", target.getName(),
                     "{type}", limitType));
-                target.sendMessage(plugin.getMessages().get("commands.gpx-max-set-player",
+                Mini.send(target, plugin.getMessages().get("commands.gpx-max-set-player",
                     "{amount}", String.valueOf(amount),
                     "{type}", limitType));
                 break;
@@ -214,30 +216,30 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         int currentMailbox = signLimitManager.getMailboxLimit(target);
         int currentSelfMailbox = signLimitManager.getSelfMailboxLimit(target);
         int currentGlobals = signLimitManager.getGlobalClaimLimit(target);
-        sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-header",
+        Mini.send(sender, plugin.getMessages().get("commands.gpx-max-current-header",
             "{player}", target.getName()));
-        sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-sell",
+        Mini.send(sender, plugin.getMessages().get("commands.gpx-max-current-sell",
             "{count}", String.valueOf(currentSell)));
-        sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-rent",
+        Mini.send(sender, plugin.getMessages().get("commands.gpx-max-current-rent",
             "{count}", String.valueOf(currentRent)));
-        sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-mailbox",
+        Mini.send(sender, plugin.getMessages().get("commands.gpx-max-current-mailbox",
             "{count}", String.valueOf(currentMailbox)));
-        sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-self-mailbox",
+        Mini.send(sender, plugin.getMessages().get("commands.gpx-max-current-self-mailbox",
             "{count}", String.valueOf(currentSelfMailbox)));
-        sender.sendMessage(plugin.getMessages().get("commands.gpx-max-current-globals",
+        Mini.send(sender, plugin.getMessages().get("commands.gpx-max-current-globals",
             "{count}", String.valueOf(currentGlobals)));
         
         // Check for permission desync and notify
         if (signLimitManager.hasPermissionDesync(target)) {
-            sender.sendMessage(plugin.getMessages().get("general.empty-line"));
-            sender.sendMessage(plugin.getMessages().get("commands.gpx-max-desync-warning",
+            Mini.send(sender, plugin.getMessages().get("general.empty-line"));
+            Mini.send(sender, plugin.getMessages().get("commands.gpx-max-desync-warning",
                 "{player}", target.getName()));
             if (signLimitManager.isPermissionCleanupSupported()) {
-                sender.sendMessage(plugin.getMessages().get("commands.gpx-max-desync-cleanup",
+                Mini.send(sender, plugin.getMessages().get("commands.gpx-max-desync-cleanup",
                     "{plugin}", signLimitManager.getSupportedPermissionPlugin()));
             } else {
-                sender.sendMessage(plugin.getMessages().get("commands.gpx-max-desync-unsupported"));
-                sender.sendMessage(plugin.getMessages().get("commands.gpx-max-desync-manual"));
+                Mini.send(sender, plugin.getMessages().get("commands.gpx-max-desync-unsupported"));
+                Mini.send(sender, plugin.getMessages().get("commands.gpx-max-desync-manual"));
             }
         }
         
@@ -245,11 +247,11 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
     }
     
     private void showHelp(CommandSender sender) {
-        sender.sendMessage(plugin.getMessages().get("admin.gpx-help-header"));
-        sender.sendMessage(plugin.getMessages().get("admin.gpx-reload"));
-        sender.sendMessage(plugin.getMessages().get("admin.gpx-debug"));
-        sender.sendMessage(plugin.getMessages().get("admin.gpx-max"));
-        sender.sendMessage(plugin.getMessages().get("admin.gpx-accruals"));
+        Mini.send(sender, plugin.getMessages().get("admin.gpx-help-header"));
+        Mini.send(sender, plugin.getMessages().get("admin.gpx-reload"));
+        Mini.send(sender, plugin.getMessages().get("admin.gpx-debug"));
+        Mini.send(sender, plugin.getMessages().get("admin.gpx-max"));
+        Mini.send(sender, plugin.getMessages().get("admin.gpx-accruals"));
     }
 
     /**
@@ -274,7 +276,16 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
 
         boolean crowbarOnly = plugin.getConfigManager().areClaimWaypointsCrowbarOnly();
         boolean packetsActive = manager.vanillaPacketsActive();
-        Object locatorBarRule = player.getWorld().getGameRuleValue(org.bukkit.GameRule.LOCATOR_BAR);
+        Object locatorBarRule = null;
+        Object gpLocatorRule = ClaimWaypointManager.locatorBarRule();
+        if (gpLocatorRule != null) {
+            try {
+                java.lang.reflect.Method getGameRuleValue = player.getWorld().getClass().getMethod("getGameRuleValue", java.lang.Object.class);
+                locatorBarRule = getGameRuleValue.invoke(player.getWorld(), gpLocatorRule);
+            } catch (ReflectiveOperationException ignored) {
+                // fallback if method not found
+            }
+        }
 
         java.util.List<me.ryanhamshire.GriefPrevention.Claim> visible = manager.visibleClaimsFor(player);
         java.util.Map<String, codes.castled.gpexpansion.waypoint.ClaimWaypointManager.SentWaypoint> sent =
@@ -328,7 +339,7 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
     private boolean handleAccruals(CommandSender sender, String[] args) {
         PermissionManager permissionManager = plugin.getPermissionManager();
         if (permissionManager == null) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-manager-unavailable"));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-manager-unavailable"));
             return true;
         }
 
@@ -350,18 +361,18 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
             case "deletegroup":
                 return handleAccrualsDeleteGroup(sender, args, permissionManager);
             default:
-                sender.sendMessage(plugin.getMessages().get("commands.accruals-unknown-action"));
+                Mini.send(sender, plugin.getMessages().get("commands.accruals-unknown-action"));
                 return true;
         }
     }
 
     private void sendAccrualsUsage(CommandSender sender) {
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-usage"));
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-usage-check"));
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-usage-group"));
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-usage-player"));
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-usage-creategroup"));
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-usage-deletegroup"));
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-usage"));
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-usage-check"));
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-usage-group"));
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-usage-player"));
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-usage-creategroup"));
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-usage-deletegroup"));
     }
 
     private boolean handleAccrualsCheck(CommandSender sender, String[] args, PermissionManager permissionManager) {
@@ -369,48 +380,48 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         if (args.length >= 3) {
             target = Bukkit.getPlayer(args[2]);
             if (target == null) {
-                sender.sendMessage(plugin.getMessages().get("commands.accruals-check-online-required", "{player}", args[2]));
+                Mini.send(sender, plugin.getMessages().get("commands.accruals-check-online-required", "{player}", args[2]));
                 return true;
             }
         } else if (sender instanceof Player) {
             target = (Player) sender;
         } else {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-check-console-usage"));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-check-console-usage"));
             return true;
         }
 
         PermissionManager.AccrualProfile profile = permissionManager.resolveAccrualProfile(target);
         PermissionManager.AccrualOverride override = permissionManager.getPlayerAccrualOverride(target.getUniqueId());
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-check-header", "{player}", target.getName()));
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-check-group", "{group}", profile.getName(), "{source}", profile.getSource()));
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-check-blocks", "{amount}", String.valueOf(profile.getBlocksPerHour())));
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-check-max-blocks", "{amount}", String.valueOf(profile.getMaxBlocks())));
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-check-max-claims", "{amount}", formatMaxClaims(profile.getMaxClaims(), true)));
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-check-override", "{override}", (override.isEmpty() ? plugin.getMessages().getRaw("commands.accruals-none") : describeOverride(override))));
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-check-header", "{player}", target.getName()));
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-check-group", "{group}", profile.getName(), "{source}", profile.getSource()));
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-check-blocks", "{amount}", String.valueOf(profile.getBlocksPerHour())));
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-check-max-blocks", "{amount}", String.valueOf(profile.getMaxBlocks())));
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-check-max-claims", "{amount}", formatMaxClaims(profile.getMaxClaims(), true)));
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-check-override", "{override}", (override.isEmpty() ? plugin.getMessages().getRaw("commands.accruals-none") : describeOverride(override))));
         return true;
     }
 
     private boolean handleAccrualsGroup(CommandSender sender, String[] args, PermissionManager permissionManager) {
         if (args.length < 6) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-group-usage"));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-group-usage"));
             return true;
         }
 
         String groupName = args[2];
         if (!permissionManager.isAccrualGroup(groupName)) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-unknown-group", "{group}", groupName));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-unknown-group", "{group}", groupName));
             return true;
         }
 
         String mode = args[3].toLowerCase();
         if (!mode.equals("set") && !mode.equals("add") && !mode.equals("remove")) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-invalid-group-action"));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-invalid-group-action"));
             return true;
         }
 
         List<PermissionManager.AccrualField> fields = parseAccrualFields(args[4]);
         if (fields.isEmpty()) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-invalid-field"));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-invalid-field"));
             return true;
         }
 
@@ -428,7 +439,7 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
             }
         }
 
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-group-updated",
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-group-updated",
             "{group}", groupName,
             "{fields}", describeFields(fields),
             "{action}", mode,
@@ -438,14 +449,14 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
 
     private boolean handleAccrualsPlayer(CommandSender sender, String[] args, PermissionManager permissionManager) {
         if (args.length < 4) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-player-usage"));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-player-usage"));
             return true;
         }
 
         Player online = Bukkit.getPlayer(args[2]);
         org.bukkit.OfflinePlayer target = online != null ? online : Bukkit.getOfflinePlayer(args[2]);
         if (target.getName() == null && !target.hasPlayedBefore()) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-unknown-player", "{player}", args[2]));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-unknown-player", "{player}", args[2]));
             return true;
         }
 
@@ -453,31 +464,31 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         if (mode.equals("reset")) {
             List<PermissionManager.AccrualField> fields = args.length >= 5 ? parseAccrualFields(args[4]) : parseAccrualFields("all");
             if (fields.isEmpty()) {
-                sender.sendMessage(plugin.getMessages().get("commands.accruals-invalid-field"));
+                Mini.send(sender, plugin.getMessages().get("commands.accruals-invalid-field"));
                 return true;
             }
             boolean changed = false;
             for (PermissionManager.AccrualField field : fields) {
                 changed |= permissionManager.clearPlayerAccrualOverride(target, field);
             }
-            sender.sendMessage(plugin.getMessages().get(changed ? "commands.accruals-player-reset" : "commands.accruals-player-reset-none",
+            Mini.send(sender, plugin.getMessages().get(changed ? "commands.accruals-player-reset" : "commands.accruals-player-reset-none",
                 "{fields}", describeFields(fields),
                 "{player}", displayName(target, args[2])));
             return true;
         }
 
         if (!mode.equals("set") && !mode.equals("add") && !mode.equals("remove")) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-invalid-player-action"));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-invalid-player-action"));
             return true;
         }
         if (args.length < 6) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-player-action-usage", "{action}", mode));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-player-action-usage", "{action}", mode));
             return true;
         }
 
         List<PermissionManager.AccrualField> fields = parseAccrualFields(args[4]);
         if (fields.isEmpty()) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-invalid-field"));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-invalid-field"));
             return true;
         }
 
@@ -495,14 +506,14 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
             permissionManager.setPlayerAccrualOverride(target, field, value);
         }
 
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-player-updated",
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-player-updated",
             "{player}", displayName(target, args[2]),
             "{fields}", describeFields(fields),
             "{action}", mode,
             "{amount}", String.valueOf(amount)));
         if (online != null) {
             PermissionManager.AccrualProfile profile = permissionManager.resolveAccrualProfile(online);
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-effective-now",
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-effective-now",
                 "{blocks}", String.valueOf(profile.getBlocksPerHour()),
                 "{maxBlocks}", String.valueOf(profile.getMaxBlocks()),
                 "{maxClaims}", formatMaxClaims(profile.getMaxClaims(), false)));
@@ -512,13 +523,13 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
 
     private boolean handleAccrualsCreateGroup(CommandSender sender, String[] args, PermissionManager permissionManager) {
         if (args.length < 3) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-creategroup-usage"));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-creategroup-usage"));
             return true;
         }
 
         String groupName = args[2];
         if (permissionManager.isAccrualGroup(groupName)) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-group-exists", "{group}", groupName));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-group-exists", "{group}", groupName));
             return true;
         }
 
@@ -537,37 +548,37 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         boolean luckPermsGroup = permissionManager.hasLuckPermsGroup(groupName);
         Integer luckPermsWeight = permissionManager.getLuckPermsWeight(groupName);
         if (!permissionManager.createAccrualGroup(groupName, blocksPerHour, maxBlocks, maxClaims, permission)) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-group-create-failed", "{group}", groupName));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-group-create-failed", "{group}", groupName));
             return true;
         }
 
         plugin.reloadAll();
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-group-created",
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-group-created",
             "{group}", groupName,
             "{blocks}", String.valueOf(blocksPerHour),
             "{maxBlocks}", String.valueOf(maxBlocks),
             "{maxClaims}", formatMaxClaims(maxClaims, false)));
         if (luckPermsGroup && luckPermsWeight != null) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-luckperms-weight", "{weight}", String.valueOf(luckPermsWeight)));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-luckperms-weight", "{weight}", String.valueOf(luckPermsWeight)));
         } else if (luckPermsGroup) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-luckperms-no-weight"));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-luckperms-no-weight"));
         }
         return true;
     }
 
     private boolean handleAccrualsDeleteGroup(CommandSender sender, String[] args, PermissionManager permissionManager) {
         if (args.length < 3) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-deletegroup-usage"));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-deletegroup-usage"));
             return true;
         }
 
         if (!permissionManager.deleteAccrualGroup(args[2])) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-unknown-group", "{group}", args[2]));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-unknown-group", "{group}", args[2]));
             return true;
         }
 
         plugin.reloadAll();
-        sender.sendMessage(plugin.getMessages().get("commands.accruals-group-deleted", "{group}", args[2]));
+        Mini.send(sender, plugin.getMessages().get("commands.accruals-group-deleted", "{group}", args[2]));
         return true;
     }
 
@@ -586,12 +597,12 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
         try {
             int amount = Integer.parseInt(raw);
             if (amount < 0) {
-                sender.sendMessage(plugin.getMessages().get("commands.accruals-amount-nonnegative"));
+                Mini.send(sender, plugin.getMessages().get("commands.accruals-amount-nonnegative"));
                 return null;
             }
             return amount;
         } catch (NumberFormatException e) {
-            sender.sendMessage(plugin.getMessages().get("commands.accruals-amount-number"));
+            Mini.send(sender, plugin.getMessages().get("commands.accruals-amount-number"));
             return null;
         }
     }

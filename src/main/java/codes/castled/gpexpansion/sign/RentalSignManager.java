@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.sign;
+import codes.castled.gpexpansion.util.Mini;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
@@ -91,7 +92,7 @@ public class RentalSignManager {
             Optional<Object> claimOpt = gpBridge.findClaimById(claimId);
             claimOpt.map(gpBridge::getClaimOwner)
                 .map(Bukkit::getPlayer)
-                .ifPresent(owner -> owner.sendMessage(plugin.getMessages().get("eviction.completed-owner-notify", "{id}", claimId)));
+                .ifPresent(owner -> Mini.send(owner, plugin.getMessages().get("eviction.completed-owner-notify", "{id}", claimId)));
         }
 
         if (claimId != null) {
@@ -136,10 +137,10 @@ public class RentalSignManager {
         Component displayLine0 = LegacyComponentSerializer.legacyAmpersand().deserialize(
             plugin.getMessages().getRaw(hanging ? "sign-interaction.sign-display-rent-hanging" : "sign-interaction.sign-display-rent-full"));
         SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
-        front.line(0, displayLine0);
-        front.line(1, legacy.deserialize("§0ID: §6" + (claimId != null ? claimId : "")));
-        front.line(2, legacy.deserialize("§0" + ecoFormatted + "/" + perClick));
-        front.line(3, legacy.deserialize("§0Max: " + maxCap));
+        Mini.signLine(front, 0, displayLine0);
+        Mini.signLine(front, 1, legacy.deserialize("§0ID: §6" + (claimId != null ? claimId : "")));
+        Mini.signLine(front, 2, legacy.deserialize("§0" + ecoFormatted + "/" + perClick));
+        Mini.signLine(front, 3, legacy.deserialize("§0Max: " + maxCap));
         sign.update(true);
     }
 

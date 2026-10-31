@@ -1,0 +1,9 @@
+# Claim Market GUI Configuration
+# Accessible via Main Menu Emerald button, /claim market, /claim shop, /claimmarket, or /claimshop
+
+title: "&a&lClaim Market"
+title-search: "&a&lClaim Market - \"{query}\""
+size: 54
+
+filler:
+  material: GRAY_STAINED_GLASS_PANE

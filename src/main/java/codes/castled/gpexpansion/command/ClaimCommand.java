@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.command;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
@@ -22,6 +23,7 @@ import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.economy.TaxManager;
 import codes.castled.gpexpansion.gp.GPBridge;
 import codes.castled.gpexpansion.scheduler.TaskHandle;
+import codes.castled.gpexpansion.scheduler.SchedulerAdapter;
 import codes.castled.gpexpansion.storage.ClaimDataStore;
 import codes.castled.gpexpansion.util.ClaimCustomizationUtil;
 import codes.castled.gpexpansion.util.SafeTeleportUtil;
@@ -174,7 +176,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
             pending.task.cancel();
             Player player = Bukkit.getPlayer(playerId);
             if (player != null && player.isOnline()) {
-                player.sendMessage(plugin.getMessages().get("claim.teleport-cancelled-move"));
+                Mini.send(player, plugin.getMessages().get("claim.teleport-cancelled-move"));
             }
         }
     }
@@ -182,7 +184,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     /** Subcommands we handle - used when sharing /claim with GP3D (only intercept these) */
     public static final java.util.Set<String> HANDLED_SUBCOMMANDS = java.util.Collections.unmodifiableSet(
             new java.util.HashSet<>(Arrays.asList(
-            "!", "gui", "menu", "info", "name", "color", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "bar", "resize", "map", "fly", "movesign",
+            "!", "gui", "menu", "info", "name", "color", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "market", "shop", "listed", "removelisting", "icon", "desc", "flags", "options", "bar", "resize", "map", "fly", "movesign",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -210,7 +212,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBS = Arrays.asList(
             // Our features
-            "!", "gui", "menu", "info", "name", "color", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "icon", "desc", "flags", "options", "bar", "resize", "map", "fly", "movesign",
+            "!", "gui", "menu", "info", "name", "color", "list", "create", "adminlist", "tp", "teleport", "setspawn", "global", "globallist", "market", "shop", "listed", "removelisting", "icon", "desc", "flags", "options", "bar", "resize", "map", "fly", "movesign",
             // Mapped GP commands (exact set requested)
             "abandon",           // -> abandonclaim
             "abandonall",        // -> abandonallclaims
@@ -349,7 +351,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         if (sender instanceof Player) {
             Player player = (Player) sender;
             if (isFolia()) {
-                player.getScheduler().execute(plugin, () -> executeCommand(sender, commandName, label, args), null, 1L);
+                SchedulerAdapter.runEntity(plugin, player, () -> executeCommand(sender, commandName, label, args), null);
             } else {
                 Bukkit.getScheduler().runTask(plugin, () -> executeCommand(sender, commandName, label, args));
             }
@@ -397,6 +399,13 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 || label.equalsIgnoreCase("globalclaimslist")) {
             return handleGlobalList(sender);
         }
+        // Support standalone /claimmarket and /claimshop commands
+        if (commandName.equalsIgnoreCase("claimmarket")
+                || commandName.equalsIgnoreCase("claimshop")
+                || label.equalsIgnoreCase("claimmarket")
+                || label.equalsIgnoreCase("claimshop")) {
+            return handleMarket(sender, args);
+        }
         // Support standalone /globalclaim [true|false] [claimId] command (toggle when no args)
         if (commandName.equalsIgnoreCase("globalclaim") || label.equalsIgnoreCase("globalclaim")) {
             return handleGlobalClaim(sender, args);
@@ -429,7 +438,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 plugin.getGUIManager().openMainMenu((Player) sender);
                 return true;
             }
-            sender.sendMessage(plugin.getMessages().get("commands.claim-usage",
+            Mini.send(sender, plugin.getMessages().get("commands.claim-usage",
                 "{label}", label,
                 "{subs}", String.join("|", SUBS)));
             return true;
@@ -515,6 +524,13 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 return handleGlobalList(sender);
             case "global":
                 return handleGlobalClaim(sender, subArgs);
+            case "market":
+            case "shop":
+                return handleMarket(sender, subArgs);
+            case "listed":
+                return handleListed(sender, subArgs);
+            case "removelisting":
+                return handleRemoveListing(sender, subArgs);
             case "icon":
                 return handleIcon(sender, subArgs);
             case "desc":
@@ -532,7 +548,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
                 // Otherwise show help message
-                sender.sendMessage(plugin.getMessages().get("commands.unknown-subcommand-help"));
+                Mini.send(sender, plugin.getMessages().get("commands.unknown-subcommand-help"));
                 return true;
         }
     }
@@ -550,13 +566,13 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         if (!requirePlayer(sender)) return true;
         Player player = (Player) sender;
         if (!player.hasPermission("griefprevention.claim.bar")) {
-            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
             return true;
         }
         String usage = "/claim bar <" + String.join("|", WaypointBarMode.ARGUMENTS) + ">";
         if (args.length == 0) {
             WaypointBarMode mode = plugin.getWaypointModeStore().get(player.getUniqueId());
-            sender.sendMessage(plugin.getMessages().get(
+            Mini.send(sender, plugin.getMessages().get(
                 mode == WaypointBarMode.OFF ? "claim.bar-current-mode-off" : "claim.bar-current",
                 "{mode}", mode.name().toLowerCase(Locale.ROOT),
                 "{what}", barModeDescription(mode),
@@ -566,14 +582,14 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         }
         WaypointBarMode mode = WaypointBarMode.fromString(args[0]);
         if (mode == null) {
-            sender.sendMessage(plugin.getMessages().get("claim.bar-invalid",
+            Mini.send(sender, plugin.getMessages().get("claim.bar-invalid",
                 "{label}", args[0],
                 "{modes}", String.join("|", WaypointBarMode.ARGUMENTS),
                 "{usage}", usage));
             return true;
         }
         plugin.getWaypointModeStore().set(player.getUniqueId(), mode);
-        sender.sendMessage(plugin.getMessages().get(
+        Mini.send(sender, plugin.getMessages().get(
             mode == WaypointBarMode.OFF ? "claim.bar-set-mode-off" : "claim.bar-set",
             "{mode}", mode.name().toLowerCase(Locale.ROOT),
             "{what}", barModeDescription(mode),
@@ -590,7 +606,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private boolean requirePlayer(CommandSender sender) {
         if (!(sender instanceof Player)) {
-            sender.sendMessage(plugin.getMessages().get("general.player-only"));
+            Mini.send(sender, plugin.getMessages().get("general.player-only"));
             return false;
         }
         return true;
@@ -609,19 +625,19 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         
         // Check permission
         if (!player.hasPermission("griefprevention.claim.gui.return")) {
-            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
             return true;
         }
         
         // Check if GUI is enabled
         if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
-            sender.sendMessage(plugin.getMessages().get("gui.not-enabled"));
+            Mini.send(sender, plugin.getMessages().get("gui.not-enabled"));
             return true;
         }
         
         // Try to restore last GUI
         if (!codes.castled.gpexpansion.gui.GUIStateTracker.restoreLastGUI(plugin.getGUIManager(), player)) {
-            sender.sendMessage(plugin.getMessages().get("gui.no-previous"));
+            Mini.send(sender, plugin.getMessages().get("gui.no-previous"));
             return true;
         }
         
@@ -632,7 +648,7 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         if (!requirePlayer(sender)) return true;
         Player player = (Player) sender;
         if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
-            sender.sendMessage(plugin.getMessages().get("gui.not-enabled"));
+            Mini.send(sender, plugin.getMessages().get("gui.not-enabled"));
             return true;
         }
         plugin.getGUIManager().openMainMenu(player);
@@ -664,8 +680,40 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
         }
 
         if (hasIdArg && isTrustCommand(base) && !sender.hasPermission("griefprevention.trust.anywhere")) {
-            sender.sendMessage(plugin.getMessages().get("claim.trust-anywhere-required"));
+            Mini.send(sender, plugin.getMessages().get("claim.trust-anywhere-required"));
             return true;
+        }
+
+        // Protect active rentals and sold/for-sale mailboxes from /claim untrust and GUI trust editors
+        if (base.equals("untrust") && args.length >= 1 && plugin.getMarketManager() != null) {
+            String explicitClaimId = hasIdArg ? args[args.length - 1] : null;
+            if (plugin.getMarketManager().checkAndBlockUntrust(player, args[0], explicitClaimId)) {
+                return true;
+            }
+        }
+
+        // Protect active rentals, sold mailboxes, and for-sale listings from /claim abandon & /abandonclaim
+        if ((base.equals("abandonclaim") || base.equals("abandontoplevelclaim") || base.equals("abandonallclaims"))
+                && plugin.getMarketManager() != null) {
+            if (base.equals("abandonallclaims")) {
+                for (Object c : gp.getClaimsFor(player)) {
+                    if (gp.isSubdivision(c)) continue;
+                    String cid = gp.getClaimId(c).orElse(null);
+                    if (cid != null && plugin.getMarketManager().checkAndBlockAbandon(player, cid)) {
+                        return true;
+                    }
+                }
+            } else {
+                String targetClaimId = hasIdArg
+                    ? args[args.length - 1]
+                    : gp.getClaimAt(player.getLocation(), player)
+                        .map(c -> gp.getParentClaim(c).orElse(c))
+                        .flatMap(gp::getClaimId)
+                        .orElse(null);
+                if (targetClaimId != null && plugin.getMarketManager().checkAndBlockAbandon(player, targetClaimId)) {
+                    return true;
+                }
+            }
         }
         
         // Abandon commands with a claim ID are limited to claims the player is standing
@@ -697,14 +745,14 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
                 try {
                     java.util.Optional<Object> claimOpt = gp.findClaimById(possibleId);
                     if (!claimOpt.isPresent()) {
-                        sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", possibleId));
+                        Mini.send(sender, plugin.getMessages().get("claim.not-found", "{id}", possibleId));
                         return;
                     }
                     
                     Object claim = claimOpt.get();
                     java.util.Optional<org.bukkit.Location> centerOpt = gp.getClaimCenter(claim);
                     if (!centerOpt.isPresent()) {
-                        sender.sendMessage(plugin.getMessages().get("claim.teleport-safe-location-fail", "{id}", possibleId));
+                        Mini.send(sender, plugin.getMessages().get("claim.teleport-safe-location-fail", "{id}", possibleId));
                         return;
                     }
                     
@@ -721,7 +769,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                         
                         boolean ok = Bukkit.dispatchCommand(sender, cmd);
                         if (!ok) {
-                            sender.sendMessage(plugin.getMessages().get("commands.exec-failed", "{command}", "/" + finalBaseCmd));
+                            Mini.send(sender, plugin.getMessages().get("commands.exec-failed", "{command}", "/" + finalBaseCmd));
                         } else {
                             maybeTrackTrustedPlayerChange(player, finalBaseCmd, passArgs, possibleId);
                         }
@@ -731,19 +779,19 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                     };
                     
                     if (isFolia()) {
-                        player.getScheduler().execute(plugin, playerTask, null, 1L);
+                        SchedulerAdapter.runEntity(plugin, player, playerTask, null);
                     } else {
                         Bukkit.getScheduler().runTask(plugin, playerTask);
                     }
                 } catch (Exception e) {
-                    sender.sendMessage(plugin.getMessages().get("commands.exec-error", "{error}", e.getMessage()));
+                    Mini.send(sender, plugin.getMessages().get("commands.exec-error", "{error}", e.getMessage()));
                     e.printStackTrace();
                 }
             };
             
             if (isFolia()) {
                 // Run on global region for claim lookup
-                Bukkit.getGlobalRegionScheduler().run(plugin, t -> task.run());
+                SchedulerAdapter.runGlobalRegion(plugin, task);
             } else {
                 Bukkit.getScheduler().runTaskAsynchronously(plugin, task);
             }
@@ -752,12 +800,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         try {
             boolean ok = Bukkit.dispatchCommand(sender, finalCmd);
             if (!ok) {
-                sender.sendMessage(plugin.getMessages().get("commands.exec-failed", "{command}", "/" + base));
+                Mini.send(sender, plugin.getMessages().get("commands.exec-failed", "{command}", "/" + base));
             } else {
                 maybeTrackTrustedPlayerChange(player, base, args, null);
             }
         } catch (Exception e) {
-            sender.sendMessage(plugin.getMessages().get("commands.exec-error", "{error}", e.getMessage()));
+            Mini.send(sender, plugin.getMessages().get("commands.exec-error", "{error}", e.getMessage()));
             e.printStackTrace();
         }
         return true;
@@ -766,7 +814,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private boolean handleTrustDispatch(CommandSender sender, String[] args) {
         TrustCommandDispatch dispatch = normalizeTrustCommand(args);
         if (dispatch == null) {
-            sender.sendMessage(plugin.getMessages().get("claim.trust-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.trust-usage"));
             return true;
         }
         return handleDispatch(sender, dispatch.base, dispatch.args);
@@ -783,14 +831,14 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
             Optional<Object> claimOpt = gp.getClaimAt(player.getLocation(), player);
             if (claimOpt.isEmpty()) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+                Mini.send(sender, plugin.getMessages().get("claim.not-standing-in-claim"));
                 return true;
             }
 
             Object claim = claimOpt.get();
             String claimId = gp.getClaimId(claim).orElse(null);
             if (claimId == null) {
-                sender.sendMessage(plugin.getMessages().get("claim.id-missing"));
+                Mini.send(sender, plugin.getMessages().get("claim.id-missing"));
                 return true;
             }
 
@@ -806,27 +854,27 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         Player player = (Player) sender;
 
         if (args.length > 0) {
-            sender.sendMessage(plugin.getMessages().get("commands.claim-usage",
+            Mini.send(sender, plugin.getMessages().get("commands.claim-usage",
                     "{label}", "claim",
                     "{subs}", String.join("|", SUBS)));
             return true;
         }
 
         if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
-            sender.sendMessage(plugin.getMessages().get("gui.not-enabled"));
+            Mini.send(sender, plugin.getMessages().get("gui.not-enabled"));
             return true;
         }
 
         Optional<Object> claimOpt = gp.getClaimAt(player.getLocation(), player);
         if (claimOpt.isEmpty()) {
-            sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+            Mini.send(sender, plugin.getMessages().get("claim.not-standing-in-claim"));
             return true;
         }
 
         Object claim = claimOpt.get();
         String claimId = gp.getClaimId(claim).orElse(null);
         if (claimId == null) {
-            sender.sendMessage(plugin.getMessages().get("claim.id-missing"));
+            Mini.send(sender, plugin.getMessages().get("claim.id-missing"));
             return true;
         }
 
@@ -971,7 +1019,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
         if (listArgs.length > 0 && !listArgs[0].isEmpty()) {
             if (senderPlayer == null && !listOptions.showOwnerListToConsole()) {
-                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                Mini.send(sender, plugin.getMessages().get("general.no-permission"));
                 return true;
             }
             String requestedName = listArgs[0];
@@ -985,7 +1033,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             }
 
             if (targetId == null) {
-                sender.sendMessage(plugin.getMessages().get("claim.list-player-not-found",
+                Mini.send(sender, plugin.getMessages().get("claim.list-player-not-found",
                     "{player}", requestedName));
                 return true;
             }
@@ -993,13 +1041,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             if (senderPlayer != null
                     && !senderPlayer.getUniqueId().equals(targetId)
                     && !sender.hasPermission("griefprevention.claimslistother")) {
-                sender.sendMessage(plugin.getMessages().get("permissions.missing",
+                Mini.send(sender, plugin.getMessages().get("permissions.missing",
                     "{permission}", "griefprevention.claimslistother"));
                 return true;
             }
         } else {
             if (senderPlayer == null) {
-                sender.sendMessage(plugin.getMessages().get("claim.list-usage-other"));
+                Mini.send(sender, plugin.getMessages().get("claim.list-usage-other"));
                 return true;
             }
             targetId = senderPlayer.getUniqueId();
@@ -1010,12 +1058,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         List<Object> claims = gp.getClaimsFor(targetId);
         codes.castled.gpexpansion.storage.ClaimDataStore store = plugin.getClaimDataStore();
         if (viewingOther) {
-            sender.sendMessage(plugin.getMessages().get("claim.list-player-header",
+            Mini.send(sender, plugin.getMessages().get("claim.list-player-header",
                 "{player}", targetName));
         }
         if (listOptions.showClaimBlockSummary()) {
             gp.getPlayerClaimStats(targetId).ifPresent(stats -> {
-                sender.sendMessage(plugin.getMessages().get("claim.blocks-total",
+                Mini.send(sender, plugin.getMessages().get("claim.blocks-total",
                     "{accrued}", String.valueOf(stats.accrued),
                     "{bonus}", String.valueOf(stats.bonus),
                     "{total}", String.valueOf(stats.total)));
@@ -1042,14 +1090,14 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             }
         }
 
-        sender.sendMessage(plugin.getMessages().get("claim.list-header",
+        Mini.send(sender, plugin.getMessages().get("claim.list-header",
             "{count}", String.valueOf(grouped.size())));
 
         List<Map.Entry<Object, List<Object>>> groupedEntries = new ArrayList<>(grouped.entrySet());
         int totalPages = Math.max(1, (int) Math.ceil(groupedEntries.size() / (double) listOptions.pageSize()));
         int page = Math.min(Math.max(1, requestedPage), totalPages);
         if (totalPages > 1) {
-            sender.sendMessage(plugin.getMessages().get("claim.list-page",
+            Mini.send(sender, plugin.getMessages().get("claim.list-page",
                 "{page}", String.valueOf(page),
                 "{pages}", String.valueOf(totalPages)));
         }
@@ -1061,7 +1109,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             String id = gp.getClaimId(parent).orElse("?");
             String parentName = store.getCustomName(id).orElse("unnamed");
             String name = formatClaimLine(parent, id, parentName, listOptions);
-            sender.sendMessage(parseColorCodes(name));
+            Mini.send(sender, parseColorCodes(name));
 
             if (listOptions.showSubclaims()) {
                 // Get subclaims for this parent that the player owns
@@ -1081,7 +1129,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                     String subName = store.getCustomName(subId).orElse("");
                     String subLine = formatSubclaimLine(sub, id, subName, listOptions);
                     // Parse color codes in the line
-                    sender.sendMessage(parseColorCodes("    " + subLine));
+                    Mini.send(sender, parseColorCodes("    " + subLine));
                 }
             }
         }
@@ -1093,7 +1141,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 .collect(Collectors.toList());
 
             if (!trusted.isEmpty()) {
-                sender.sendMessage(plugin.getMessages().get("claim.list-trusted-header",
+                Mini.send(sender, plugin.getMessages().get("claim.list-trusted-header",
                     "{count}", String.valueOf(trusted.size())));
                 for (Object c : trusted) {
                     String id = gp.getClaimId(c).orElse("?");
@@ -1101,7 +1149,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                     String name = store.getCustomName(id).orElse("unnamed");
                     String line = formatTrustedClaimLine(c, id, name, parentId, targetId, listOptions);
                     // Parse color codes in the line
-                    sender.sendMessage(parseColorCodes(line));
+                    Mini.send(sender, parseColorCodes(line));
 
                     if (listOptions.showSubclaims()) {
                         // Show subclaims of trusted claims if the player is trusted on them
@@ -1111,7 +1159,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                                 String subId = gp.getClaimId(sub).orElse("");
                                 String subName = store.getCustomName(subId).orElse("");
                                 String subLine = formatSubclaimLine(sub, id, subName, listOptions);
-                                sender.sendMessage(parseColorCodes("  " + subLine));
+                                Mini.send(sender, parseColorCodes("  " + subLine));
                             }
                         }
                     }
@@ -1121,7 +1169,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
         if (listOptions.showClaimBlockSummary()) {
             gp.getPlayerClaimStats(targetId).ifPresent(stats -> {
-                sender.sendMessage(plugin.getMessages().get("claim.blocks-remaining",
+                Mini.send(sender, plugin.getMessages().get("claim.blocks-remaining",
                     "{remaining}", String.valueOf(stats.remaining)));
             });
         }
@@ -1134,7 +1182,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
         Player player = (Player)sender;
         if (!player.isOp() && !player.hasPermission("griefprevention.adminclaimslist")) {
-            sender.sendMessage(plugin.getMessages().get("permissions.missing",
+            Mini.send(sender, plugin.getMessages().get("permissions.missing",
                 "{permission}", "griefprevention.adminclaimslist"));
             return true;
         }
@@ -1152,14 +1200,14 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
         if (admins.isEmpty()) return true;
         
-        sender.sendMessage(plugin.getMessages().get("claim.list-admin-header",
+        Mini.send(sender, plugin.getMessages().get("claim.list-admin-header",
             "{count}", String.valueOf(admins.size())));
         
         for (Object c : admins) {
             String id = gp.getClaimId(c).orElse("?");
             String name = store.getCustomName(id).orElse("unnamed");
             String line = formatClaimLine(c, id, name, listOptions);
-            sender.sendMessage(parseColorCodes(line));
+            Mini.send(sender, parseColorCodes(line));
             
             if (listOptions.showSubclaims()) {
                 for (Object sub : getSubclaims(c)) {
@@ -1167,7 +1215,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                     String subName = store.getCustomName(subId).orElse("");
                     String subLine = formatSubclaimLine(sub, id, subName, listOptions);
                     // Parse color codes in the line
-                    sender.sendMessage(parseColorCodes("    " + subLine));
+                    Mini.send(sender, parseColorCodes("    " + subLine));
                 }
             }
         }
@@ -1177,7 +1225,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     
     private boolean handleTransferClaim(CommandSender sender, String[] args) {
         if (!sender.hasPermission("griefprevention.transferclaim")) {
-            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
             return true;
         }
 
@@ -1199,7 +1247,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
 
         if (args.length < 2) {
-            sender.sendMessage(plugin.getMessages().get("claim.transfer-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.transfer-usage"));
             return true;
         }
 
@@ -1208,13 +1256,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
         Optional<Object> claimOpt = gp.findClaimById(claimId);
         if (!claimOpt.isPresent()) {
-            sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", claimId));
+            Mini.send(sender, plugin.getMessages().get("claim.not-found", "{id}", claimId));
             return true;
         }
 
         UUID targetUuid = resolvePlayerUuid(targetName);
         if (targetUuid == null) {
-            sender.sendMessage(plugin.getMessages().get("general.unknown-player", "{player}", targetName));
+            Mini.send(sender, plugin.getMessages().get("general.unknown-player", "{player}", targetName));
             return true;
         }
 
@@ -1226,25 +1274,25 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             Player player = (Player) sender;
             boolean admin = sender.isOp() || sender.hasPermission("griefprevention.admin");
             if (!admin && !gp.isOwner(mainClaim, player.getUniqueId())) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-owner", "{id}", mainClaimId));
+                Mini.send(sender, plugin.getMessages().get("claim.not-owner", "{id}", mainClaimId));
                 return true;
             }
         }
 
         boolean transferred = gp.transferClaimOwner(mainClaim, targetUuid);
         if (!transferred) {
-            sender.sendMessage(plugin.getMessages().get("claim.transfer-failed", "{id}", mainClaimId));
+            Mini.send(sender, plugin.getMessages().get("claim.transfer-failed", "{id}", mainClaimId));
             return true;
         }
 
         OfflinePlayer offline = Bukkit.getOfflinePlayer(targetUuid);
         String displayName = offline.getName() != null ? offline.getName() : targetName;
 
-        sender.sendMessage(plugin.getMessages().get("claim.transfer-success", "{id}", mainClaimId, "{player}", displayName));
+        Mini.send(sender, plugin.getMessages().get("claim.transfer-success", "{id}", mainClaimId, "{player}", displayName));
 
         Player targetOnline = Bukkit.getPlayer(targetUuid);
         if (targetOnline != null) {
-            targetOnline.sendMessage(plugin.getMessages().get("claim.transfer-received", "{id}", mainClaimId));
+            Mini.send(targetOnline, plugin.getMessages().get("claim.transfer-received", "{id}", mainClaimId));
         }
 
         return true;
@@ -1253,7 +1301,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private boolean handleName(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         if (!sender.hasPermission("griefprevention.claim.name")) {
-            sender.sendMessage(plugin.getMessages().get("claim.name-no-permission"));
+            Mini.send(sender, plugin.getMessages().get("claim.name-no-permission"));
             return true;
         }
 
@@ -1262,7 +1310,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         boolean allowAnywhere = sender.hasPermission("griefprevention.claim.name.anywhere");
 
         if (args.length == 0) {
-            sender.sendMessage(plugin.getMessages().get("claim.name-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.name-usage"));
             return true;
         }
 
@@ -1282,18 +1330,18 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
         String legacyName = String.join(" ", nameParts).trim();
         if (legacyName.isEmpty()) {
-            sender.sendMessage(plugin.getMessages().get("claim.name-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.name-usage"));
             return true;
         }
 
         ClaimCustomizationUtil.TextResult normalized = ClaimCustomizationUtil.normalizeName(plugin, sender, legacyName);
         String stored = normalized.value();
         if (stored.isEmpty()) {
-            sender.sendMessage(plugin.getMessages().get("claim.name-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.name-usage"));
             return true;
         }
         if (normalized.truncated()) {
-            sender.sendMessage(plugin.getMessages().get("claim.name-truncated",
+            Mini.send(sender, plugin.getMessages().get("claim.name-truncated",
                 "{max}", String.valueOf(plugin.getConfigManager().getClaimNameMaxLength())));
         }
 
@@ -1308,7 +1356,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
         String display = stored.isEmpty() ? "&7unnamed" : stored;
         String feedback = String.format("&aClaim %s renamed to %s", ctx.claimId, display);
-        sender.sendMessage(parseColorCodes(feedback));
+        Mini.send(sender, parseColorCodes(feedback));
         return true;
     }
     
@@ -1331,7 +1379,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private boolean handleColor(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         if (!sender.hasPermission("griefprevention.claim.color")) {
-            sender.sendMessage(plugin.getMessages().get("claim.color-no-permission"));
+            Mini.send(sender, plugin.getMessages().get("claim.color-no-permission"));
             return true;
         }
 
@@ -1340,14 +1388,14 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         boolean allowAnywhere = sender.hasPermission("griefprevention.claim.color.anywhere");
 
         if (args.length == 0) {
-            sender.sendMessage(plugin.getMessages().get("claim.color-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.color-usage"));
             return true;
         }
 
         String requested = args[0].trim().toLowerCase(Locale.ROOT);
         boolean clearing = requested.equals("reset") || requested.equals("none") || requested.equals("default");
         if (!clearing && !isValidClaimColor(requested)) {
-            sender.sendMessage(plugin.getMessages().get("claim.color-invalid",
+            Mini.send(sender, plugin.getMessages().get("claim.color-invalid",
                 "{colors}", String.join(", ", WAYPOINT_COLOR_NAMES)));
             return true;
         }
@@ -1374,7 +1422,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         store.save();
 
         String display = clearing ? "&7default" : "&f" + requested;
-        sender.sendMessage(parseColorCodes(
+        Mini.send(sender, parseColorCodes(
             String.format("&aClaim %s colour set to %s&7 (locator waypoint and claim map)", ctx.claimId, display)));
         return true;
     }
@@ -1383,7 +1431,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private boolean handleIcon(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         if (!sender.hasPermission("griefprevention.claim.icon")) {
-            sender.sendMessage(plugin.getMessages().get("claim.icon-no-permission"));
+            Mini.send(sender, plugin.getMessages().get("claim.icon-no-permission"));
             return true;
         }
 
@@ -1393,11 +1441,11 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         // Get the item in hand
         org.bukkit.inventory.ItemStack item = player.getInventory().getItemInMainHand();
         if (item == null || item.getType() == org.bukkit.Material.AIR) {
-            sender.sendMessage(plugin.getMessages().get("claim.icon-hold-item"));
+            Mini.send(sender, plugin.getMessages().get("claim.icon-hold-item"));
             return true;
         }
         if (!ClaimCustomizationUtil.isIconAllowed(plugin, item)) {
-            sender.sendMessage(plugin.getMessages().get("claim.icon-denied", "{icon}", item.getType().name()));
+            Mini.send(sender, plugin.getMessages().get("claim.icon-denied", "{icon}", item.getType().name()));
             return true;
         }
 
@@ -1413,7 +1461,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 explicitClaim = looked;
                 explicitId = possibleId;
             } else {
-                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", possibleId));
+                Mini.send(sender, plugin.getMessages().get("claim.not-found", "{id}", possibleId));
                 return true;
             }
         }
@@ -1422,10 +1470,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (!ctxOpt.isPresent()) return true;
 
         ClaimContext ctx = ctxOpt.get();
-        plugin.getClaimDataStore().setIcon(ctx.claimId, item.getType());
+        // Store the whole item so custom models, head textures and other item data show up
+        // in every claim menu (allow-custom-items: false keeps just the material).
+        plugin.getClaimDataStore().setIcon(ctx.claimId, item, sender);
         plugin.getClaimDataStore().save();
 
-        sender.sendMessage(plugin.getMessages().get("claim.icon-set",
+        Mini.send(sender, plugin.getMessages().get("claim.icon-set",
             "{id}", ctx.claimId,
             "{icon}", materialName));
         return true;
@@ -1435,7 +1485,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private boolean handleDescription(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         if (!sender.hasPermission("griefprevention.claim.description")) {
-            sender.sendMessage(plugin.getMessages().get("claim.description-no-permission"));
+            Mini.send(sender, plugin.getMessages().get("claim.description-no-permission"));
             return true;
         }
 
@@ -1444,7 +1494,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         boolean allowAnywhere = sender.hasPermission("griefprevention.claim.description.anywhere");
 
         if (args.length == 0) {
-            sender.sendMessage(plugin.getMessages().get("claim.description-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.description-usage"));
             return true;
         }
 
@@ -1465,22 +1515,22 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
         String description = String.join(" ", descParts).trim();
         if (description.isEmpty()) {
-            sender.sendMessage(plugin.getMessages().get("claim.description-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.description-usage"));
             return true;
         }
 
         ClaimCustomizationUtil.TextResult normalized = ClaimCustomizationUtil.normalizeDescription(plugin, sender, description);
         if (normalized.rejected()) {
-            sender.sendMessage(plugin.getMessages().get("claim.description-links-denied"));
+            Mini.send(sender, plugin.getMessages().get("claim.description-links-denied"));
             return true;
         }
         description = normalized.value();
         if (description.isEmpty()) {
-            sender.sendMessage(plugin.getMessages().get("claim.description-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.description-usage"));
             return true;
         }
         if (normalized.truncated()) {
-            sender.sendMessage(plugin.getMessages().get("claim.description-truncated",
+            Mini.send(sender, plugin.getMessages().get("claim.description-truncated",
                 "{max}", String.valueOf(plugin.getConfigManager().getClaimDescriptionMaxLength())));
         }
 
@@ -1491,7 +1541,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         plugin.getClaimDataStore().setDescription(ctx.claimId, description);
         plugin.getClaimDataStore().save();
 
-        sender.sendMessage(plugin.getMessages().get("claim.description-set",
+        Mini.send(sender, plugin.getMessages().get("claim.description-set",
             "{id}", ctx.claimId,
             "{description}", description));
         return true;
@@ -1505,11 +1555,11 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (!requirePlayer(sender)) return true;
         Player player = (Player) sender;
         if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
-            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
             return true;
         }
         if (!sender.hasPermission("griefprevention.claim.gui.flags")) {
-            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
             return true;
         }
         Object claim;
@@ -1518,7 +1568,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             String id = args[0];
             Optional<Object> claimOpt = gp.findClaimById(id);
             if (!claimOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", id));
+                Mini.send(sender, plugin.getMessages().get("claim.not-found", "{id}", id));
                 return true;
             }
             claim = claimOpt.get();
@@ -1526,19 +1576,19 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             boolean isOwner = gp.isOwner(claim, player.getUniqueId()) || player.hasPermission("griefprevention.admin");
             if (isOwner) {
                 if (!sender.hasPermission("griefprevention.claim.gui.flags.anywhere")) {
-                    sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                    Mini.send(sender, plugin.getMessages().get("general.no-permission"));
                     return true;
                 }
             } else {
                 if (!sender.hasPermission("griefprevention.claim.gui.flags.other")) {
-                    sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                    Mini.send(sender, plugin.getMessages().get("general.no-permission"));
                     return true;
                 }
             }
         } else {
             Optional<Object> claimOpt = gp.getClaimAt(player.getLocation(), player);
             if (!claimOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+                Mini.send(sender, plugin.getMessages().get("claim.not-standing-in-claim"));
                 return true;
             }
             claim = claimOpt.get();
@@ -1551,12 +1601,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             }
             claimId = gp.getClaimId(claim).orElse(null);
             if (claimId == null) {
-                sender.sendMessage(plugin.getMessages().get("general.error"));
+                Mini.send(sender, plugin.getMessages().get("general.error"));
                 return true;
             }
         }
-        if (!codes.castled.gpexpansion.gui.ClaimFlagsGUI.canAccess(player, claim, gp)) {
-            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+        if (!codes.castled.gpexpansion.gui.FlagsGUI.canAccess(plugin, player, claim, gp)) {
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
             return true;
         }
         plugin.getGUIManager().openClaimFlags(player, claim, claimId);
@@ -1571,11 +1621,11 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (!requirePlayer(sender)) return true;
         Player player = (Player) sender;
         if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
-            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
             return true;
         }
         if (!sender.hasPermission("griefprevention.claim.gui.options")) {
-            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
             return true;
         }
         Object claim;
@@ -1584,7 +1634,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             String id = args[0];
             Optional<Object> claimOpt = gp.findClaimById(id);
             if (!claimOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", id));
+                Mini.send(sender, plugin.getMessages().get("claim.not-found", "{id}", id));
                 return true;
             }
             claim = claimOpt.get();
@@ -1592,25 +1642,25 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             boolean isOwner = gp.isOwner(claim, player.getUniqueId()) || player.hasPermission("griefprevention.admin");
             if (isOwner) {
                 if (!sender.hasPermission("griefprevention.claim.gui.options.anywhere")) {
-                    sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                    Mini.send(sender, plugin.getMessages().get("general.no-permission"));
                     return true;
                 }
             } else {
                 if (!sender.hasPermission("griefprevention.claim.gui.options.other")) {
-                    sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                    Mini.send(sender, plugin.getMessages().get("general.no-permission"));
                     return true;
                 }
             }
         } else {
             Optional<Object> claimOpt = gp.getClaimAt(player.getLocation(), player);
             if (!claimOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+                Mini.send(sender, plugin.getMessages().get("claim.not-standing-in-claim"));
                 return true;
             }
             claim = claimOpt.get();
             claimId = gp.getClaimId(claim).orElse(null);
             if (claimId == null) {
-                sender.sendMessage(plugin.getMessages().get("general.error"));
+                Mini.send(sender, plugin.getMessages().get("general.error"));
                 return true;
             }
         }
@@ -1621,7 +1671,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private boolean handleBan(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         if (!sender.hasPermission("griefprevention.claim.ban")) {
-            sender.sendMessage(plugin.getMessages().get("claim.ban-no-permission"));
+            Mini.send(sender, plugin.getMessages().get("claim.ban-no-permission"));
             return true;
         }
 
@@ -1630,7 +1680,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         boolean allowAnywhere = sender.hasPermission("griefprevention.claim.ban.anywhere");
 
         if (args.length == 0) {
-            sender.sendMessage(plugin.getMessages().get("claim.ban-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.ban-usage"));
             return true;
         }
 
@@ -1642,7 +1692,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             String possibleId = args[args.length - 1];
             Optional<Object> looked = gp.findClaimById(possibleId);
             if (!looked.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", possibleId));
+                Mini.send(sender, plugin.getMessages().get("claim.not-found", "{id}", possibleId));
                 return true;
             }
             explicitClaim = looked;
@@ -1651,7 +1701,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
 
         if (workingArgs.length == 0) {
-            sender.sendMessage(plugin.getMessages().get("claim.ban-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.ban-usage"));
             return true;
         }
 
@@ -1665,36 +1715,36 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (targetName.equalsIgnoreCase("public")) {
             String publicPermission = plugin.getConfigManager().getClaimBanPublicPermission();
             if (!publicPermission.isEmpty() && !sender.hasPermission(publicPermission)) {
-                sender.sendMessage(plugin.getMessages().get("claim.public-ban-no-permission",
+                Mini.send(sender, plugin.getMessages().get("claim.public-ban-no-permission",
                     "{permission}", publicPermission));
                 return true;
             }
             if (dataStore.isPublicBanned(ctx.mainClaimId)) {
-                sender.sendMessage(plugin.getMessages().get("claim.ban-already", "{id}", ctx.mainClaimId));
+                Mini.send(sender, plugin.getMessages().get("claim.ban-already", "{id}", ctx.mainClaimId));
                 return true;
             }
             dataStore.setPublicBanned(ctx.mainClaimId, true);
             dataStore.save();
-            sender.sendMessage(plugin.getMessages().get("claim.ban-public", "{id}", ctx.mainClaimId));
+            Mini.send(sender, plugin.getMessages().get("claim.ban-public", "{id}", ctx.mainClaimId));
             return true;
         }
 
         UUID targetUuid = resolvePlayerUuid(targetName);
 
         if (targetUuid == null) {
-            sender.sendMessage(plugin.getMessages().get("general.unknown-player", "{player}", targetName));
+            Mini.send(sender, plugin.getMessages().get("general.unknown-player", "{player}", targetName));
             return true;
         }
 
         if (targetUuid.equals(player.getUniqueId())) {
-            sender.sendMessage(plugin.getMessages().get("claim.ban-self"));
+            Mini.send(sender, plugin.getMessages().get("claim.ban-self"));
             return true;
         }
 
         dataStore.addBannedPlayer(ctx.mainClaimId, targetUuid);
         dataStore.save();
 
-        sender.sendMessage(plugin.getMessages().get("claim.ban-success",
+        Mini.send(sender, plugin.getMessages().get("claim.ban-success",
             "{player}", targetName,
             "{id}", ctx.mainClaimId));
 
@@ -1719,7 +1769,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private boolean handleUnban(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         if (!sender.hasPermission("griefprevention.claim.unban")) {
-            sender.sendMessage(plugin.getMessages().get("claim.unban-no-permission"));
+            Mini.send(sender, plugin.getMessages().get("claim.unban-no-permission"));
             return true;
         }
 
@@ -1728,7 +1778,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         boolean allowAnywhere = sender.hasPermission("griefprevention.claim.unban.anywhere");
 
         if (args.length == 0) {
-            sender.sendMessage(plugin.getMessages().get("claim.unban-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.unban-usage"));
             return true;
         }
 
@@ -1747,7 +1797,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
 
         if (workingArgs.length == 0) {
-            sender.sendMessage(plugin.getMessages().get("claim.unban-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.unban-usage"));
             return true;
         }
 
@@ -1761,17 +1811,17 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (targetName.equalsIgnoreCase("public")) {
             String publicPermission = plugin.getConfigManager().getClaimBanPublicPermission();
             if (!publicPermission.isEmpty() && !sender.hasPermission(publicPermission)) {
-                sender.sendMessage(plugin.getMessages().get("claim.public-ban-no-permission",
+                Mini.send(sender, plugin.getMessages().get("claim.public-ban-no-permission",
                     "{permission}", publicPermission));
                 return true;
             }
             if (!dataStore.isPublicBanned(ctx.mainClaimId)) {
-                sender.sendMessage(plugin.getMessages().get("claim.unban-public-missing", "{id}", ctx.mainClaimId));
+                Mini.send(sender, plugin.getMessages().get("claim.unban-public-missing", "{id}", ctx.mainClaimId));
                 return true;
             }
             dataStore.setPublicBanned(ctx.mainClaimId, false);
             dataStore.save();
-            sender.sendMessage(plugin.getMessages().get("claim.unban-public", "{id}", ctx.mainClaimId));
+            Mini.send(sender, plugin.getMessages().get("claim.unban-public", "{id}", ctx.mainClaimId));
             return true;
         }
 
@@ -1783,17 +1833,17 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                     .sorted(String.CASE_INSENSITIVE_ORDER)
                     .collect(Collectors.joining(", "));
             if (!onlineNames.isEmpty()) {
-                sender.sendMessage(plugin.getMessages().get("general.unknown-player-online",
+                Mini.send(sender, plugin.getMessages().get("general.unknown-player-online",
                     "{player}", targetName,
                     "{online}", onlineNames));
             } else {
-                sender.sendMessage(plugin.getMessages().get("general.unknown-player", "{player}", targetName));
+                Mini.send(sender, plugin.getMessages().get("general.unknown-player", "{player}", targetName));
             }
             return true;
         }
 
         if (!dataStore.getBannedPlayers(ctx.mainClaimId).contains(targetUuid)) {
-            sender.sendMessage(plugin.getMessages().get("claim.unban-not-banned",
+            Mini.send(sender, plugin.getMessages().get("claim.unban-not-banned",
                 "{player}", targetName,
                 "{id}", ctx.mainClaimId));
             return true;
@@ -1802,7 +1852,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         dataStore.removeBannedPlayer(ctx.mainClaimId, targetUuid);
         dataStore.save();
 
-        sender.sendMessage(plugin.getMessages().get("claim.unban-success",
+        Mini.send(sender, plugin.getMessages().get("claim.unban-success",
             "{player}", targetName,
             "{id}", ctx.mainClaimId));
         return true;
@@ -1811,7 +1861,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private boolean handleBanList(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         if (!sender.hasPermission("griefprevention.claim.banlist")) {
-            sender.sendMessage(plugin.getMessages().get("claim.banlist-no-permission"));
+            Mini.send(sender, plugin.getMessages().get("claim.banlist-no-permission"));
             return true;
         }
 
@@ -1826,7 +1876,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             String possibleId = args[args.length - 1];
             Optional<Object> looked = gp.findClaimById(possibleId);
             if (!looked.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", possibleId));
+                Mini.send(sender, plugin.getMessages().get("claim.not-found", "{id}", possibleId));
                 return true;
             }
             explicitClaim = looked;
@@ -1840,21 +1890,21 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         codes.castled.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
         codes.castled.gpexpansion.storage.ClaimDataStore.BanData entry = dataStore.getBans(ctx.mainClaimId);
 
-        sender.sendMessage(plugin.getMessages().get("claim.banlist-header", "{id}", ctx.mainClaimId));
+        Mini.send(sender, plugin.getMessages().get("claim.banlist-header", "{id}", ctx.mainClaimId));
 
         if (entry.publicBanned) {
-            sender.sendMessage(plugin.getMessages().get("claim.banlist-public"));
+            Mini.send(sender, plugin.getMessages().get("claim.banlist-public"));
         }
 
         if (entry.bannedPlayers.isEmpty()) {
-            sender.sendMessage(plugin.getMessages().get("claim.banlist-empty"));
+            Mini.send(sender, plugin.getMessages().get("claim.banlist-empty"));
             return true;
         }
 
         for (UUID uuid : entry.bannedPlayers) {
             String name = entry.playerNames.getOrDefault(uuid, Bukkit.getOfflinePlayer(uuid).getName());
             if (name == null) name = uuid.toString();
-            sender.sendMessage(plugin.getMessages().get("claim.banlist-entry", "{player}", name));
+            Mini.send(sender, plugin.getMessages().get("claim.banlist-entry", "{player}", name));
         }
         return true;
     }
@@ -1899,13 +1949,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                         claim = claimById.get();
                         claimId = explicitId;
                     } else {
-                        sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", explicitId));
+                        Mini.send(sender, plugin.getMessages().get("claim.not-found", "{id}", explicitId));
                         return Optional.empty();
                     }
                 } else {
-                    sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+                    Mini.send(sender, plugin.getMessages().get("claim.not-standing-in-claim"));
                     if (explicitId == null) {
-                        sender.sendMessage(plugin.getMessages().get("claim.provide-id"));
+                        Mini.send(sender, plugin.getMessages().get("claim.provide-id"));
                     }
                     return Optional.empty();
                 }
@@ -1924,14 +1974,14 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             claimId = gp.getClaimId(claim).orElse(null);
         }
         if (claimId == null) {
-            sender.sendMessage(plugin.getMessages().get("claim.id-missing"));
+            Mini.send(sender, plugin.getMessages().get("claim.id-missing"));
             return Optional.empty();
         }
 
         Object mainClaim = gp.getParentClaim(claim).orElse(claim);
         Optional<String> mainIdOpt = gp.getClaimId(mainClaim);
         if (!mainIdOpt.isPresent()) {
-            sender.sendMessage(plugin.getMessages().get("claim.main-id-missing"));
+            Mini.send(sender, plugin.getMessages().get("claim.main-id-missing"));
             return Optional.empty();
         }
         String mainClaimId = mainIdOpt.get();
@@ -1947,7 +1997,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             && rental.expiry > System.currentTimeMillis()
             && player.getUniqueId().equals(rental.renter);
         if (requireOwnership && !isOwner && !isActiveTenant && !allowOther) {
-            sender.sendMessage(plugin.getMessages().get("claim.must-own-action", "{action}", actionDescription));
+            Mini.send(sender, plugin.getMessages().get("claim.must-own-action", "{action}", actionDescription));
             return Optional.empty();
         }
 
@@ -1974,13 +2024,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
         Optional<Object> standingClaimOpt = gp.getClaimAt(player.getLocation(), player);
         if (!standingClaimOpt.isPresent()) {
-            sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+            Mini.send(sender, plugin.getMessages().get("claim.not-standing-in-claim"));
             return false;
         }
         Object standingMainClaim = gp.getParentClaim(standingClaimOpt.get()).orElse(standingClaimOpt.get());
         String standingMainId = gp.getClaimId(standingMainClaim).orElse(null);
         if (standingMainId == null || !standingMainId.equals(ctx.mainClaimId)) {
-            sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
+            Mini.send(sender, plugin.getMessages().get("claim.not-standing-in-claim"));
             return false;
         }
         return true;
@@ -2011,6 +2061,16 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (changed) {
             gp.saveClaim(claim);
         }
+    }
+
+    @SuppressWarnings("deprecation")
+    private static OfflinePlayer findCachedOfflinePlayerByName(String playerName) {
+        for (OfflinePlayer op : Bukkit.getOfflinePlayers()) {
+            if (op.getName() != null && op.getName().equalsIgnoreCase(playerName)) {
+                return op;
+            }
+        }
+        return null;
     }
 
     private UUID resolvePlayerUuid(String name) {
@@ -2116,7 +2176,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     private boolean handleEvict(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
         if (!sender.hasPermission("griefprevention.evict")) {
-            sender.sendMessage(plugin.getMessages().get("claim.evict-no-permission"));
+            Mini.send(sender, plugin.getMessages().get("claim.evict-no-permission"));
             return true;
         }
 
@@ -2125,8 +2185,8 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
         if (args.length == 0) {
             String noticeDisplay = plugin.getRentalSignManager().getEvictionNoticePeriodDisplay();
-            sender.sendMessage(plugin.getMessages().get("claim.evict-usage"));
-            sender.sendMessage(plugin.getMessages().get("claim.evict-help", "{duration}", noticeDisplay));
+            Mini.send(sender, plugin.getMessages().get("claim.evict-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.evict-help", "{duration}", noticeDisplay));
             return true;
         }
 
@@ -2138,6 +2198,11 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         // Check for status subcommand
         if (args[0].equalsIgnoreCase("status")) {
             return handleEvictStatus(sender, Arrays.copyOfRange(args, 1, args.length));
+        }
+
+        // Check for mailbox eviction: /claim evict mailbox <mailboxId> [player]
+        if (args[0].equalsIgnoreCase("mailbox")) {
+            return handleEvictMailbox(sender, Arrays.copyOfRange(args, 1, args.length));
         }
 
         Optional<Object> explicitClaim = Optional.empty();
@@ -2161,7 +2226,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         ClaimDataStore dataStore = plugin.getClaimDataStore();
         ClaimDataStore.RentalData rental = dataStore.getRental(ctx.claimId).orElse(null);
         if (rental == null) {
-            sender.sendMessage(plugin.getMessages().get("claim.not-rented"));
+            Mini.send(sender, plugin.getMessages().get("claim.not-rented"));
             return true;
         }
         
@@ -2169,11 +2234,11 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         long now = System.currentTimeMillis();
         if (existing != null) {
             if (now >= existing.effectiveAt) {
-                sender.sendMessage(plugin.getMessages().get("eviction.notice-passed"));
-                sender.sendMessage(plugin.getMessages().get("eviction.cancel-hint", "{id}", ctx.claimId));
+                Mini.send(sender, plugin.getMessages().get("eviction.notice-passed"));
+                Mini.send(sender, plugin.getMessages().get("eviction.cancel-hint", "{id}", ctx.claimId));
             } else {
                 String remaining = formatDuration(existing.effectiveAt - now);
-                sender.sendMessage(plugin.getMessages().get("eviction.notice-in-progress", "{time}", remaining));
+                Mini.send(sender, plugin.getMessages().get("eviction.notice-in-progress", "{time}", remaining));
             }
             return true;
         }
@@ -2190,7 +2255,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             ownerId = player.getUniqueId();
         }
         if (ownerId == null) {
-            sender.sendMessage(plugin.getMessages().get("claim.owner-unknown"));
+            Mini.send(sender, plugin.getMessages().get("claim.owner-unknown"));
             return true;
         }
         
@@ -2206,16 +2271,16 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             removeRenterTrust(rental.renter, ctx.claim);
         }
 
-        sender.sendMessage(plugin.getMessages().get("eviction.notice-started", "{renter}", renterName));
-        sender.sendMessage(plugin.getMessages().get("eviction.notice-duration", "{duration}", noticeDisplay));
-        sender.sendMessage(plugin.getMessages().get("eviction.notice-no-extend"));
+        Mini.send(sender, plugin.getMessages().get("eviction.notice-started", "{renter}", renterName));
+        Mini.send(sender, plugin.getMessages().get("eviction.notice-duration", "{duration}", noticeDisplay));
+        Mini.send(sender, plugin.getMessages().get("eviction.notice-no-extend"));
 
         // Notify the renter if they're online
         Player renter = Bukkit.getPlayer(rental.renter);
         if (renter != null && plugin.getConfigManager().isRenterNotifiedOnEvictionStart()) {
-            renter.sendMessage(plugin.getMessages().get("eviction.notice-received", "{id}", ctx.claimId));
-            renter.sendMessage(plugin.getMessages().get("eviction.notice-days", "{duration}", noticeDisplay));
-            renter.sendMessage(plugin.getMessages().get("eviction.notice-no-extend"));
+            Mini.send(renter, plugin.getMessages().get("eviction.notice-received", "{id}", ctx.claimId));
+            Mini.send(renter, plugin.getMessages().get("eviction.notice-days", "{duration}", noticeDisplay));
+            Mini.send(renter, plugin.getMessages().get("eviction.notice-no-extend"));
         }
 
         return true;
@@ -2223,6 +2288,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
     private boolean handleEvictCancel(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
+        if (args.length >= 1 && args[0].equalsIgnoreCase("mailbox")) {
+            return handleEvictMailboxCancel(sender, Arrays.copyOfRange(args, 1, args.length));
+        }
+        if (args.length >= 1 && (args[0].startsWith("v:") || (plugin.getClaimDataStore().isMailbox(args[0]) && !plugin.getClaimDataStore().isRented(args[0])))) {
+            return handleEvictMailboxCancel(sender, args);
+        }
         Player player = (Player) sender;
         boolean hasOtherPermission = sender.hasPermission("griefprevention.evict.other");
         boolean allowOther = hasOtherPermission && plugin.getConfigManager().isRentEvictionAdminCancelAllowed();
@@ -2248,14 +2319,14 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         boolean canCancelAsOwner = owner && plugin.getConfigManager().isRentEvictionOwnerCancelAllowed();
         boolean canCancelAsAdmin = hasOtherPermission && plugin.getConfigManager().isRentEvictionAdminCancelAllowed();
         if (!canCancelAsOwner && !canCancelAsAdmin) {
-            sender.sendMessage(plugin.getMessages().get("eviction.cancel-disabled"));
+            Mini.send(sender, plugin.getMessages().get("eviction.cancel-disabled"));
             return true;
         }
 
         ClaimDataStore dataStore = plugin.getClaimDataStore();
         ClaimDataStore.EvictionData eviction = dataStore.getEviction(ctx.claimId).orElse(null);
         if (eviction == null) {
-            sender.sendMessage(plugin.getMessages().get("eviction.no-pending"));
+            Mini.send(sender, plugin.getMessages().get("eviction.no-pending"));
             return true;
         }
 
@@ -2275,16 +2346,22 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             // Notify the renter if online
             Player renter = Bukkit.getPlayer(rental.renter);
             if (renter != null) {
-                renter.sendMessage(plugin.getMessages().get("eviction.cancelled-notify", "{id}", ctx.claimId));
+                Mini.send(renter, plugin.getMessages().get("eviction.cancelled-notify", "{id}", ctx.claimId));
             }
         }
 
-        sender.sendMessage(plugin.getMessages().get("eviction.cancelled", "{id}", ctx.claimId));
+        Mini.send(sender, plugin.getMessages().get("eviction.cancelled", "{id}", ctx.claimId));
         return true;
     }
 
     private boolean handleEvictStatus(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;
+        if (args.length >= 1 && args[0].equalsIgnoreCase("mailbox")) {
+            return handleEvictMailboxStatus(sender, Arrays.copyOfRange(args, 1, args.length));
+        }
+        if (args.length >= 1 && (args[0].startsWith("v:") || (plugin.getClaimDataStore().isMailbox(args[0]) && !plugin.getClaimDataStore().isRented(args[0])))) {
+            return handleEvictMailboxStatus(sender, args);
+        }
         Player player = (Player) sender;
         boolean allowOther = sender.hasPermission("griefprevention.evict.other");
 
@@ -2308,7 +2385,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         ClaimDataStore dataStore = plugin.getClaimDataStore();
         ClaimDataStore.EvictionData eviction = dataStore.getEviction(ctx.claimId).orElse(null);
         if (eviction == null) {
-            sender.sendMessage(plugin.getMessages().get("eviction.no-pending-info"));
+            Mini.send(sender, plugin.getMessages().get("eviction.no-pending-info"));
             return true;
         }
 
@@ -2316,14 +2393,190 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (renterName == null) renterName = eviction.renterId.toString();
 
         if (System.currentTimeMillis() >= eviction.effectiveAt) {
-            sender.sendMessage(plugin.getMessages().get("eviction.effective", "{renter}", renterName));
-            sender.sendMessage(plugin.getMessages().get("eviction.effective-hint"));
+            Mini.send(sender, plugin.getMessages().get("eviction.effective", "{renter}", renterName));
+            Mini.send(sender, plugin.getMessages().get("eviction.effective-hint"));
         } else {
             String remaining = formatDuration(eviction.effectiveAt - System.currentTimeMillis());
-            sender.sendMessage(plugin.getMessages().get("eviction.pending", "{renter}", renterName));
-            sender.sendMessage(plugin.getMessages().get("eviction.time-remaining", "{time}", remaining));
+            Mini.send(sender, plugin.getMessages().get("eviction.pending", "{renter}", renterName));
+            Mini.send(sender, plugin.getMessages().get("eviction.time-remaining", "{time}", remaining));
         }
 
+        return true;
+    }
+
+    private boolean handleEvictMailbox(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+        if (args.length < 1 || args[0].isBlank()) {
+            plugin.getMessages().send(player, "market.evict-mailbox-usage");
+            return true;
+        }
+
+        String mailboxId = args[0].trim();
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
+        UUID buyerId = dataStore.getMailboxOwner(mailboxId).orElse(null);
+        codes.castled.gpexpansion.market.MarketManager mm = plugin.getMarketManager();
+        if (buyerId == null || (mm != null && mm.isMailboxStillForSale(mailboxId))) {
+            plugin.getMessages().send(player, "market.evict-mailbox-not-sold", "{id}", mailboxId);
+            return true;
+        }
+
+        String parentId = mm != null ? mm.resolveParentClaimId(mailboxId, null) : mailboxId;
+        Object parentClaim = parentId != null ? gp.findClaimById(parentId).orElse(null) : null;
+        boolean allowOther = sender.hasPermission("griefprevention.evict.other") || sender.hasPermission("griefprevention.admin");
+        boolean isParentOwner = parentClaim != null && gp.isOwner(parentClaim, player.getUniqueId());
+        if (!isParentOwner && !allowOther) {
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+        if (isParentOwner && buyerId.equals(player.getUniqueId())) {
+            plugin.getMessages().send(player, "market.evict-mailbox-self");
+            return true;
+        }
+
+        OfflinePlayer buyerOffline = Bukkit.getOfflinePlayer(buyerId);
+        String buyerName = buyerOffline.getName() != null ? buyerOffline.getName() : buyerId.toString().substring(0, 8);
+        if (args.length >= 2 && !args[1].isBlank()) {
+            String expected = args[1].trim();
+            if (!expected.equalsIgnoreCase(buyerName) && !expected.equalsIgnoreCase(buyerId.toString())) {
+                plugin.getMessages().send(player, "market.evict-mailbox-wrong-player", "{player}", buyerName);
+                return true;
+            }
+        }
+
+        String label = mm != null ? mm.formatMailboxLabel(mailboxId) : mailboxId;
+        ClaimDataStore.EvictionData existing = dataStore.getEviction(mailboxId).orElse(null);
+        long now = System.currentTimeMillis();
+        if (existing != null) {
+            if (now >= existing.effectiveAt) {
+                // Finalize mailbox eviction: revoke trust on subdivision, delete subdivision if real, remove sign & records
+                if (!mailboxId.startsWith("v:")) {
+                    gp.findClaimById(mailboxId).ifPresent(sub -> {
+                        codes.castled.gpexpansion.gp.TrustManager.create(gp).revokeTrust(buyerId, sub);
+                        if (gp.isSubdivision(sub)) {
+                            gp.deleteClaim(sub);
+                        }
+                    });
+                }
+                Location signLoc = dataStore.getMailboxSignLocation(mailboxId).orElse(null);
+                if (signLoc != null && signLoc.getWorld() != null) {
+                    SchedulerAdapter.runAtLocation(plugin, signLoc, () -> {
+                        if (signLoc.getBlock().getState() instanceof org.bukkit.block.Sign) {
+                            signLoc.getBlock().setType(org.bukkit.Material.AIR);
+                        }
+                    });
+                }
+                dataStore.clearMailbox(mailboxId);
+                dataStore.clearEviction(mailboxId);
+                dataStore.save();
+                if (mm != null) {
+                    mm.store().forgetMailbox(mailboxId);
+                    mm.store().saveIfDirty();
+                }
+                plugin.getMessages().send(player, "market.evict-mailbox-completed", "{id}", label, "{player}", buyerName);
+                Player buyerOnline = Bukkit.getPlayer(buyerId);
+                if (buyerOnline != null) {
+                    plugin.getMessages().send(buyerOnline, "market.evict-mailbox-completed-notify", "{id}", label);
+                }
+                return true;
+            }
+
+            String remaining = formatDuration(existing.effectiveAt - now);
+            Mini.send(sender, plugin.getMessages().get("eviction.notice-in-progress", "{time}", remaining));
+            return true;
+        }
+
+        long noticeMs = plugin.getRentalSignManager().getEvictionNoticePeriodMs();
+        String noticeDisplay = plugin.getRentalSignManager().getEvictionNoticePeriodDisplay();
+        UUID ownerId = parentClaim != null ? gp.getClaimOwner(parentClaim) : player.getUniqueId();
+        if (ownerId == null) ownerId = player.getUniqueId();
+
+        dataStore.setEviction(mailboxId, ownerId, buyerId, now, now + noticeMs);
+        dataStore.save();
+
+        Mini.send(sender, plugin.getMessages().get("eviction.notice-started", "{renter}", buyerName));
+        Mini.send(sender, plugin.getMessages().get("eviction.notice-duration", "{duration}", noticeDisplay));
+
+        Player buyerOnline = Bukkit.getPlayer(buyerId);
+        if (buyerOnline != null && plugin.getConfigManager().isRenterNotifiedOnEvictionStart()) {
+            plugin.getMessages().send(buyerOnline, "market.evict-mailbox-notice-received",
+                "{id}", label, "{duration}", noticeDisplay);
+        }
+        return true;
+    }
+
+    private boolean handleEvictMailboxCancel(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+        if (args.length < 1 || args[0].isBlank()) {
+            plugin.getMessages().send(player, "market.evict-mailbox-usage");
+            return true;
+        }
+        String mailboxId = args[0].trim();
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
+        codes.castled.gpexpansion.market.MarketManager mm = plugin.getMarketManager();
+        String parentId = mm != null ? mm.resolveParentClaimId(mailboxId, null) : mailboxId;
+        Object parentClaim = parentId != null ? gp.findClaimById(parentId).orElse(null) : null;
+
+        boolean hasOtherPerm = sender.hasPermission("griefprevention.evict.other") || sender.hasPermission("griefprevention.admin");
+        boolean isOwner = parentClaim != null && gp.isOwner(parentClaim, player.getUniqueId());
+        boolean canOwner = isOwner && plugin.getConfigManager().isRentEvictionOwnerCancelAllowed();
+        boolean canAdmin = hasOtherPerm && plugin.getConfigManager().isRentEvictionAdminCancelAllowed();
+        if (!canOwner && !canAdmin) {
+            Mini.send(sender, plugin.getMessages().get("eviction.cancel-disabled"));
+            return true;
+        }
+
+        ClaimDataStore.EvictionData eviction = dataStore.getEviction(mailboxId).orElse(null);
+        if (eviction == null) {
+            Mini.send(sender, plugin.getMessages().get("eviction.no-pending"));
+            return true;
+        }
+
+        dataStore.clearEviction(mailboxId);
+        dataStore.save();
+        String label = mm != null ? mm.formatMailboxLabel(mailboxId) : mailboxId;
+        Player buyerOnline = Bukkit.getPlayer(eviction.renterId);
+        if (buyerOnline != null) {
+            Mini.send(buyerOnline, plugin.getMessages().get("eviction.cancelled-notify", "{id}", label));
+        }
+        Mini.send(sender, plugin.getMessages().get("eviction.cancelled", "{id}", label));
+        return true;
+    }
+
+    private boolean handleEvictMailboxStatus(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+        if (args.length < 1 || args[0].isBlank()) {
+            plugin.getMessages().send(player, "market.evict-mailbox-usage");
+            return true;
+        }
+        String mailboxId = args[0].trim();
+        ClaimDataStore dataStore = plugin.getClaimDataStore();
+        codes.castled.gpexpansion.market.MarketManager mm = plugin.getMarketManager();
+        String parentId = mm != null ? mm.resolveParentClaimId(mailboxId, null) : mailboxId;
+        Object parentClaim = parentId != null ? gp.findClaimById(parentId).orElse(null) : null;
+        boolean allowOther = sender.hasPermission("griefprevention.evict.other") || sender.hasPermission("griefprevention.admin");
+        if (!allowOther && (parentClaim == null || !gp.isOwner(parentClaim, player.getUniqueId()))) {
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+
+        ClaimDataStore.EvictionData eviction = dataStore.getEviction(mailboxId).orElse(null);
+        if (eviction == null) {
+            Mini.send(sender, plugin.getMessages().get("eviction.no-pending-info"));
+            return true;
+        }
+        String buyerName = Bukkit.getOfflinePlayer(eviction.renterId).getName();
+        if (buyerName == null) buyerName = eviction.renterId.toString().substring(0, 8);
+        if (System.currentTimeMillis() >= eviction.effectiveAt) {
+            Mini.send(sender, plugin.getMessages().get("eviction.effective", "{renter}", buyerName));
+            plugin.getMessages().send(player, "market.evict-mailbox-finalize-hint", "{id}", mailboxId);
+        } else {
+            String remaining = formatDuration(eviction.effectiveAt - System.currentTimeMillis());
+            Mini.send(sender, plugin.getMessages().get("eviction.pending", "{renter}", buyerName));
+            Mini.send(sender, plugin.getMessages().get("eviction.time-remaining", "{time}", remaining));
+        }
         return true;
     }
 
@@ -2332,7 +2585,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         Player player = (Player) sender;
 
         if (!player.hasPermission("griefprevention.claim.cancelrent")) {
-            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
             return true;
         }
 
@@ -2344,13 +2597,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (args.length > 0 && args[0] != null && !args[0].isBlank()) {
             explicitId = args[0];
             if (!allowAnywhere && !allowOther) {
-                sender.sendMessage(plugin.getMessages().get("permissions.missing",
+                Mini.send(sender, plugin.getMessages().get("permissions.missing",
                         "{permission}", "griefprevention.claim.cancelrent.anywhere"));
                 return true;
             }
             explicitClaim = gp.findClaimById(explicitId);
             if (!explicitClaim.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", explicitId));
+                Mini.send(sender, plugin.getMessages().get("claim.not-found", "{id}", explicitId));
                 return true;
             }
         }
@@ -2371,12 +2624,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         ClaimDataStore dataStore = plugin.getClaimDataStore();
         ClaimDataStore.RentalData rental = dataStore.getRental(ctx.claimId).orElse(null);
         if (rental == null || rental.expiry <= System.currentTimeMillis()) {
-            sender.sendMessage(plugin.getMessages().get("claim.cancelrent-not-rented", "{id}", ctx.claimId));
+            Mini.send(sender, plugin.getMessages().get("claim.cancelrent-not-rented", "{id}", ctx.claimId));
             return true;
         }
 
         if (!allowOther && !player.getUniqueId().equals(rental.renter)) {
-            sender.sendMessage(plugin.getMessages().get("claim.cancelrent-not-renter", "{id}", ctx.claimId));
+            Mini.send(sender, plugin.getMessages().get("claim.cancelrent-not-renter", "{id}", ctx.claimId));
             return true;
         }
 
@@ -2403,14 +2656,14 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             }
         }
 
-        sender.sendMessage(plugin.getMessages().get("claim.cancelrent-success", "{id}", ctx.claimId));
+        Mini.send(sender, plugin.getMessages().get("claim.cancelrent-success", "{id}", ctx.claimId));
         if (!resetSign) {
-            sender.sendMessage(plugin.getMessages().get("claim.cancelrent-sign-not-found", "{id}", ctx.claimId));
+            Mini.send(sender, plugin.getMessages().get("claim.cancelrent-sign-not-found", "{id}", ctx.claimId));
         }
 
         Player renter = Bukkit.getPlayer(rental.renter);
         if (renter != null && !renter.getUniqueId().equals(player.getUniqueId())) {
-            renter.sendMessage(plugin.getMessages().get("claim.cancelrent-cancelled-by-admin", "{id}", ctx.mainClaimId));
+            Mini.send(renter, plugin.getMessages().get("claim.cancelrent-cancelled-by-admin", "{id}", ctx.mainClaimId));
         }
 
         return true;
@@ -2422,7 +2675,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         Player player = (Player) sender;
 
         if (args.length < 4) {
-            sender.sendMessage(plugin.getMessages().get("claim.rental-sign-confirm-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.rental-sign-confirm-usage"));
             return true;
         }
 
@@ -2434,19 +2687,19 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             y = Integer.parseInt(args[2]);
             z = Integer.parseInt(args[3]);
         } catch (NumberFormatException e) {
-            sender.sendMessage(plugin.getMessages().get("claim.coords-must-be-int"));
+            Mini.send(sender, plugin.getMessages().get("claim.coords-must-be-int"));
             return true;
         }
 
         org.bukkit.World world = org.bukkit.Bukkit.getWorld(worldName);
         if (world == null) {
-            sender.sendMessage(plugin.getMessages().get("claim.world-unknown", "{world}", worldName));
+            Mini.send(sender, plugin.getMessages().get("claim.world-unknown", "{world}", worldName));
             return true;
         }
 
         org.bukkit.block.Block b = world.getBlockAt(x, y, z);
         if (!(b.getState() instanceof org.bukkit.block.Sign)) {
-            sender.sendMessage(plugin.getMessages().get("claim.sign-not-found"));
+            Mini.send(sender, plugin.getMessages().get("claim.sign-not-found"));
             return true;
         }
 
@@ -2456,7 +2709,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         org.bukkit.NamespacedKey keyRenter = new org.bukkit.NamespacedKey(plugin, "rent.renter");
 
         if (!sign.getPersistentDataContainer().has(keyKind, org.bukkit.persistence.PersistentDataType.STRING)) {
-            sender.sendMessage(plugin.getMessages().get("claim.sign-not-managed"));
+            Mini.send(sender, plugin.getMessages().get("claim.sign-not-managed"));
             return true;
         }
 
@@ -2480,7 +2733,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
 
         if (!(owner || admin)) {
-            sender.sendMessage(plugin.getMessages().get("claim.sign-use-denied"));
+            Mini.send(sender, plugin.getMessages().get("claim.sign-use-denied"));
             return true;
         }
 
@@ -2515,7 +2768,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             }
             b.setType(org.bukkit.Material.AIR);
         }
-        sender.sendMessage(plugin.getMessages().get("eviction.rental-sign-removed"));
+        Mini.send(sender, plugin.getMessages().get("eviction.rental-sign-removed"));
         return true;
     }
 
@@ -2558,7 +2811,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         }
 
         if (!hasPending) {
-            sender.sendMessage(plugin.getMessages().get("claim.pending-rent-none"));
+            Mini.send(sender, plugin.getMessages().get("claim.pending-rent-none"));
             return true;
         }
 
@@ -2568,7 +2821,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (totalMoney > 0 && plugin.getEconomyManager().isEconomyAvailable()) {
             if (!plugin.getEconomyManager().depositMoney(player, totalMoney)) {
                 success = false;
-                sender.sendMessage(plugin.getMessages().get("claim.pending-rent-failed-money",
+                Mini.send(sender, plugin.getMessages().get("claim.pending-rent-failed-money",
                     "{amount}", String.valueOf(totalMoney)));
             } else {
                 if (totalTax > 0) {
@@ -2588,7 +2841,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
 
         if (totalClaimBlocks > 0) {
             // Note: Claim blocks would need GP integration here
-            sender.sendMessage(plugin.getMessages().get("claim.pending-rent-claimblocks",
+            Mini.send(sender, plugin.getMessages().get("claim.pending-rent-claimblocks",
                 "{amount}", String.valueOf(totalClaimBlocks)));
         }
 
@@ -2603,7 +2856,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             if (cleared) {
                 dataStore.save();
             }
-            sender.sendMessage(plugin.getMessages().get("claim.pending-rent-collected"));
+            Mini.send(sender, plugin.getMessages().get("claim.pending-rent-collected"));
         }
 
         return true;
@@ -2613,7 +2866,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (!requirePlayer(sender)) return true;
         Player player = (Player) sender;
         if (!player.hasPermission(codes.castled.gpexpansion.storage.ClaimSnapshotStore.getPermission())) {
-            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
             return true;
         }
 
@@ -2623,15 +2876,15 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         // Handle "snapshot remove" before requiring claim context - only needs snapshotId, searches all claims
         if ("remove".equals(action)) {
             if (rest.length < 1 || rest[0] == null || rest[0].trim().isEmpty()) {
-                sender.sendMessage(plugin.getMessages().get("snapshot.remove-usage"));
+                Mini.send(sender, plugin.getMessages().get("snapshot.remove-usage"));
                 return true;
             }
             String removeSnapshotId = rest[0].trim();
             boolean ok = plugin.getSnapshotStore().removeSnapshotById(removeSnapshotId);
             if (ok) {
-                sender.sendMessage(plugin.getMessages().get("snapshot.removed", "{id}", removeSnapshotId));
+                Mini.send(sender, plugin.getMessages().get("snapshot.removed", "{id}", removeSnapshotId));
             } else {
-                sender.sendMessage(plugin.getMessages().get("snapshot.remove-failed"));
+                Mini.send(sender, plugin.getMessages().get("snapshot.remove-failed"));
             }
             return true;
         }
@@ -2640,17 +2893,17 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if ("list".equals(action) && rest.length >= 1 && "all".equalsIgnoreCase(rest[0])) {
             java.util.List<String> claimIds = plugin.getSnapshotStore().listClaimIdsWithSnapshots();
             if (claimIds.isEmpty()) {
-                sender.sendMessage(plugin.getMessages().get("snapshot.list-empty"));
+                Mini.send(sender, plugin.getMessages().get("snapshot.list-empty"));
                 return true;
             }
             java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm");
             for (String cid : claimIds) {
                 java.util.List<codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry> list = plugin.getSnapshotStore().listSnapshots(cid);
                 if (list.isEmpty()) continue;
-                sender.sendMessage(net.kyori.adventure.text.Component.text("--- Claim " + cid + " ---", net.kyori.adventure.text.format.NamedTextColor.GRAY));
-                sender.sendMessage(plugin.getMessages().get("snapshot.list-header", "{count}", String.valueOf(list.size())));
+                Mini.send(sender, net.kyori.adventure.text.Component.text("--- Claim " + cid + " ---", net.kyori.adventure.text.format.NamedTextColor.GRAY));
+                Mini.send(sender, plugin.getMessages().get("snapshot.list-header", "{count}", String.valueOf(list.size())));
                 for (codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry e : list) {
-                    sender.sendMessage(plugin.getMessages().get("snapshot.list-entry", "{id}", e.id, "{date}", sdf.format(new java.util.Date(e.created))));
+                    Mini.send(sender, plugin.getMessages().get("snapshot.list-entry", "{id}", e.id, "{date}", sdf.format(new java.util.Date(e.created))));
                 }
             }
             return true;
@@ -2672,17 +2925,17 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             if (!atLoc.isPresent()) {
                 java.util.List<String> claimIds = plugin.getSnapshotStore().listClaimIdsWithSnapshots();
                 if (claimIds.isEmpty()) {
-                    sender.sendMessage(plugin.getMessages().get("snapshot.list-empty"));
+                    Mini.send(sender, plugin.getMessages().get("snapshot.list-empty"));
                     return true;
                 }
                 java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm");
                 for (String cid : claimIds) {
                     java.util.List<codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry> list = plugin.getSnapshotStore().listSnapshots(cid);
                     if (list.isEmpty()) continue;
-                    sender.sendMessage(net.kyori.adventure.text.Component.text("--- Claim " + cid + " ---", net.kyori.adventure.text.format.NamedTextColor.GRAY));
-                    sender.sendMessage(plugin.getMessages().get("snapshot.list-header", "{count}", String.valueOf(list.size())));
+                    Mini.send(sender, net.kyori.adventure.text.Component.text("--- Claim " + cid + " ---", net.kyori.adventure.text.format.NamedTextColor.GRAY));
+                    Mini.send(sender, plugin.getMessages().get("snapshot.list-header", "{count}", String.valueOf(list.size())));
                     for (codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry e : list) {
-                        sender.sendMessage(plugin.getMessages().get("snapshot.list-entry", "{id}", e.id, "{date}", sdf.format(new java.util.Date(e.created))));
+                        Mini.send(sender, plugin.getMessages().get("snapshot.list-entry", "{id}", e.id, "{date}", sdf.format(new java.util.Date(e.created))));
                     }
                 }
                 return true;
@@ -2701,13 +2954,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if ("list".equals(action)) {
             List<codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry> list = plugin.getSnapshotStore().listSnapshots(claimId);
             if (list.isEmpty()) {
-                sender.sendMessage(plugin.getMessages().get("snapshot.list-empty"));
+                Mini.send(sender, plugin.getMessages().get("snapshot.list-empty"));
                 return true;
             }
-            sender.sendMessage(plugin.getMessages().get("snapshot.list-header", "{count}", String.valueOf(list.size())));
+            Mini.send(sender, plugin.getMessages().get("snapshot.list-header", "{count}", String.valueOf(list.size())));
             java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm");
             for (codes.castled.gpexpansion.storage.ClaimSnapshotStore.SnapshotEntry e : list) {
-                sender.sendMessage(plugin.getMessages().get("snapshot.list-entry",
+                Mini.send(sender, plugin.getMessages().get("snapshot.list-entry",
                     "{id}", e.id, "{date}", sdf.format(new java.util.Date(e.created))));
             }
             return true;
@@ -2718,22 +2971,22 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             ClaimDataStore.RentalData rental = dataStore.getRental(claimId).orElse(null);
             boolean availableForRent = rental == null || rental.expiry <= System.currentTimeMillis();
             if (!availableForRent) {
-                sender.sendMessage(plugin.getMessages().get("snapshot.not-available-for-rent"));
+                Mini.send(sender, plugin.getMessages().get("snapshot.not-available-for-rent"));
                 return true;
             }
             Optional<String> worldOpt = gp.getClaimWorld(claim);
             if (!worldOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.world-unknown", "{world}", "?"));
+                Mini.send(sender, plugin.getMessages().get("claim.world-unknown", "{world}", "?"));
                 return true;
             }
             org.bukkit.World world = Bukkit.getWorld(worldOpt.get());
             if (world == null) {
-                sender.sendMessage(plugin.getMessages().get("claim.world-unknown", "{world}", worldOpt.get()));
+                Mini.send(sender, plugin.getMessages().get("claim.world-unknown", "{world}", worldOpt.get()));
                 return true;
             }
             Optional<GPBridge.ClaimCorners> cornersOpt = gp.getClaimCorners(claim);
             if (!cornersOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("snapshot.create-failed"));
+                Mini.send(sender, plugin.getMessages().get("snapshot.create-failed"));
                 return true;
             }
             GPBridge.ClaimCorners corners = cornersOpt.get();
@@ -2745,16 +2998,16 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                     plugin.getSnapshotStore().createSnapshot(finalClaimId, finalClaim, world);
                 plugin.getSchedulerFacade().runAtEntity(player, () -> {
                     if (entry == null) {
-                        sender.sendMessage(plugin.getMessages().get("snapshot.create-failed"));
+                        Mini.send(sender, plugin.getMessages().get("snapshot.create-failed"));
                     } else {
-                        sender.sendMessage(plugin.getMessages().get("snapshot.created", "{id}", entry.id));
+                        Mini.send(sender, plugin.getMessages().get("snapshot.created", "{id}", entry.id));
                     }
                 });
             });
             return true;
         }
 
-        sender.sendMessage(plugin.getMessages().get("snapshot.usage"));
+        Mini.send(sender, plugin.getMessages().get("snapshot.usage"));
         return true;
     }
 
@@ -2824,7 +3077,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         boolean bypassCooldown = hasClaimTeleportCooldownBypass(targetPlayer);
         long cooldownRemaining = bypassCooldown ? 0L : getClaimTeleportCooldownRemaining(targetPlayer);
         if (cooldownRemaining > 0L) {
-            sender.sendMessage(plugin.getMessages().get("claim.teleport-cooldown",
+            Mini.send(sender, plugin.getMessages().get("claim.teleport-cooldown",
                 "{time}", formatDuration(cooldownRemaining)));
             return;
         }
@@ -2840,7 +3093,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             return;
         }
 
-        sender.sendMessage(plugin.getMessages().get("claim.teleport-delay-start",
+        Mini.send(sender, plugin.getMessages().get("claim.teleport-delay-start",
             "{id}", claimId,
             "{time}", formatDuration(delaySeconds * 1000L)));
         playConfiguredSound(targetPlayer, plugin.getConfigManager().getClaimTeleportStartSound());
@@ -2862,7 +3115,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 ? 0L
                 : getClaimTeleportCooldownRemaining(targetPlayer);
             if (remaining > 0L) {
-                targetPlayer.sendMessage(plugin.getMessages().get("claim.teleport-cooldown",
+                Mini.send(targetPlayer, plugin.getMessages().get("claim.teleport-cooldown",
                     "{time}", formatDuration(remaining)));
                 return;
             }
@@ -2972,7 +3225,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (plugin.getConfigManager().isClaimTeleportSafeLocationEnabled()) {
             if (!plugin.getConfigManager().isClaimTeleportNearbyFallbackAllowed()) {
                 if (!SafeTeleportUtil.isLocationSafeForSpawn(requested)) {
-                    sender.sendMessage(plugin.getMessages().get("claim.teleport-unsafe", "{id}", claimId));
+                    Mini.send(sender, plugin.getMessages().get("claim.teleport-unsafe", "{id}", claimId));
                     return false;
                 }
                 destination = new Location(requested.getWorld(), requested.getBlockX() + 0.5, requested.getBlockY(), requested.getBlockZ() + 0.5, requested.getYaw(), requested.getPitch());
@@ -2980,13 +3233,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 int[] bounds = buildTeleportSearchBounds(requested, claim, claimSearchRadius);
                 destination = SafeTeleportUtil.getSafeDestination(requested, bounds);
                 if (destination == null) {
-                    sender.sendMessage(plugin.getMessages().get("claim.teleport-unsafe", "{id}", claimId));
+                    Mini.send(sender, plugin.getMessages().get("claim.teleport-unsafe", "{id}", claimId));
                     return false;
                 }
                 if (needsUnsafeTeleportConfirmation(sender, targetPlayer, claimId, requested, destination)) {
                     pendingUnsafeClaimTeleports.put(((Player) sender).getUniqueId(),
                         new PendingUnsafeClaimTeleport(claimId, System.currentTimeMillis() + UNSAFE_TELEPORT_CONFIRM_WINDOW_MS));
-                    sender.sendMessage(plugin.getMessages().get("claim.teleport-unsafe-confirm", "{id}", claimId));
+                    Mini.send(sender, plugin.getMessages().get("claim.teleport-unsafe-confirm", "{id}", claimId));
                     return false;
                 }
             }
@@ -2999,7 +3252,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     // /claim tp|teleport <claimId> [player]
     private boolean handleTeleport(CommandSender sender, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(plugin.getMessages().get("claim.teleport-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.teleport-usage"));
             return true;
         }
         
@@ -3010,19 +3263,19 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (args.length >= 2) {
             // Need .other permission
             if (!sender.hasPermission("griefprevention.claim.teleport.other")) {
-                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                Mini.send(sender, plugin.getMessages().get("general.no-permission"));
                 return true;
             }
             targetPlayer = Bukkit.getPlayer(args[1]);
             if (targetPlayer == null) {
-                sender.sendMessage(plugin.getMessages().get("claim.player-not-found", "{player}", args[1]));
+                Mini.send(sender, plugin.getMessages().get("claim.player-not-found", "{player}", args[1]));
                 return true;
             }
         } else {
             // Teleporting self
             if (!requirePlayer(sender)) return true;
             if (!sender.hasPermission("griefprevention.claim.teleport")) {
-                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                Mini.send(sender, plugin.getMessages().get("general.no-permission"));
                 return true;
             }
             targetPlayer = (Player) sender;
@@ -3034,11 +3287,29 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             claimOpt = findClaimByName(claimId, sender);
         }
         if (!claimOpt.isPresent()) {
-            sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", claimId));
+            Mini.send(sender, plugin.getMessages().get("claim.not-found", "{id}", claimId));
             return true;
         }
         
-        Object claim = claimOpt.get();
+        beginClaimTeleport(sender, targetPlayer, claimOpt.get(), claimId);
+        return true;
+    }
+
+    /**
+     * Teleport a player to a claim through the normal /claimtp pipeline (delay, cooldown,
+     * safe-location search, ban checks), without the griefprevention.claim.teleport check.
+     * Callers such as the Claim Market apply their own permission first.
+     */
+    public void teleportToClaim(Player target, String claimId) {
+        Optional<Object> claimOpt = gp.findClaimById(claimId);
+        if (claimOpt.isEmpty()) {
+            Mini.send(target, plugin.getMessages().get("claim.not-found", "{id}", claimId));
+            return;
+        }
+        SchedulerAdapter.runEntity(plugin, target, () -> beginClaimTeleport(target, target, claimOpt.get(), claimId), null);
+    }
+
+    private void beginClaimTeleport(CommandSender sender, Player targetPlayer, Object claim, String claimId) {
         claimId = gp.getClaimId(claim).orElse(claimId);
         
         // Get claim bounds for safe teleport search
@@ -3058,8 +3329,8 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             // Use claim center as fallback - need to get Y on correct region thread
             Optional<Location> centerXZOpt = gp.getClaimCenterXZ(claim);
             if (!centerXZOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.teleport-no-location", "{id}", claimId));
-                return true;
+                Mini.send(sender, plugin.getMessages().get("claim.teleport-no-location", "{id}", claimId));
+                return;
             }
             Location centerXZ = centerXZOpt.get();
             
@@ -3073,8 +3344,6 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 queueResolvedClaimTeleport(finalSender, finalTarget, finalClaimId, finalClaim, teleportLoc, finalSearchRadius);
             });
         }
-        
-        return true;
     }
     
     /**
@@ -3085,14 +3354,16 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         // For "playerName:claimName" syntax
         if (name.contains(":")) {
             if (!sender.hasPermission("griefprevention.claim.teleport.other")) {
-                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                Mini.send(sender, plugin.getMessages().get("general.no-permission"));
                 return Optional.empty();
             }
             String[] parts = name.split(":", 2);
             String playerName = parts[0];
             String claimName = parts[1];
             @SuppressWarnings("deprecation")
-            OfflinePlayer owner = Bukkit.getOfflinePlayerIfCached(playerName);
+            OfflinePlayer owner = Bukkit.getPlayerExact(playerName) != null
+                ? Bukkit.getPlayerExact(playerName)
+                : findCachedOfflinePlayerByName(playerName);
             if (owner == null) {
                 for (OfflinePlayer op : Bukkit.getOfflinePlayers()) {
                     if (op.getName() != null && op.getName().equalsIgnoreCase(playerName)) {
@@ -3141,10 +3412,10 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         String claimName = plugin.getClaimDataStore().getCustomName(claimId).orElse(claimId);
         
         if (sender == targetPlayer) {
-            sender.sendMessage(plugin.getMessages().get("claim.teleport-success", "{id}", claimId, "{name}", claimName));
+            Mini.send(sender, plugin.getMessages().get("claim.teleport-success", "{id}", claimId, "{name}", claimName));
         } else {
-            sender.sendMessage(plugin.getMessages().get("claim.teleport-other-success", "{player}", targetPlayer.getName(), "{id}", claimId, "{name}", claimName));
-            targetPlayer.sendMessage(plugin.getMessages().get("claim.teleport-by-other", "{id}", claimId, "{name}", claimName));
+            Mini.send(sender, plugin.getMessages().get("claim.teleport-other-success", "{player}", targetPlayer.getName(), "{id}", claimId, "{name}", claimName));
+            Mini.send(targetPlayer, plugin.getMessages().get("claim.teleport-by-other", "{id}", claimId, "{name}", claimName));
         }
     }
     
@@ -3162,7 +3433,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             claimId = args[0];
             Optional<Object> claimOpt = gp.findClaimById(claimId);
             if (!claimOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", claimId));
+                Mini.send(sender, plugin.getMessages().get("claim.not-found", "{id}", claimId));
                 return true;
             }
             claim = claimOpt.get();
@@ -3170,13 +3441,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             // Get the claim at player's location
             Optional<Object> claimOpt = gp.getClaimAt(loc);
             if (!claimOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.setspawn-not-in-claim"));
+                Mini.send(sender, plugin.getMessages().get("claim.setspawn-not-in-claim"));
                 return true;
             }
             claim = claimOpt.get();
             Optional<String> claimIdOpt = gp.getClaimId(claim);
             if (!claimIdOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.setspawn-error"));
+                Mini.send(sender, plugin.getMessages().get("claim.setspawn-error"));
                 return true;
             }
             claimId = claimIdOpt.get();
@@ -3186,25 +3457,25 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         boolean hasOtherPerm = player.hasPermission("griefprevention.claim.setspawn.other");
         if (!hasOtherPerm) {
             if (!player.hasPermission("griefprevention.claim.setspawn")) {
-                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                Mini.send(sender, plugin.getMessages().get("general.no-permission"));
                 return true;
             }
             
             try {
                 Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
                 if (ownerId == null || !ownerId.equals(player.getUniqueId())) {
-                    sender.sendMessage(plugin.getMessages().get("claim.setspawn-not-owner"));
+                    Mini.send(sender, plugin.getMessages().get("claim.setspawn-not-owner"));
                     return true;
                 }
             } catch (Exception e) {
-                sender.sendMessage(plugin.getMessages().get("claim.setspawn-error"));
+                Mini.send(sender, plugin.getMessages().get("claim.setspawn-error"));
                 return true;
             }
         }
         
         // Check if location is safe (solid block below feet)
         if (!SafeTeleportUtil.isLocationSafeForSpawn(loc)) {
-            sender.sendMessage(plugin.getMessages().get("claim.setspawn-unsafe"));
+            Mini.send(sender, plugin.getMessages().get("claim.setspawn-unsafe"));
             return true;
         }
         
@@ -3213,7 +3484,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         dataStore.setSpawn(claimId, loc);
         dataStore.save();
         
-        sender.sendMessage(plugin.getMessages().get("claim.setspawn-success", "{id}", claimId));
+        Mini.send(sender, plugin.getMessages().get("claim.setspawn-success", "{id}", claimId));
         return true;
     }
     
@@ -3223,21 +3494,75 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         Player player = (Player) sender;
 
         if (!plugin.getConfigManager().isGlobalClaimsEnabled()) {
-            sender.sendMessage(plugin.getMessages().get("claim.global-disabled"));
+            Mini.send(sender, plugin.getMessages().get("claim.global-disabled"));
             return true;
         }
         
         if (!player.hasPermission("griefprevention.claim.gui.globallist")) {
-            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
             return true;
         }
         
         if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
-            sender.sendMessage(plugin.getMessages().get("gui.not-enabled"));
+            Mini.send(sender, plugin.getMessages().get("gui.not-enabled"));
             return true;
         }
         
         plugin.getGUIManager().openGlobalClaimList(player);
+        return true;
+    }
+
+    // /claim market [search...] or /claimmarket [search...]
+    private boolean handleMarket(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+
+        if (!plugin.getConfigManager().isMarketEnabled()) {
+            Mini.send(sender, plugin.getMessages().get("market.disabled"));
+            return true;
+        }
+        if (!player.hasPermission(codes.castled.gpexpansion.market.MarketManager.PERM_MARKET)) {
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+        if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
+            Mini.send(sender, plugin.getMessages().get("gui.not-enabled"));
+            return true;
+        }
+        String query = args.length > 0 ? String.join(" ", args).trim() : null;
+        if (query != null && query.isEmpty()) query = null;
+        plugin.getGUIManager().openClaimMarket(player, query);
+        return true;
+    }
+
+    // /claim listed [claimId]
+    private boolean handleListed(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+
+        if (!player.hasPermission(codes.castled.gpexpansion.market.MarketManager.PERM_LISTED)) {
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
+            return true;
+        }
+        if (plugin.getGUIManager() == null || !plugin.getGUIManager().isGUIEnabled()) {
+            Mini.send(sender, plugin.getMessages().get("gui.not-enabled"));
+            return true;
+        }
+        String parentFilter = (args.length > 0 && !args[0].isBlank()) ? args[0].trim() : null;
+        plugin.getGUIManager().openListedClaims(player, parentFilter);
+        return true;
+    }
+
+    // /claim removelisting <listingKey|claimId>
+    private boolean handleRemoveListing(CommandSender sender, String[] args) {
+        if (!requirePlayer(sender)) return true;
+        Player player = (Player) sender;
+        if (plugin.getMarketManager() == null) return true;
+        if (args.length < 1 || args[0].isBlank()) {
+            plugin.getMessages().send(player, "market.removelisting-usage");
+            return true;
+        }
+        plugin.getMarketManager().removeForSaleListing(player, args[0].trim());
         return true;
     }
     
@@ -3246,7 +3571,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
      */
     private boolean handleGlobalClaim(CommandSender sender, String[] args) {
         if (!plugin.getConfigManager().isGlobalClaimsEnabled()) {
-            sender.sendMessage(plugin.getMessages().get("claim.global-disabled"));
+            Mini.send(sender, plugin.getMessages().get("claim.global-disabled"));
             return true;
         }
 
@@ -3256,13 +3581,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             Player player = (Player) sender;
             java.util.Optional<Object> claimOpt = gp.getClaimAt(player.getLocation());
             if (!claimOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.global-not-in-claim"));
+                Mini.send(sender, plugin.getMessages().get("claim.global-not-in-claim"));
                 return true;
             }
             Object claim = claimOpt.get();
             String claimId = gp.getClaimId(claim).orElse(null);
             if (claimId == null) {
-                sender.sendMessage(plugin.getMessages().get("general.error"));
+                Mini.send(sender, plugin.getMessages().get("general.error"));
                 return true;
             }
             boolean current = plugin.getClaimDataStore().isPublicListed(claimId);
@@ -3271,13 +3596,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (args.length == 1 && isNumeric(args[0])) {
             // Toggle by ID: /globalclaim 123 - requires anywhere perm
             if (!sender.hasPermission("griefprevention.claim.toggleglobal.anywhere")) {
-                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                Mini.send(sender, plugin.getMessages().get("general.no-permission"));
                 return true;
             }
             String claimId = args[0];
             java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
             if (!claimOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", claimId));
+                Mini.send(sender, plugin.getMessages().get("claim.not-found", "{id}", claimId));
                 return true;
             }
             boolean current = plugin.getClaimDataStore().isPublicListed(claimId);
@@ -3290,12 +3615,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
     // /claim global true|false [claimId]
     private boolean handleToggleGlobal(CommandSender sender, String[] args) {
         if (!plugin.getConfigManager().isGlobalClaimsEnabled()) {
-            sender.sendMessage(plugin.getMessages().get("claim.global-disabled"));
+            Mini.send(sender, plugin.getMessages().get("claim.global-disabled"));
             return true;
         }
 
         if (args.length < 1) {
-            sender.sendMessage(plugin.getMessages().get("claim.global-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.global-usage"));
             return true;
         }
         
@@ -3306,7 +3631,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         } else if (valueStr.equals("false") || valueStr.equals("off") || valueStr.equals("no")) {
             value = false;
         } else {
-            sender.sendMessage(plugin.getMessages().get("claim.global-usage"));
+            Mini.send(sender, plugin.getMessages().get("claim.global-usage"));
             return true;
         }
         
@@ -3316,13 +3641,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (args.length >= 2) {
             // Claim ID provided - require anywhere perm
             if (!sender.hasPermission("griefprevention.claim.toggleglobal.anywhere")) {
-                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                Mini.send(sender, plugin.getMessages().get("general.no-permission"));
                 return true;
             }
             claimId = args[1];
             java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
             if (!claimOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", claimId));
+                Mini.send(sender, plugin.getMessages().get("claim.not-found", "{id}", claimId));
                 return true;
             }
             claim = claimOpt.get();
@@ -3332,13 +3657,13 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             Player player = (Player) sender;
             java.util.Optional<Object> claimOpt = gp.getClaimAt(player.getLocation());
             if (!claimOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.global-not-in-claim"));
+                Mini.send(sender, plugin.getMessages().get("claim.global-not-in-claim"));
                 return true;
             }
             claim = claimOpt.get();
             java.util.Optional<String> idOpt = gp.getClaimId(claim);
             if (!idOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("general.error"));
+                Mini.send(sender, plugin.getMessages().get("general.error"));
                 return true;
             }
             claimId = idOpt.get();
@@ -3348,7 +3673,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         boolean hasOtherPerm = sender.hasPermission("griefprevention.claim.toggleglobal.other");
         if (!hasOtherPerm) {
             if (!sender.hasPermission("griefprevention.claim.toggleglobal")) {
-                sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+                Mini.send(sender, plugin.getMessages().get("general.no-permission"));
                 return true;
             }
             
@@ -3357,11 +3682,11 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 try {
                     Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
                     if (ownerId == null || !ownerId.equals(((Player) sender).getUniqueId())) {
-                        sender.sendMessage(plugin.getMessages().get("claim.global-not-owner"));
+                        Mini.send(sender, plugin.getMessages().get("claim.global-not-owner"));
                         return true;
                     }
                 } catch (Exception e) {
-                    sender.sendMessage(plugin.getMessages().get("general.error"));
+                    Mini.send(sender, plugin.getMessages().get("general.error"));
                     return true;
                 }
             }
@@ -3374,7 +3699,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
             if (!limitManager.canMakeClaimGlobal(player)) {
                 int limit = limitManager.getGlobalClaimLimit(player);
                 int current = limitManager.getCurrentGlobalClaims(player);
-                sender.sendMessage(plugin.getMessages().get("claim.global-limit-reached", 
+                Mini.send(sender, plugin.getMessages().get("claim.global-limit-reached", 
                     "{current}", String.valueOf(current), 
                     "{max}", String.valueOf(limit)));
                 return true;
@@ -3387,7 +3712,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 && !sender.hasPermission("griefprevention.approveclaim")) {
             dataStore.setGlobalApprovalPending(claimId, true);
             dataStore.save();
-            sender.sendMessage(plugin.getMessages().get("claim.global-approval-required", "{id}", claimId));
+            Mini.send(sender, plugin.getMessages().get("claim.global-approval-required", "{id}", claimId));
             return true;
         }
 
@@ -3398,20 +3723,20 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         dataStore.save();
         
         if (value) {
-            sender.sendMessage(plugin.getMessages().get("gui.claim-listed", "{id}", claimId));
+            Mini.send(sender, plugin.getMessages().get("gui.claim-listed", "{id}", claimId));
         } else {
-            sender.sendMessage(plugin.getMessages().get("gui.claim-unlisted", "{id}", claimId));
+            Mini.send(sender, plugin.getMessages().get("gui.claim-unlisted", "{id}", claimId));
         }
         return true;
     }
 
     private boolean handleApproveClaim(CommandSender sender, String[] args) {
         if (!sender.hasPermission("griefprevention.approveclaim")) {
-            sender.sendMessage(plugin.getMessages().get("general.no-permission"));
+            Mini.send(sender, plugin.getMessages().get("general.no-permission"));
             return true;
         }
         if (!plugin.getConfigManager().isGlobalClaimsEnabled()) {
-            sender.sendMessage(plugin.getMessages().get("claim.global-disabled"));
+            Mini.send(sender, plugin.getMessages().get("claim.global-disabled"));
             return true;
         }
         String claimId = null;
@@ -3424,42 +3749,42 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
         if (claimId != null) {
             java.util.Optional<Object> claimOpt = gp.findClaimById(claimId);
             if (!claimOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-found", "{id}", claimId));
+                Mini.send(sender, plugin.getMessages().get("claim.not-found", "{id}", claimId));
                 return true;
             }
         } else {
             if (!(sender instanceof Player)) {
-                sender.sendMessage(plugin.getMessages().get("claim.approve-usage"));
+                Mini.send(sender, plugin.getMessages().get("claim.approve-usage"));
                 return true;
             }
             Player player = (Player) sender;
             java.util.Optional<Object> claimOpt = gp.getClaimAt(player.getLocation(), player);
             if (!claimOpt.isPresent()) {
-                sender.sendMessage(plugin.getMessages().get("claim.not-standing-in-claim"));
-                sender.sendMessage(plugin.getMessages().get("claim.provide-id"));
+                Mini.send(sender, plugin.getMessages().get("claim.not-standing-in-claim"));
+                Mini.send(sender, plugin.getMessages().get("claim.provide-id"));
                 return true;
             }
             Object claim = claimOpt.get();
             claimId = gp.getClaimId(claim).orElse(null);
             if (claimId == null) {
-                sender.sendMessage(plugin.getMessages().get("general.error"));
+                Mini.send(sender, plugin.getMessages().get("general.error"));
                 return true;
             }
         }
 
         codes.castled.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
         if (dataStore.isPublicListed(claimId)) {
-            sender.sendMessage(plugin.getMessages().get("claim.approve-already-listed", "{id}", claimId));
+            Mini.send(sender, plugin.getMessages().get("claim.approve-already-listed", "{id}", claimId));
             return true;
         }
         if (!dataStore.isGlobalApprovalPending(claimId)) {
-            sender.sendMessage(plugin.getMessages().get("claim.approve-not-pending", "{id}", claimId));
+            Mini.send(sender, plugin.getMessages().get("claim.approve-not-pending", "{id}", claimId));
             return true;
         }
 
         dataStore.setPublicListed(claimId, true);
         dataStore.save();
-        sender.sendMessage(plugin.getMessages().get("claim.approve-success", "{id}", claimId));
+        Mini.send(sender, plugin.getMessages().get("claim.approve-success", "{id}", claimId));
         return true;
     }
     
@@ -3710,6 +4035,12 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 || alias.equalsIgnoreCase("globalclaimslist")) {
             return Collections.emptyList();
         }
+        if (commandName.equalsIgnoreCase("claimmarket")
+                || commandName.equalsIgnoreCase("claimshop")
+                || alias.equalsIgnoreCase("claimmarket")
+                || alias.equalsIgnoreCase("claimshop")) {
+            return Collections.emptyList();
+        }
         if (args.length == 1) {
             // If they typed a full subcommand that has sub-options, return those (some servers pass only one arg)
             String first = (args[0] != null ? args[0].trim() : "").toLowerCase(Locale.ROOT);
@@ -3717,7 +4048,7 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 return Arrays.asList("list", "remove", "create").stream().sorted().collect(Collectors.toList());
             }
             if ("evict".equals(first) && sender.hasPermission("griefprevention.evict")) {
-                return Arrays.asList("cancel", "status", "[claimId]", "[player]").stream().sorted().collect(Collectors.toList());
+                return Arrays.asList("cancel", "status", "mailbox", "[claimId]", "[player]").stream().sorted().collect(Collectors.toList());
             }
             if ("cancelrent".equals(first) && sender.hasPermission("griefprevention.claim.cancelrent")) {
                 return sender.hasPermission("griefprevention.claim.cancelrent.anywhere")
@@ -3792,6 +4123,20 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 allCommands.removeIf(sub ->
                     sub.equalsIgnoreCase("global") || sub.equalsIgnoreCase("globallist"));
             }
+            if (plugin.getConfigManager().isMarketEnabled()
+                    && sender.hasPermission(codes.castled.gpexpansion.market.MarketManager.PERM_MARKET)) {
+                if (!allCommands.contains("market")) allCommands.add("market");
+                if (!allCommands.contains("shop")) allCommands.add("shop");
+            } else {
+                allCommands.removeIf(sub -> sub.equalsIgnoreCase("market") || sub.equalsIgnoreCase("shop"));
+            }
+            if (sender.hasPermission(codes.castled.gpexpansion.market.MarketManager.PERM_LISTED)) {
+                if (!allCommands.contains("listed")) allCommands.add("listed");
+            }
+            if (sender.hasPermission(codes.castled.gpexpansion.market.MarketManager.PERM_EDIT)
+                    || sender.hasPermission(codes.castled.gpexpansion.market.MarketManager.PERM_ADMIN)) {
+                if (!allCommands.contains("removelisting")) allCommands.add("removelisting");
+            }
             
             // Filter by input and return
             return allCommands.stream()
@@ -3831,8 +4176,41 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 case "adminclaimslist":
                 case "adminlist":
                 case "globallist":
+                case "market":
+                case "shop":
                 case "gui":
                 case "menu":
+                    return new ArrayList<>();
+                case "listed":
+                    if (args.length == 2 && sender instanceof Player p) {
+                        List<String> ids = new ArrayList<>();
+                        for (Object c : gp.getClaimsFor(p)) {
+                            if (!gp.isSubdivision(c)) {
+                                gp.getClaimId(c).ifPresent(ids::add);
+                            }
+                        }
+                        return ids.stream()
+                            .filter(id -> id.toLowerCase(Locale.ROOT).startsWith(args[1].toLowerCase(Locale.ROOT)))
+                            .sorted()
+                            .collect(Collectors.toList());
+                    }
+                    return new ArrayList<>();
+                case "removelisting":
+                    if (args.length == 2 && sender instanceof Player p && plugin.getMarketManager() != null) {
+                        List<String> keys = new ArrayList<>();
+                        for (codes.castled.gpexpansion.market.MarketListing l : plugin.getMarketManager().store().listings()) {
+                            if (plugin.getMarketManager().canManageListing(p, l)) {
+                                keys.add(l.id());
+                                if (l.claimId() != null && !keys.contains(l.claimId())) {
+                                    keys.add(l.claimId());
+                                }
+                            }
+                        }
+                        return keys.stream()
+                            .filter(k -> k.toLowerCase(Locale.ROOT).startsWith(args[1].toLowerCase(Locale.ROOT)))
+                            .sorted()
+                            .collect(Collectors.toList());
+                    }
                     return new ArrayList<>();
                 case "cancelrent":
                     if (args.length == 2
@@ -3883,8 +4261,37 @@ plugin.getSchedulerFacade().teleportEntity(player, centerOpt.get());
                 case "evict":
                     if (args.length == 2) {
                         String prefix = args[1].toLowerCase(Locale.ROOT);
-                        return Arrays.asList("cancel", "status", "[claimId]", "[player]").stream()
+                        return Arrays.asList("cancel", "status", "mailbox", "[claimId]", "[player]").stream()
                             .filter(s -> s.toLowerCase(Locale.ROOT).startsWith(prefix))
+                            .sorted()
+                            .collect(Collectors.toList());
+                    }
+                    if (args.length == 3 && (args[1].equalsIgnoreCase("cancel") || args[1].equalsIgnoreCase("status"))) {
+                        return Arrays.asList("mailbox", "[claimId]").stream()
+                            .filter(s -> s.toLowerCase(Locale.ROOT).startsWith(args[2].toLowerCase(Locale.ROOT)))
+                            .collect(Collectors.toList());
+                    }
+                    if ((args.length == 3 && args[1].equalsIgnoreCase("mailbox"))
+                            || (args.length == 4 && (args[1].equalsIgnoreCase("cancel") || args[1].equalsIgnoreCase("status"))
+                                && args[2].equalsIgnoreCase("mailbox"))) {
+                        String prefix = args[args.length - 1].toLowerCase(Locale.ROOT);
+                        List<String> mbIds = new ArrayList<>();
+                        if (plugin.getMarketManager() != null) {
+                            boolean allowOther = sender.hasPermission("griefprevention.evict.other") || sender.hasPermission("griefprevention.admin");
+                            UUID selfId = sender instanceof Player p ? p.getUniqueId() : null;
+                            for (Map.Entry<String, UUID> mb : plugin.getClaimDataStore().getAllMailboxes().entrySet()) {
+                                String mbId = mb.getKey();
+                                if (mbId == null || plugin.getMarketManager().isMailboxStillForSale(mbId)) continue;
+                                if (!allowOther && selfId != null) {
+                                    String parentId = plugin.getMarketManager().resolveParentClaimId(mbId, null);
+                                    boolean ownsParent = parentId != null && gp.findClaimById(parentId).map(c -> gp.isOwner(c, selfId)).orElse(false);
+                                    if (!ownsParent || selfId.equals(mb.getValue())) continue;
+                                }
+                                mbIds.add(mbId);
+                            }
+                        }
+                        return mbIds.stream()
+                            .filter(id -> id.toLowerCase(Locale.ROOT).startsWith(prefix))
                             .sorted()
                             .collect(Collectors.toList());
                     }

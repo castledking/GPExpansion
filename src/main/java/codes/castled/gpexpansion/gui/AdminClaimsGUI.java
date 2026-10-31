@@ -292,7 +292,10 @@ public class AdminClaimsGUI extends BaseGUI {
         }
         
         boolean glow = info.claimId != null && info.claimId.equals(currentMainClaimId);
-        return createItem(material, "&c" + info.name, lore, glow);
+        if (info.isRented || info.isMailbox) {
+            return createItem(material, "&c" + info.name, lore, glow);
+        }
+        return createClaimIconItem(info.claimId, material, "&c" + info.name, lore, glow);
     }
     
     @Override

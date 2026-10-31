@@ -183,7 +183,9 @@ public class CommandInterceptListener implements Listener {
         if (args.length == 0) return;
         String first = (args[0] != null ? args[0].trim() : "").toLowerCase(Locale.ROOT);
         if (!"snapshot".equals(first) && !"evict".equals(first)
-                && !"info".equals(first) && !"movesign".equals(first)) return;
+                && !"info".equals(first) && !"movesign".equals(first)
+                && !"market".equals(first) && !"shop".equals(first)
+                && !"listed".equals(first) && !"removelisting".equals(first)) return;
         ClaimCommand claimCmd = plugin.getClaimCommand();
         if (claimCmd == null) return;
         List<String> ours = claimCmd.completeTab(event.getSender(), "claim", "claim", args);
@@ -196,57 +198,20 @@ public class CommandInterceptListener implements Listener {
     }
 
     private boolean interceptUntrustCommand(PlayerCommandPreprocessEvent event) {
+        if (plugin.getMarketManager() == null) return false;
         Player player = event.getPlayer();
         String command = event.getMessage();
-
-        // Parse the untrust command to get the target player name
-        String[] parts = command.split("\\s+");
-        if (parts.length < 2) return false; // Not enough arguments
+        String[] parts = command.trim().split("\\s+");
+        if (parts.length < 2) return false;
 
         String targetName = parts[1];
-
-        // Resolve target player UUID
-        UUID targetUuid = null;
-        Player targetPlayer = Bukkit.getPlayerExact(targetName);
-        if (targetPlayer != null) {
-            targetUuid = targetPlayer.getUniqueId();
-        } else {
-            OfflinePlayer offlineTarget = Bukkit.getOfflinePlayer(targetName);
-            if (offlineTarget != null) {
-                targetUuid = offlineTarget.getUniqueId();
-            }
+        String explicitClaimId = (parts.length >= 3 && parts[parts.length - 1].matches("\\d+"))
+            ? parts[parts.length - 1]
+            : null;
+        if (plugin.getMarketManager().checkAndBlockUntrust(player, targetName, explicitClaimId)) {
+            event.setCancelled(true);
+            return true;
         }
-
-        if (targetUuid == null) return false; // Unknown player
-
-        // Check if the target is renting any claims owned by this player
-        ClaimDataStore dataStore = plugin.getClaimDataStore();
-        for (var entry : dataStore.getAllRentals().entrySet()) {
-            String claimId = entry.getKey();
-            ClaimDataStore.RentalData rental = entry.getValue();
-            if (rental != null && rental.renter.equals(targetUuid)) {
-                    // Check if this player owns the claim
-                    Optional<Object> claimOpt = gp.findClaimById(claimId);
-                    if (claimOpt.isPresent()) {
-                        Object claim = claimOpt.get();
-                        try {
-                            Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
-                            if (ownerId != null && ownerId.equals(player.getUniqueId())) {
-                                // Player owns this claim and target is renting it
-                                event.setCancelled(true);
-                                OfflinePlayer renter = Bukkit.getOfflinePlayer(targetUuid);
-                                String renterName = renter.getName() != null ? renter.getName() : targetName;
-
-                                plugin.getMessages().send(player, "claim.untrust-renter",
-                                        "{renter}", renterName);
-                                plugin.getMessages().send(player, "claim.untrust-renter-hint",
-                                        "{command}", "/claim evict " + renterName);
-                                return true;
-                            }
-                        } catch (Exception ignored) {}
-                    }
-                }
-            }
-        return false; // Allow the command to proceed
+        return false;
     }
 }

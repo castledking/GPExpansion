@@ -52,6 +52,11 @@ class ClaimMetadataServiceImpl implements ClaimMetadataService {
     }
 
     @Override
+    public @NotNull Optional<org.bukkit.inventory.ItemStack> getIconItem(@NotNull String claimId) {
+        return dataStore.getIconItem(claimId);
+    }
+
+    @Override
     public @NotNull Optional<String> getWaypointColor(@NotNull Claim claim) {
         return getWaypointColor(String.valueOf(claim.getID()));
     }

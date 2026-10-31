@@ -27,7 +27,7 @@ items:
       - ""
       - "{teleport_status}"
       - "{teleport_action}"
-    slot: 20
+    slot: 19
 
   resize:
     material: GOLDEN_SHOVEL
@@ -37,7 +37,7 @@ items:
       - ""
       - "{resize_status}"
       - "{resize_action}"
-    slot: 22
+    slot: 21
 
   trust:
     material: PLAYER_HEAD
@@ -48,7 +48,7 @@ items:
       - ""
       - "{trust_status}"
       - "{trust_action}"
-    slot: 24
+    slot: 23
 
   abandon:
     material: CAULDRON
@@ -73,7 +73,8 @@ items:
     material: REPEATER
     name: "&d&lClaim Flags"
     lore:
-      - "&7Toggle GPFlags for this claim."
+      - "&7Choose what outsiders, mobs and"
+      - "&7nature can do in this claim."
       - ""
       - "{flags_status}"
       - "{flags_action}"
@@ -87,7 +88,38 @@ items:
       - "&7public listing, and spawn point."
       - ""
       - "&eClick to open global settings"
+    slot: 25
+
+  # Always shown. Giving claims to other players needs GriefPrevention3D with
+  # Claims.TransferClaim.Enabled: true; elsewhere the button explains why it is unavailable.
+  # Placeholders: {transfer_status}, {transfer_action}, {fee}
+  transfer:
+    material: TRIAL_KEY
+    # Optional material used while transfers are unavailable (blank keeps the material above)
+    unavailable-material: ""
+    name: "&e&lTransfer Ownership"
+    lore:
+      - "&7Give this claim to another player."
+      - ""
+      - "{transfer_status}"
+      - "{transfer_action}"
     slot: 42
+    states:
+      available:
+        status: "&aCost: &f{fee}"
+        action: "&eClick to choose the new owner"
+      unsupported:
+        status: "&cUnavailable"
+        action: "&8Requires GriefPrevention3D with TransferClaim enabled"
+      disabled:
+        status: "&cUnavailable"
+        action: "&8Claim transfers are turned off on this server"
+      subdivision:
+        status: "&cOnly top-level claims can change owner"
+        action: "&8Transfer the parent claim instead"
+      no-access:
+        status: "&cOnly the owner can give this claim away"
+        action: "&8You must own this claim"
 
   back:
     material: ARROW

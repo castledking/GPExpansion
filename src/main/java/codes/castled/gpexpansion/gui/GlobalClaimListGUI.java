@@ -343,7 +343,7 @@ public class GlobalClaimListGUI extends BaseGUI {
         }
 
         boolean glow = info.claimId != null && info.claimId.equals(currentListedClaimId);
-        return createItem(material, "&6" + info.name, lore, glow);
+        return createClaimIconItem(info.claimId, material, "&6" + info.name, lore, glow);
     }
 
     private Material getDefaultGlobalClaimIcon() {

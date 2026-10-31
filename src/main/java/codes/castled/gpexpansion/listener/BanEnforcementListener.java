@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.listener;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
@@ -521,7 +522,7 @@ public class BanEnforcementListener implements Listener {
         if (player.hasPermission("griefprevention.ignoreclaims")) {
             message += "  " + plugin.getMessages().getRaw("claim.ban-ignoreclaims-hint");
         }
-        player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(message));
+        Mini.send(player, LegacyComponentSerializer.legacyAmpersand().deserialize(message));
     }
 
     private void showBanVisualization(Player player, Object claim) {

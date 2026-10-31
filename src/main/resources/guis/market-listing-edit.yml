@@ -1,0 +1,8 @@
+# Market Listing Editor GUI Configuration
+# Shown when editing a listing's price, visibility, teleport, or note from the Claim Market or Listed Claims GUI
+
+title: "&6&lEdit Listing &7(#{id})"
+size: 27
+
+filler:
+  material: GRAY_STAINED_GLASS_PANE

@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.gui;
+import codes.castled.gpexpansion.util.Mini;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -152,7 +153,7 @@ public class ClaimTrustEditorGUI extends BaseGUI {
 
     private void applyChanges() {
         if (targetName == null || targetName.isBlank()) {
-            player.sendMessage(colorize("&cNo player name was provided."));
+            Mini.send(player, colorize("&cNo player name was provided."));
             return;
         }
 
@@ -166,11 +167,34 @@ public class ClaimTrustEditorGUI extends BaseGUI {
                 return;
             }
 
+            if (plugin.getMarketManager() != null) {
+                boolean hasRentalOnClaim = claimDataStore.getRental(claimId)
+                    .map(r -> r.expiry > System.currentTimeMillis() && targetId.equals(r.renter))
+                    .orElse(false);
+                boolean removesRenterBuild = hasRentalOnClaim
+                    && !selectedLevels.contains(GPBridge.TrustLevel.BUILD)
+                    && !selectedLevels.contains(GPBridge.TrustLevel.MANAGE);
+                if (selectedLevels.isEmpty() || removesRenterBuild) {
+                    if (plugin.getMarketManager().checkAndBlockUntrust(player, targetName, claimId)) {
+                        return;
+                    }
+                }
+            }
             claimDataStore.addTrustedPlayer(claimId, targetId, targetName);
             claimDataStore.save();
-            runClaimCommand("untrust", targetName, claimId);
-            for (GPBridge.TrustLevel level : selectedLevels) {
-                runClaimCommand("trust", targetName, trustType(level), claimId);
+            if (selectedLevels.isEmpty()) {
+                runClaimCommand("untrust", targetName, claimId);
+            } else {
+                // Clear and re-apply selected trust levels directly when preserving active rental/mailbox trust
+                boolean protectedTarget = claimDataStore.getRental(claimId)
+                    .map(r -> r.expiry > System.currentTimeMillis() && targetId.equals(r.renter))
+                    .orElse(false);
+                if (!protectedTarget) {
+                    runClaimCommand("untrust", targetName, claimId);
+                }
+                for (GPBridge.TrustLevel level : selectedLevels) {
+                    runClaimCommand("trust", targetName, trustType(level), claimId);
+                }
             }
 
             runLater(() -> manager.openClaimTrustedPlayers(player, claim, claimId), 5L);

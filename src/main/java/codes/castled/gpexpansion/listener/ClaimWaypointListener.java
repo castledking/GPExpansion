@@ -4,13 +4,12 @@ import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.events.ClaimColorChangedEvent;
 import codes.castled.gpexpansion.events.ClaimSpawnChangedEvent;
 import codes.castled.gpexpansion.waypoint.ClaimWaypointManager;
+import codes.castled.gpexpansion.platform.PlatformDetection;
 import me.ryanhamshire.GriefPrevention.events.ClaimCreatedEvent;
 import me.ryanhamshire.GriefPrevention.events.ClaimDeletedEvent;
 import me.ryanhamshire.GriefPrevention.events.ClaimResizeEvent;
 import me.ryanhamshire.GriefPrevention.events.ClaimTransferEvent;
 import me.ryanhamshire.GriefPrevention.events.TrustChangedEvent;
-import io.papermc.paper.event.world.WorldGameRuleChangeEvent;
-import org.bukkit.GameRule;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -111,13 +110,26 @@ public final class ClaimWaypointListener implements Listener {
         rebuildNextTick(event.getPlayer());
     }
 
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onGameRuleChanged(WorldGameRuleChangeEvent event) {
-        // A live locatorBar flip should withdraw or restore waypoints immediately rather than
-        // waiting for the next join/world change. The per-viewer diff handles both directions.
-        if (event.getGameRule() != null
-            && event.getGameRule().getName().equalsIgnoreCase(GameRule.LOCATOR_BAR.getName())) {
-            rebuildNextTick();
+    /**
+     * Paper-only listener for WorldGameRuleChangeEvent, registered only when the class exists.
+     * This avoids NoClassDefFoundError on Spigot which lacks this event.
+     */
+    public static final class PaperGameRuleListener implements Listener {
+        private final ClaimWaypointListener parent;
+
+        public PaperGameRuleListener(ClaimWaypointListener parent) {
+            this.parent = parent;
+        }
+
+        @EventHandler(priority = EventPriority.MONITOR)
+        public void onGameRuleChanged(io.papermc.paper.event.world.WorldGameRuleChangeEvent event) {
+            // A live locatorBar flip should withdraw or restore waypoints immediately rather than
+            // waiting for the next join/world change. The per-viewer diff handles both directions.
+            if (event.getGameRule() != null
+                    && event.getGameRule().getName().equalsIgnoreCase(ClaimWaypointManager.locatorBarRule() != null
+                            ? ClaimWaypointManager.locatorBarRule().getName() : "locatorBar")) {
+                parent.rebuildNextTick();
+            }
         }
     }
 

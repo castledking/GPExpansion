@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.listener;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -87,7 +88,7 @@ public class SignListener implements Listener {
 
     // Helper method to safely get a line from SignChangeEvent
     private String safeLine(SignChangeEvent event, int line) {
-        Component component = event.line(line);
+        Component component = Mini.eventLine(event, line);
         return component != null ? LegacyComponentSerializer.legacySection().serialize(component) : "";
     }
     
@@ -430,18 +431,18 @@ public class SignListener implements Listener {
     public void shieldManagedSignFromBlueMapMarkers(@NotNull SignChangeEvent event) {
         if (!plugin.getConfigManager().shouldPreventBlueMapMarkersForManagedSigns()) return;
 
-        Component originalHeader = event.line(0);
+        Component originalHeader = Mini.eventLine(event, 0);
         if (originalHeader == null) return;
         String header = LegacyComponentSerializer.legacySection().serialize(originalHeader);
         if (!isEnabledManagedInputHeader(header)) return;
 
-        event.line(0, markerShield.shield(event, originalHeader, true, MARKER_SHIELD_HEADER));
+        Mini.eventLine(event, 0, markerShield.shield(event, originalHeader, true, MARKER_SHIELD_HEADER));
     }
 
     /** Always restore the original header, including when another listener cancelled the event. */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = false)
     public void restoreManagedSignAfterBlueMapMarkers(@NotNull SignChangeEvent event) {
-        markerShield.restore(event).ifPresent(header -> event.line(0, header));
+        markerShield.restore(event).ifPresent(header -> Mini.eventLine(event, 0, header));
     }
     
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -453,7 +454,7 @@ public class SignListener implements Listener {
             plugin.getLogger().info("Location: " + event.getBlock().getLocation());
             plugin.getLogger().info("Sign Content:");
             for (int i = 0; i < 4; i++) {
-                Component line = event.line(i);
+                Component line = Mini.eventLine(event, i);
                 String lineText = line != null ? line.toString() : "";
                 plugin.getLogger().info(String.format("  Line %d: '%s' (Type: %s)",
                     i, lineText, line != null ? line.getClass().getSimpleName() : "null"));
@@ -461,7 +462,7 @@ public class SignListener implements Listener {
         }
 
         Player player = event.getPlayer();
-        Component line0 = event.line(0);
+        Component line0 = Mini.eventLine(event, 0);
         if (line0 == null) {
             if (plugin.getConfigManager().isDebugEnabled()) {
                 plugin.getLogger().info("Sign creation aborted: Line 0 is null");
@@ -509,7 +510,7 @@ public class SignListener implements Listener {
         if (plugin.getConfigManager().isDebugEnabled()) {
             plugin.getLogger().info("Creating sign with content:");
             for (int i = 0; i < 4; i++) {
-                Component line = event.line(i);
+                Component line = Mini.eventLine(event, i);
                 String lineText = line != null ? line.toString() : "";
                 plugin.getLogger().info("Line " + i + ": '" + lineText + "'");
             }
@@ -1015,11 +1016,11 @@ public class SignListener implements Listener {
                 hanging ? plugin.getMessages().getRaw("sign-interaction.sign-display-buy-hanging")
                     : plugin.getMessages().getRaw("sign-interaction.sign-display-buy-full"));
         }
-        event.line(0, LegacyComponentSerializer.legacyAmpersand().deserialize(displayLine0));
+        Mini.eventLine(event, 0, LegacyComponentSerializer.legacyAmpersand().deserialize(displayLine0));
         String outputType = mailbox ? "mailbox" : (rent ? "rent" : "sell");
         boolean displayClaimId = getOutputDisplayClaimId(outputType, hanging, !mailbox);
         String line1Display = displayClaimId ? "&0ID: &6" + claimId : "&0" + player.getName();
-        event.line(1, LegacyComponentSerializer.legacyAmpersand().deserialize(line1Display));
+        Mini.eventLine(event, 1, LegacyComponentSerializer.legacyAmpersand().deserialize(line1Display));
         
         // Determine formatted amount
         String amountDisplay;
@@ -1043,17 +1044,17 @@ public class SignListener implements Listener {
 
         // Format line 3 based on sign type
         if (mailbox) {
-            event.line(2, Component.text(amountDisplay, NamedTextColor.BLACK));
-            event.line(3, Component.text("Click to Buy!", NamedTextColor.GREEN));
+            Mini.eventLine(event, 2, Component.text(amountDisplay, NamedTextColor.BLACK));
+            Mini.eventLine(event, 3, Component.text("Click to Buy!", NamedTextColor.GREEN));
         } else if (sell) {
-            event.line(2, Component.text(amountDisplay, NamedTextColor.BLACK));
-            event.line(3, Component.text("", NamedTextColor.BLACK)); // Empty line for sell signs
+            Mini.eventLine(event, 2, Component.text(amountDisplay, NamedTextColor.BLACK));
+            Mini.eventLine(event, 3, Component.text("", NamedTextColor.BLACK)); // Empty line for sell signs
         } else {
             String priceLine = amountDisplay + "/" + renewal.perClick;
-            event.line(2, Component.text(priceLine, NamedTextColor.BLACK));
+            Mini.eventLine(event, 2, Component.text(priceLine, NamedTextColor.BLACK));
             // Format line 4: Max duration (e.g., "Max: 10 weeks")
             String maxDisplay = "Max: " + renewal.maxCap;
-            event.line(3, Component.text(maxDisplay, NamedTextColor.BLACK));
+            Mini.eventLine(event, 3, Component.text(maxDisplay, NamedTextColor.BLACK));
         }
         
         String logInfo = sell ? amountDisplay : (amountDisplay + "/" + renewal.perClick + ", Max: " + renewal.maxCap);
@@ -1088,6 +1089,9 @@ public class SignListener implements Listener {
                     }
                     
                     sign.update(true);
+                    if (plugin.getMarketManager() != null) {
+                        plugin.getMarketManager().syncSign(sign);
+                    }
                 }
             });
         }
@@ -1131,7 +1135,7 @@ public class SignListener implements Listener {
         
         // Get the front side of the sign
         SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
-        Component line0Comp = front.line(0);
+        Component line0Comp = Mini.signLine(front, 0);
         if (line0Comp == null) {
             return;
         }
@@ -1226,7 +1230,7 @@ public class SignListener implements Listener {
             if (kindStr == null || claimId == null) {
                 // Fallback to parsing from sign text if PDC data is missing
                 SignSide frontSide = currentSign.getSide(org.bukkit.block.sign.Side.FRONT);
-                String line2 = LegacyComponentSerializer.legacySection().serialize(frontSide.line(2));
+                String line2 = LegacyComponentSerializer.legacySection().serialize(Mini.signLine(frontSide, 2));
                 EcoKind kind = parseEcoKind(line2);
                 if (kind == null) {
                     plugin.getLogger().warning("Sign at " + signLocation + " is missing required data");
@@ -1252,6 +1256,10 @@ public class SignListener implements Listener {
                 return;
             }
 
+            if (!globalClaimSign && !mailboxSign && plugin.getMarketManager() != null
+                    && plugin.getMarketManager().store().get(codes.castled.gpexpansion.market.MarketListing.key(signLocation)) == null) {
+                plugin.getMarketManager().syncSign(currentSign);
+            }
             // Process the sign interaction
             completeSignInteraction(event, player, currentSign, rentSign, sellSign, mailboxSign, globalClaimSign, kind, claimId, ecoAmtRaw, perClick, maxCap, pdc);
             
@@ -1300,15 +1308,16 @@ public class SignListener implements Listener {
                         // Update the sign with the item data
                         pdc.set(keyItemB64(), PersistentDataType.STRING, encodeItem(offhandItem));
                         sign.update(true);
+                        if (plugin.getMarketManager() != null) plugin.getMarketManager().syncSign(sign);
                         
                         // Update sign display with item name
                         String itemName = formatItemName(offhandItem);
                         String amountDisplay = ecoAmtRaw + " " + itemName;
                         SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
                         if (rent) {
-                            front.line(2, Component.text(amountDisplay + "/" + perClick, NamedTextColor.BLACK));
+                            Mini.signLine(front, 2, Component.text(amountDisplay + "/" + perClick, NamedTextColor.BLACK));
                         } else {
-                            front.line(2, Component.text(amountDisplay, NamedTextColor.BLACK));
+                            Mini.signLine(front, 2, Component.text(amountDisplay, NamedTextColor.BLACK));
                         }
                         sign.update(true);
                         
@@ -1481,13 +1490,13 @@ public class SignListener implements Listener {
                     if (plugin.getConfigManager().isIgnoreVaultMissing()) {
                         return true;
                     }
-                    player.sendMessage(Component.text("Economy not available. Please ensure Vault and an economy provider are installed.", NamedTextColor.RED));
+                    Mini.send(player, Component.text("Economy not available. Please ensure Vault and an economy provider are installed.", NamedTextColor.RED));
                     return false;
                 }
                 double amount = Double.parseDouble(ecoAmtRaw);
                 amount = Math.min(amount, MAX_ECO_AMOUNT_VALUE);
                 if (!plugin.getEconomyManager().hasMoney(player, amount)) {
-                    player.sendMessage(Component.text("You don't have enough money.", NamedTextColor.RED));
+                    Mini.send(player, Component.text("You don't have enough money.", NamedTextColor.RED));
                     return false;
                 }
                 return plugin.getEconomyManager().withdrawMoney(player, amount);
@@ -1498,7 +1507,7 @@ public class SignListener implements Listener {
                 if (levels) amt = Math.min(amt, 999); else amt = Math.min(amt, 999_999_999);
                 if (levels) {
                     if (player.getLevel() < amt) {
-                        player.sendMessage(Component.text("You need " + amt + " levels.", NamedTextColor.RED));
+                        Mini.send(player, Component.text("You need " + amt + " levels.", NamedTextColor.RED));
                         return false;
                     }
                     player.setLevel(player.getLevel() - amt);
@@ -1507,7 +1516,7 @@ public class SignListener implements Listener {
                     // Bukkit handles negative giveExp to subtract points
                     // Note: this may reduce levels accordingly
                     if (getTotalExp(player) < amt) {
-                        player.sendMessage(Component.text("You need " + amt + " experience points.", NamedTextColor.RED));
+                        Mini.send(player, Component.text("You need " + amt + " experience points.", NamedTextColor.RED));
                         return false;
                     }
                     player.giveExp(-amt);
@@ -1516,23 +1525,23 @@ public class SignListener implements Listener {
             }
             case ITEM: {
                 if (pdc == null) {
-                    player.sendMessage(Component.text("This sign is missing item data.", NamedTextColor.RED));
+                    Mini.send(player, Component.text("This sign is missing item data.", NamedTextColor.RED));
                     return false;
                 }
                 String b64 = pdc.get(keyItemB64(), PersistentDataType.STRING);
                 if (b64 == null || b64.isEmpty()) {
-                    player.sendMessage(Component.text("This sign is missing item data.", NamedTextColor.RED));
+                    Mini.send(player, Component.text("This sign is missing item data.", NamedTextColor.RED));
                     return false;
                 }
                 ItemStack target = decodeItem(b64);
                 if (target == null || target.getType() == Material.AIR) {
-                    player.sendMessage(Component.text("This sign's item is invalid.", NamedTextColor.RED));
+                    Mini.send(player, Component.text("This sign's item is invalid.", NamedTextColor.RED));
                     return false;
                 }
                 int amt = Integer.parseInt(ecoAmtRaw);
                 boolean ok = consumeMatchingItem(player, target, amt);
                 if (!ok) {
-                    player.sendMessage(Component.text("You don't have enough items (need " + amt + " of " + formatItemName(target) + ").", NamedTextColor.RED));
+                    Mini.send(player, Component.text("You don't have enough items (need " + amt + " of " + formatItemName(target) + ").", NamedTextColor.RED));
                     return false;
                 }
                 return true;
@@ -1541,7 +1550,7 @@ public class SignListener implements Listener {
                 int amt = Integer.parseInt(ecoAmtRaw);
                 amt = Math.min(amt, 999_999_999);
                 if (gp.getRemainingClaimBlocks(player) < amt) {
-                    player.sendMessage(Component.text("You don't have enough claim blocks.", NamedTextColor.RED));
+                    Mini.send(player, Component.text("You don't have enough claim blocks.", NamedTextColor.RED));
                     return false;
                 }
                 return gp.changeClaimBlocks(player, -amt);
@@ -1789,12 +1798,12 @@ public class SignListener implements Listener {
         // Set sign lines
         boolean hanging = signLocation.getBlock().getType().name().contains("HANGING_SIGN");
         String header = getOutputHeader("global", hanging, "&b&l[Global]");
-        frontSide.line(0, LegacyComponentSerializer.legacyAmpersand().deserialize(header));
+        Mini.signLine(frontSide, 0, LegacyComponentSerializer.legacyAmpersand().deserialize(header));
         boolean displayClaimId = getOutputDisplayClaimId("global", hanging, true);
         String line1Display = displayClaimId ? "&0ID: &6" + claimId : "&6" + player.getName();
-        frontSide.line(1, LegacyComponentSerializer.legacyAmpersand().deserialize(line1Display));
-        frontSide.line(2, Component.empty());
-        frontSide.line(3, Component.empty());
+        Mini.signLine(frontSide, 1, LegacyComponentSerializer.legacyAmpersand().deserialize(line1Display));
+        Mini.signLine(frontSide, 2, Component.empty());
+        Mini.signLine(frontSide, 3, Component.empty());
         
         sign.update(true);
         

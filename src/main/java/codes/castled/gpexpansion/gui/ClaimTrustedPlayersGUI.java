@@ -261,6 +261,11 @@ public class ClaimTrustedPlayersGUI extends BaseGUI {
     }
 
     private void hardRemovePlayer(TrustedPlayerInfo info) {
+        if (plugin.getMarketManager() != null
+                && plugin.getMarketManager().checkAndBlockUntrust(player, info.playerName, claimId)) {
+            player.closeInventory();
+            return;
+        }
         closeAndRunOnMainThread(() -> {
             runClaimCommand("untrust", info.playerName, claimId);
             claimDataStore.removeTrustedPlayer(claimId, info.playerId);

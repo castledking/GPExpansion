@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.gui;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
@@ -73,9 +74,10 @@ public class SignInputGUI implements Listener {
             if (block.getState() instanceof Sign) {
                 Sign sign = (Sign) block.getState();
                 
-                // Set prompt lines on the sign using modern Component API
+                // Set prompt lines on the sign (legacy-compatible sign line API)
                 for (int i = 0; i < 4 && i < promptLines.length; i++) {
-                    sign.getSide(Side.FRONT).lines().set(i, Component.text(promptLines[i] != null ? promptLines[i] : ""));
+                    Mini.signLine(sign.getSide(Side.FRONT), i,
+                        Component.text(promptLines[i] != null ? promptLines[i] : ""));
                 }
                 sign.update();
                 
@@ -109,7 +111,7 @@ public class SignInputGUI implements Listener {
         event.setCancelled(true);
         
         // Get the user input from the designated input line only
-        Component lineComponent = event.line(inputLine);
+        Component lineComponent = Mini.eventLine(event, inputLine);
         String rawInput = lineComponent != null ? net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().serialize(lineComponent) : "";
         final String result = rawInput.trim();
         
@@ -172,6 +174,24 @@ public class SignInputGUI implements Listener {
         new SignInputGUI(plugin, player, lines, onComplete, onCancel).open();
     }
     
+    /**
+     * Open sign editor for typing a player name on the first line.
+     */
+    public static void openPlayerName(GPExpansionPlugin plugin, Player player, String hint,
+                                      Consumer<String> onComplete, Runnable onCancel) {
+        String[] lines = {"", "^^^^^^^^^^^^", hint != null ? hint : "Player name", ""};
+        new SignInputGUI(plugin, player, lines, onComplete, onCancel).open();
+    }
+
+    /**
+     * Open sign editor for typing an amount (price) on the first line, prefilled with the current one.
+     */
+    public static void openAmount(GPExpansionPlugin plugin, Player player, String current, String hint,
+                                  Consumer<String> onComplete, Runnable onCancel) {
+        String[] lines = {current != null ? current : "", "^^^^^^^^^^^^", hint != null ? hint : "Enter new price", ""};
+        new SignInputGUI(plugin, player, lines, onComplete, onCancel).open();
+    }
+
     /**
      * Open sign editor for setting description.
      */

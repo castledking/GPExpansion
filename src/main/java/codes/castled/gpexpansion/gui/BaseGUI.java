@@ -20,6 +20,7 @@ import org.bukkit.profile.PlayerTextures;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.command.ClaimCommand;
+import codes.castled.gpexpansion.util.Mini;
 
 import java.net.MalformedURLException;
 import java.net.URI;
@@ -81,8 +82,8 @@ public abstract class BaseGUI {
         // Ensure size is valid (multiple of 9, max 54)
         size = Math.min(54, Math.max(9, (size / 9) * 9));
         
-        Component titleComponent = colorize(title);
-        return Bukkit.createInventory(null, size, titleComponent);
+        String titleString = Mini.inventoryTitle(Mini.deserialize(title));
+        return Bukkit.createInventory(null, size, titleString);
     }
     
     /**
@@ -95,8 +96,8 @@ public abstract class BaseGUI {
         // Ensure size is valid (multiple of 9, max 54)
         size = Math.min(54, Math.max(9, (size / 9) * 9));
         
-        Component titleComponent = colorize(processedTitle);
-        return Bukkit.createInventory(null, size, titleComponent);
+        String titleString = Mini.inventoryTitle(Mini.deserialize(processedTitle));
+        return Bukkit.createInventory(null, size, titleString);
     }
     
     /**
@@ -305,6 +306,47 @@ public abstract class BaseGUI {
      */
     protected ItemStack createItem(Material material, String name) {
         return createItem(material, name, null);
+    }
+
+    /**
+     * Build a display item from a claim's stored icon, keeping its custom model, head texture
+     * and other item data so custom items render as themselves. Falls back to a plain
+     * material when the claim has no icon.
+     */
+    protected ItemStack createClaimIconItem(String claimId, Material fallback, String name, List<String> lore, boolean enchantedGlow) {
+        ItemStack base = claimId == null ? null : plugin.getClaimDataStore().getIconItem(claimId).orElse(null);
+        if (base == null || base.getType() == Material.AIR) {
+            return createItem(fallback != null ? fallback : Material.GRASS_BLOCK, name, lore, enchantedGlow);
+        }
+        return restyleItem(base, name, lore, enchantedGlow);
+    }
+
+    /**
+     * Copy an item and replace its name and lore, leaving every other piece of item data
+     * (model, texture, colour, trims...) untouched.
+     */
+    protected ItemStack restyleItem(ItemStack base, String name, List<String> lore, boolean enchantedGlow) {
+        ItemStack item = base.clone();
+        item.setAmount(1);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            if (name != null && !name.isEmpty()) {
+                meta.displayName(colorize(name));
+            }
+            List<Component> loreComponents = new ArrayList<>();
+            if (lore != null) {
+                for (String line : lore) {
+                    loreComponents.add(colorize(line));
+                }
+            }
+            meta.lore(loreComponents);
+            if (enchantedGlow && !meta.hasEnchants()) {
+                meta.addEnchant(Enchantment.UNBREAKING, 1, true);
+                meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
+            }
+            item.setItemMeta(meta);
+        }
+        return item;
     }
     
     /**

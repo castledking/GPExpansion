@@ -36,8 +36,8 @@ public class PaperCommandWrapper extends Command {
             // For players, run on the correct region thread
             Player player = (Player) sender;
             if (SchedulerAdapter.isFolia()) {
-                player.getScheduler().execute(plugin, () -> 
-                    executor.onCommand(sender, this, label, args), null, 1L);
+                SchedulerAdapter.runEntity(plugin, player, () ->
+                    executor.onCommand(sender, this, label, args), null);
             } else {
                 // Non-Folia fallback
                 SchedulerAdapter.runGlobal(plugin, () -> 

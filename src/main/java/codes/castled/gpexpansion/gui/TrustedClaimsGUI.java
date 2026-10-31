@@ -14,7 +14,6 @@ import codes.castled.gpexpansion.util.ClaimGeometryUtil;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 /**
  * GUI for viewing claims the player is trusted in.
@@ -82,18 +81,13 @@ public class TrustedClaimsGUI extends BaseGUI {
             String claimId = claimIdOpt.get();
             
             // Skip claims owned by the player
-            try {
-                Object ownerId = claim.getClass().getMethod("getOwnerID").invoke(claim);
-                if (ownerId != null && ownerId.equals(player.getUniqueId())) continue;
-            } catch (Exception e) {
-                // Continue anyway
-            }
+            if (gp.isOwner(claim, player.getUniqueId())) continue;
             
             ClaimInfo info = new ClaimInfo(claim, claimId);
             
             // Determine claim type
             info.isRented = isClaimRented(claimId);
-            info.isSold = false; // Would need sell sign tracking
+            info.isSold = false;
             info.isMailbox = plugin.getClaimDataStore().isMailbox(claimId);
             info.isSubdivision = gp.isSubdivision(claim);
             
@@ -129,8 +123,6 @@ public class TrustedClaimsGUI extends BaseGUI {
     private boolean isClaimRented(String claimId) {
         return plugin.getClaimDataStore().isRented(claimId);
     }
-    
-
     
     @Override
     public Inventory createInventory() {
@@ -173,7 +165,7 @@ public class TrustedClaimsGUI extends BaseGUI {
     }
     
     private ItemStack createBackItem() {
-        return createItem(Material.ARROW, "&c&lBack", List.of("&7Return to main menu"));
+        return createItem(Material.ARROW, "&c&lBack", List.of("&7Return to Owned Claims"));
     }
     
     private ItemStack createPrevPageItem() {
@@ -207,8 +199,6 @@ public class TrustedClaimsGUI extends BaseGUI {
         return currentClaimId;
     }
 
-
-
     private ItemStack createClaimItem(ClaimInfo info, String currentTrustedClaimId) {
         Material material = Material.GRASS_BLOCK;
         if (info.isRented) material = Material.CLOCK;
@@ -238,7 +228,7 @@ public class TrustedClaimsGUI extends BaseGUI {
         
         lore.add("");
         
-        if (player.hasPermission("griefprevention.claim.teleport")) {
+        if (!info.isMailbox && player.hasPermission("griefprevention.claim.teleport")) {
             lore.add("&a▸ Left-click to teleport");
         }
         if (info.canRenew) {
@@ -251,7 +241,8 @@ public class TrustedClaimsGUI extends BaseGUI {
         }
 
         boolean glow = info.claimId != null && info.claimId.equals(currentTrustedClaimId);
-        return createItem(material, "&a" + info.name, lore, glow);
+        String iconClaimId = gp.getParentClaim(info.claim).flatMap(gp::getClaimId).orElse(info.claimId);
+        return createClaimIconItem(iconClaimId, material, "&a" + info.name, lore, glow);
     }
     
     @Override
@@ -268,7 +259,7 @@ public class TrustedClaimsGUI extends BaseGUI {
         }
         
         if (slot == BACK_SLOT) {
-            manager.openMainMenu(player);
+            manager.openOwnedClaims(player);
             return;
         }
         
@@ -306,6 +297,7 @@ public class TrustedClaimsGUI extends BaseGUI {
     
     private void handleClaimClick(InventoryClickEvent event, ClaimInfo info) {
         if (isLeftClick(event) && !event.isShiftClick()) {
+            if (info.isMailbox) return;
             if (player.hasPermission("griefprevention.claim.teleport")) {
                 closeAndRunOnMainThread("claimtp " + info.claimId);
             } else {
@@ -313,7 +305,6 @@ public class TrustedClaimsGUI extends BaseGUI {
             }
         } else if (isRightClick(event) && !event.isShiftClick()) {
             if (info.canRenew) {
-                // Renew rental - find the sign and simulate interaction
                 closeAndRun(() -> {
                     plugin.getMessages().send(player, "gui.rental-renew-hint", "{id}", info.claimId);
                 });

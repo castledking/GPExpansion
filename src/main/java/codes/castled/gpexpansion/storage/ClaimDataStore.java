@@ -6,6 +6,7 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.inventory.ItemStack;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
 import me.ryanhamshire.GriefPrevention.Claim;
@@ -58,8 +59,12 @@ public class ClaimDataStore {
         // Basic claim info
         public boolean publicListed = false;
         public boolean globalApprovalPending = false;
+        /** Current icon material; derived from {@link #iconItems}. */
         public Material icon = null;
+        /** Material view of {@link #iconItems}, newest first; derived, kept for older callers. */
         public final List<Material> iconHistory = new ArrayList<>();
+        /** Recent icons, newest first. Each is a single item that may carry custom NBT/components. */
+        public final List<ItemStack> iconItems = new ArrayList<>();
         public String description = null;
         public String customName = null;
         /** Lowercase Adventure {@link net.kyori.adventure.text.format.NamedTextColor} name, or null for the default. */
@@ -387,6 +392,11 @@ public class ClaimDataStore {
             if (!data.iconHistory.isEmpty()) {
                 config.set(path + "icons", data.iconHistory.stream().map(Material::name).collect(Collectors.toList()));
                 config.set(path + "icon", data.icon.name());
+                // Plain materials round-trip through "icons"; only write full items when one
+                // of them carries custom data, so ordinary claims keep their compact entry.
+                if (data.iconItems.stream().anyMatch(ItemStack::hasItemMeta)) {
+                    config.set(path + "iconItems", new ArrayList<>(data.iconItems));
+                }
             }
             if (data.description != null) {
                 config.set(path + "description", data.description);
@@ -892,6 +902,18 @@ public class ClaimDataStore {
         return Optional.ofNullable(data.icon);
     }
 
+    /**
+     * The current icon as a full item, including any custom name, model data or components it
+     * was set with. Returns a copy, so callers may restyle it freely.
+     */
+    public Optional<ItemStack> getIconItem(String claimId) {
+        ClaimData data = claimData.get(claimId);
+        if (data == null || data.iconItems.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(data.iconItems.get(0).clone());
+    }
+
     public List<Material> getIconHistory(String claimId) {
         ClaimData data = claimData.get(claimId);
         if (data == null || data.iconHistory.isEmpty()) {
@@ -900,35 +922,63 @@ public class ClaimDataStore {
         syncCurrentIcon(data);
         return List.copyOf(data.iconHistory);
     }
+
+    /** Recent icons as copies of the stored items, newest first. */
+    public List<ItemStack> getIconItemHistory(String claimId) {
+        ClaimData data = claimData.get(claimId);
+        if (data == null || data.iconItems.isEmpty()) {
+            return List.of();
+        }
+        List<ItemStack> copies = new ArrayList<>(data.iconItems.size());
+        for (ItemStack item : data.iconItems) {
+            copies.add(item.clone());
+        }
+        return copies;
+    }
     
     public void setIcon(String claimId, Material icon) {
         setIcon(claimId, icon, null);
     }
 
     public void setIcon(String claimId, Material icon, @org.jetbrains.annotations.Nullable CommandSender actor) {
+        setIcon(claimId, icon == null || icon == Material.AIR ? null : new ItemStack(icon), actor);
+    }
+
+    public void setIcon(String claimId, ItemStack icon) {
+        setIcon(claimId, icon, null);
+    }
+
+    /**
+     * Set the claim icon from an item. Custom data on the item (model, name, head texture, dye,
+     * glint...) is kept when {@code claim-customization.icons.allow-custom-items} is on, so the
+     * icon renders exactly like the item it was taken from.
+     */
+    public void setIcon(String claimId, ItemStack icon, @org.jetbrains.annotations.Nullable CommandSender actor) {
         Material oldIcon = getIcon(claimId).orElse(null);
         ClaimData data = get(claimId);
-        if (icon == null || icon == Material.AIR) {
-            data.iconHistory.clear();
-            data.icon = null;
+        ItemStack normalized = normalizeIconItem(icon);
+        if (normalized == null) {
+            data.iconItems.clear();
+            syncCurrentIcon(data);
         } else {
-            pushRecentIcon(data, icon);
+            pushRecentIcon(data, normalized);
         }
+        Material newIcon = normalized != null ? normalized.getType() : null;
         Claim claim = resolveClaim(claimId);
         if (claim != null) {
             Bukkit.getPluginManager().callEvent(
-                new codes.castled.gpexpansion.events.ClaimIconChangedEvent(claim, oldIcon, icon, actor));
+                new codes.castled.gpexpansion.events.ClaimIconChangedEvent(claim, oldIcon, newIcon, actor));
         }
     }
 
     public Optional<Material> cycleIcon(String claimId) {
         ClaimData data = claimData.get(claimId);
-        if (data == null || data.iconHistory.isEmpty()) {
+        if (data == null || data.iconItems.isEmpty()) {
             return Optional.empty();
         }
-        if (data.iconHistory.size() > 1) {
-            Material current = data.iconHistory.remove(0);
-            data.iconHistory.add(current);
+        if (data.iconItems.size() > 1) {
+            ItemStack current = data.iconItems.remove(0);
+            data.iconItems.add(current);
         }
         syncCurrentIcon(data);
         return Optional.ofNullable(data.icon);
@@ -936,10 +986,10 @@ public class ClaimDataStore {
 
     public Optional<Material> removeCurrentIcon(String claimId) {
         ClaimData data = claimData.get(claimId);
-        if (data == null || data.iconHistory.isEmpty()) {
+        if (data == null || data.iconItems.isEmpty()) {
             return Optional.empty();
         }
-        data.iconHistory.remove(0);
+        data.iconItems.remove(0);
         syncCurrentIcon(data);
         return Optional.ofNullable(data.icon);
     }
@@ -958,7 +1008,7 @@ public class ClaimDataStore {
             orderedIds.addAll(sourceClaimIds);
         }
 
-        List<Material> merged = new ArrayList<>();
+        List<ItemStack> merged = new ArrayList<>();
         for (String claimId : orderedIds) {
             if (claimId == null) {
                 continue;
@@ -969,12 +1019,11 @@ public class ClaimDataStore {
                 continue;
             }
 
-            syncCurrentIcon(data);
-            for (Material material : data.iconHistory) {
-                if (material == null || material == Material.AIR || merged.contains(material)) {
+            for (ItemStack item : data.iconItems) {
+                if (item == null || item.getType() == Material.AIR || containsSimilar(merged, item)) {
                     continue;
                 }
-                merged.add(material);
+                merged.add(item.clone());
                 if (merged.size() >= MAX_RECENT_ICONS) {
                     break;
                 }
@@ -986,8 +1035,8 @@ public class ClaimDataStore {
         }
 
         ClaimData target = get(targetClaimId);
-        target.iconHistory.clear();
-        target.iconHistory.addAll(merged);
+        target.iconItems.clear();
+        target.iconItems.addAll(merged);
         syncCurrentIcon(target);
 
         for (String claimId : orderedIds) {
@@ -1130,25 +1179,44 @@ public class ClaimDataStore {
     }
 
     private void loadIconHistory(String path, ClaimData data) {
-        List<String> iconNames = config.getStringList(path + "icons");
-        if (!iconNames.isEmpty()) {
-            for (String iconName : iconNames) {
-                Material material = Material.matchMaterial(iconName);
-                if (material != null && material != Material.AIR && !data.iconHistory.contains(material)) {
-                    data.iconHistory.add(material);
-                    if (data.iconHistory.size() >= MAX_RECENT_ICONS) {
-                        break;
+        // Full items (custom NBT/components) win when present; "icons" holds plain materials.
+        List<?> storedItems = config.getList(path + "iconItems");
+        if (storedItems != null) {
+            for (Object entry : storedItems) {
+                if (entry instanceof ItemStack item) {
+                    ItemStack normalized = normalizeIconItem(item);
+                    if (normalized != null && !containsSimilar(data.iconItems, normalized)) {
+                        data.iconItems.add(normalized);
+                        if (data.iconItems.size() >= MAX_RECENT_ICONS) {
+                            break;
+                        }
                     }
                 }
             }
         }
 
-        if (data.iconHistory.isEmpty()) {
+        if (data.iconItems.isEmpty()) {
+            List<String> iconNames = config.getStringList(path + "icons");
+            for (String iconName : iconNames) {
+                Material material = Material.matchMaterial(iconName);
+                if (material != null && material != Material.AIR) {
+                    ItemStack item = new ItemStack(material);
+                    if (!containsSimilar(data.iconItems, item)) {
+                        data.iconItems.add(item);
+                        if (data.iconItems.size() >= MAX_RECENT_ICONS) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (data.iconItems.isEmpty()) {
             String iconName = config.getString(path + "icon");
             if (iconName != null) {
                 Material material = Material.matchMaterial(iconName);
                 if (material != null && material != Material.AIR) {
-                    data.iconHistory.add(material);
+                    data.iconItems.add(new ItemStack(material));
                 }
             }
         }
@@ -1160,16 +1228,52 @@ public class ClaimDataStore {
         if (icon == null || icon == Material.AIR) {
             return;
         }
-        data.iconHistory.remove(icon);
-        data.iconHistory.add(0, icon);
-        while (data.iconHistory.size() > MAX_RECENT_ICONS) {
-            data.iconHistory.remove(data.iconHistory.size() - 1);
+        pushRecentIcon(data, new ItemStack(icon));
+    }
+
+    private void pushRecentIcon(ClaimData data, ItemStack icon) {
+        if (icon == null || icon.getType() == Material.AIR) {
+            return;
+        }
+        data.iconItems.removeIf(existing -> existing.isSimilar(icon));
+        data.iconItems.add(0, icon);
+        while (data.iconItems.size() > MAX_RECENT_ICONS) {
+            data.iconItems.remove(data.iconItems.size() - 1);
         }
         syncCurrentIcon(data);
     }
 
     private void syncCurrentIcon(ClaimData data) {
+        data.iconHistory.clear();
+        for (ItemStack item : data.iconItems) {
+            data.iconHistory.add(item.getType());
+        }
         data.icon = data.iconHistory.isEmpty() ? null : data.iconHistory.get(0);
+    }
+
+    /**
+     * Copy an offered icon down to a single item. Custom data is dropped when custom icon items
+     * are disabled, leaving just the material.
+     */
+    private ItemStack normalizeIconItem(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR) {
+            return null;
+        }
+        if (!item.hasItemMeta() || !plugin.getConfigManager().areCustomClaimIconItemsAllowed()) {
+            return new ItemStack(item.getType());
+        }
+        ItemStack copy = item.clone();
+        copy.setAmount(1);
+        return copy;
+    }
+
+    private static boolean containsSimilar(List<ItemStack> items, ItemStack candidate) {
+        for (ItemStack existing : items) {
+            if (existing.isSimilar(candidate)) {
+                return true;
+            }
+        }
+        return false;
     }
     
     // Ban methods

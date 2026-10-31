@@ -290,7 +290,10 @@ public class AllPlayerClaimsGUI extends BaseGUI {
         lore.add("&a▸ Left-click to view options");
         lore.add("&b▸ Right-click to rename");
         
-        return createItem(material, "&a" + info.name, lore);
+        if (info.isRented || info.isMailbox) {
+            return createItem(material, "&a" + info.name, lore);
+        }
+        return createClaimIconItem(info.claimId, material, "&a" + info.name, lore, false);
     }
     
     @Override

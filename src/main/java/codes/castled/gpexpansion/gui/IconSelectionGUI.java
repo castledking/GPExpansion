@@ -24,25 +24,39 @@ import java.util.function.Consumer;
 
 /**
  * GUI for selecting an icon for a claim using a hopper inventory.
- * Shows a hopper where players can place any item to set it as the claim icon.
+ *
+ * <p>The player offers an item by clicking it onto the center slot, pressing a hotbar key or
+ * the offhand-swap key over it, or shift-clicking it from their inventory. Every click is
+ * cancelled: the offered item is copied (with all of its custom data) and never leaves the
+ * player's inventory.
  */
 public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listener, InventoryHolder {
-    
-    private final Consumer<Material> onIconSelected;
+
+    private final Consumer<ItemStack> onIconSelected;
     private final Runnable onCancel;
+    private final ItemStack currentIcon;
     private Inventory inventory;
     private boolean selectionHandled = false;
-    
+
     // Slot positions from config
     private int instructionsSlot = 0;
     private int centerSlot = 2;
     private int backSlot = 4;
-    
-    public IconSelectionGUI(GPExpansionPlugin plugin, Player player, Consumer<Material> onIconSelected, Runnable onCancel) {
-        super(new GUIManager(plugin), player, "icon-selection");
+
+    public IconSelectionGUI(GPExpansionPlugin plugin, Player player, Consumer<ItemStack> onIconSelected, Runnable onCancel) {
+        this(plugin, player, null, onIconSelected, onCancel);
+    }
+
+    /**
+     * @param currentIcon the claim's current icon, previewed in the center slot (may be null)
+     */
+    public IconSelectionGUI(GPExpansionPlugin plugin, Player player, ItemStack currentIcon,
+                            Consumer<ItemStack> onIconSelected, Runnable onCancel) {
+        super(plugin.getGUIManager(), player, "icon-selection");
         this.onIconSelected = onIconSelected;
         this.onCancel = onCancel;
-        
+        this.currentIcon = currentIcon;
+
         // Load slot positions from config
         if (config != null) {
             instructionsSlot = config.getInt("slots.instructions", 0);
@@ -50,38 +64,46 @@ public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listen
             backSlot = config.getInt("slots.back", 4);
         }
     }
-    
+
     @Override
     public Inventory createInventory() {
         // This method is required but we won't use it since we create the hopper directly in open()
         return Bukkit.createInventory(null, InventoryType.CHEST, Component.text("Icon Selection"));
     }
-    
+
     @Override
     public void handleClick(InventoryClickEvent event) {
         // This method is required but we handle events separately for the hopper
         playClickSound();
     }
-    
+
     public void open() {
         // Create a hopper inventory for icon selection
         String title = getString("title", "&6&lSelect Icon - Place item in center");
         inventory = plugin.getServer().createInventory(this, InventoryType.HOPPER, colorize(title));
-        
+
         // Fill with glass panes, leaving center empty
         ItemStack filler = createFiller();
         for (int i = 0; i < 5; i++) {
             if (i == centerSlot) continue;
             inventory.setItem(i, filler);
         }
-        
+
         // Add instruction item
         inventory.setItem(instructionsSlot, createInstructionsItem());
-        
+
         // Add back button
         inventory.setItem(backSlot, createBackItem());
 
-        // Leave center slot empty for selection
+        // Preview the current icon; clicks on it are cancelled like every other slot.
+        if (currentIcon != null && currentIcon.getType() != Material.AIR) {
+            inventory.setItem(centerSlot, restyleItem(currentIcon,
+                getString("items.current.name", "&a&lCurrent Icon"),
+                getStringList("items.current.lore").isEmpty()
+                    ? List.of("&7Click an item onto this slot", "&7to replace it.")
+                    : getStringList("items.current.lore"),
+                false));
+        }
 
         // Register events and open the hopper
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
@@ -89,19 +111,21 @@ public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listen
             player.openInventory(inventory);
         }
     }
-    
+
     private ItemStack createInstructionsItem() {
         List<String> lore = getStringList("items.instructions.lore");
         if (lore.isEmpty()) {
             lore = Arrays.asList(
-                "&7Place any item from your inventory",
-                "&7into the center slot below",
+                "&7Click any item onto the center slot,",
+                "&7press its hotbar key over the slot,",
+                "&7or shift-click it in your inventory",
                 "&7to set it as the claim icon.",
                 "",
+                "&7Custom items keep their look.",
                 "&7The item will NOT be consumed."
             );
         }
-        
+
         String materialName = getString("items.instructions.material", "PAPER");
         Material material;
         try {
@@ -109,18 +133,18 @@ public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listen
         } catch (IllegalArgumentException e) {
             material = Material.PAPER;
         }
-        
+
         String name = getString("items.instructions.name", "&e&lInstructions");
-        
+
         return createItem(material, name, lore);
     }
-    
+
     private ItemStack createBackItem() {
         List<String> lore = getStringList("items.back.lore");
         if (lore.isEmpty()) {
             lore = Arrays.asList("&7Return to previous menu");
         }
-        
+
         String materialName = getString("items.back.material", "ARROW");
         Material material;
         try {
@@ -128,104 +152,74 @@ public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listen
         } catch (IllegalArgumentException e) {
             material = Material.ARROW;
         }
-        
+
         String name = getString("items.back.name", "&c&lCancel");
-        
+
         return createItem(material, name, lore);
     }
-    
+
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onInventoryClick(InventoryClickEvent event) {
         if (inventory == null) return;
         if (!event.getWhoClicked().equals(player)) return;
-
         if (!isOurSession()) return;
-        Inventory clicked = event.getClickedInventory();
-        ItemStack cursor = event.getCursor();
+
+        // Nothing ever moves in or out of this menu; the offered item is only copied.
+        event.setCancelled(true);
+        event.setResult(org.bukkit.event.Event.Result.DENY);
+
+        if (selectionHandled) return;
         int rawSlot = event.getRawSlot();
         int topSize = inventory.getSize();
-        
-        // Prevent double-click from stealing GUI items
-        if (event.getClick() == ClickType.DOUBLE_CLICK) {
-            event.setCancelled(true);
-            event.setResult(org.bukkit.event.Event.Result.DENY);
-            return;
-        }
-        
-        // Handle back button click
-        if (rawSlot < topSize) {
+
+        if (rawSlot >= 0 && rawSlot < topSize) {
             if (rawSlot == backSlot) {
-                event.setCancelled(true);
-                event.setResult(org.bukkit.event.Event.Result.DENY);
                 selectionHandled = true;
                 player.closeInventory();
                 runLater(onCancel, 1L);
                 return;
             }
-            
-            // Protect all non-center slots in the hopper
-            if (rawSlot != centerSlot) {
-                event.setCancelled(true);
-                event.setResult(org.bukkit.event.Event.Result.DENY);
-                return;
-            }
-        }
-        
-        // Set icon from a click into the center slot (allowed)
-        if (rawSlot < topSize && rawSlot == centerSlot) {
-            ItemStack offered = null;
-            switch (event.getClick()) {
+            if (rawSlot != centerSlot) return;
+
+            ItemStack offered = switch (event.getClick()) {
                 case NUMBER_KEY -> {
                     int hotbar = event.getHotbarButton();
-                    if (hotbar >= 0) {
-                        offered = player.getInventory().getItem(hotbar);
-                    }
+                    yield hotbar >= 0 ? player.getInventory().getItem(hotbar) : null;
                 }
-                case SWAP_OFFHAND -> offered = player.getInventory().getItemInOffHand();
-                default -> {
-                    if (cursor != null && cursor.getType() != Material.AIR) {
-                        offered = cursor;
-                    }
-                }
-            }
-            if (offered != null && offered.getType() != Material.AIR) {
-                selectIcon(offered);
-            }
+                case SWAP_OFFHAND -> player.getInventory().getItemInOffHand();
+                default -> event.getCursor();
+            };
+            selectIcon(offered);
             return;
         }
 
-        // Shift-click from player inventory to set icon (without moving items)
-        if (event.isShiftClick() && clicked != null && clicked != inventory) {
-            // Allow the shift-click to place into the only empty slot (center)
-            runLater(this::checkCenterAndSelect, 1L);
-            return;
+        // Shift-click in the player's own inventory offers that item.
+        if (event.isShiftClick() && event.getClick() != ClickType.DOUBLE_CLICK) {
+            selectIcon(event.getCurrentItem());
         }
     }
-    
+
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onInventoryDrag(InventoryDragEvent event) {
         if (inventory == null) return;
         if (!event.getWhoClicked().equals(player)) return;
-
         if (!isOurSession()) return;
 
-        for (int slot : event.getInventorySlots()) {
-            if (slot != centerSlot) {
-                event.setCancelled(true);
-                event.setResult(org.bukkit.event.Event.Result.DENY);
-                return;
-            }
+        boolean touchesTop = event.getRawSlots().stream().anyMatch(slot -> slot < inventory.getSize());
+        if (!touchesTop) return;
+
+        event.setCancelled(true);
+        event.setResult(org.bukkit.event.Event.Result.DENY);
+        if (!selectionHandled && event.getRawSlots().contains(centerSlot)) {
+            selectIcon(event.getOldCursor());
         }
-        
-        // Only dragging into center is allowed
-        runLater(this::checkCenterAndSelect, 1L);
     }
-    
+
     @EventHandler(priority = EventPriority.MONITOR)
     public void onInventoryClose(InventoryCloseEvent event) {
         if (inventory == null || event.getInventory() != inventory) return;
         if (!event.getPlayer().equals(player)) return;
-        
+
         // Unregister events
         org.bukkit.event.HandlerList.unregisterAll(this);
         if (!selectionHandled) {
@@ -233,38 +227,25 @@ public class IconSelectionGUI extends BaseGUI implements org.bukkit.event.Listen
         }
     }
 
-    private void selectIcon(ItemStack item) {
-        Material material = item != null ? item.getType() : null;
-        if (material == null || material == Material.AIR) return;
-        if (!ClaimCustomizationUtil.isIconAllowed(plugin, item)) {
-            plugin.getMessages().send(player, "claim.icon-denied", "{icon}", material.name());
+    private void selectIcon(ItemStack offered) {
+        if (offered == null || offered.getType() == Material.AIR) return;
+        if (!ClaimCustomizationUtil.isIconAllowed(plugin, offered)) {
+            plugin.getMessages().send(player, "claim.icon-denied", "{icon}", offered.getType().name());
             return;
         }
+        ItemStack copy = offered.clone();
+        copy.setAmount(1);
         selectionHandled = true;
-        if (inventory != null) {
-            inventory.setItem(centerSlot, new ItemStack(material));
-        }
         player.closeInventory();
-        runLater(() -> onIconSelected.accept(material), 1L);
+        runLater(() -> onIconSelected.accept(copy), 1L);
     }
 
     @Override
     public Inventory getInventory() {
         return inventory;
     }
-    
+
     private boolean isOurSession() {
         return inventory != null && inventory.getViewers().contains(player);
     }
-    
-    private void checkCenterAndSelect() {
-        if (selectionHandled || inventory == null) return;
-        ItemStack inCenter = inventory.getItem(centerSlot);
-        if (inCenter != null && inCenter.getType() != Material.AIR) {
-            selectIcon(inCenter);
-        }
-    }
-    
-    // Helper method to check if item is a filler
-    // No filler check needed; selection uses cursor or shift-click.
 }

@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.gui;
+import codes.castled.gpexpansion.util.Mini;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -198,6 +199,7 @@ public final class ClaimMapEditorGUI extends BaseGUI {
         boolean owned = displayClaim != null && gp.isOwner(displayClaim, player.getUniqueId());
 
         Material material;
+        boolean useClaimIcon = false;
         if (partialSelectedTile && paneView) {
             material = Material.ORANGE_STAINED_GLASS_PANE;
         } else if (claimAtCell == null && !selected) {
@@ -210,6 +212,7 @@ public final class ClaimMapEditorGUI extends BaseGUI {
             }
         } else {
             material = resolveClaimMaterial(displayClaim, owned);
+            useClaimIcon = true;
         }
 
         String name;
@@ -258,6 +261,9 @@ public final class ClaimMapEditorGUI extends BaseGUI {
             }
         }
 
+        if (useClaimIcon && displayClaim != null) {
+            return createClaimIconItem(gp.getClaimId(displayClaim).orElse(null), material, name, lore, selected);
+        }
         return createItem(material, name, lore, selected);
     }
 
@@ -344,6 +350,9 @@ public final class ClaimMapEditorGUI extends BaseGUI {
         lore.add("&eRight click: &7toggle pane/icon view");
         lore.add("&eDrop/Q: &7remove current icon");
         lore.add("&eDrop item / hotbar key: &7add icon to recent list");
+        if (selectedClaimId != null) {
+            return createClaimIconItem(selectedClaimId, iconMaterial, "&e&lClaim Icon", lore, false);
+        }
         return createItem(iconMaterial, "&e&lClaim Icon", lore);
     }
 
@@ -453,22 +462,22 @@ public final class ClaimMapEditorGUI extends BaseGUI {
             plugin.getClaimDataStore().removeCurrentIcon(selectedClaimId);
             plugin.getClaimDataStore().save();
             if (removed == null) {
-                player.sendMessage(colorize("&eThis claim has no custom icon to remove."));
+                Mini.send(player, colorize("&eThis claim has no custom icon to remove."));
             } else {
-                player.sendMessage(colorize("&aRemoved claim icon &f" + removed.name() + "&a."));
+                Mini.send(player, colorize("&aRemoved claim icon &f" + removed.name() + "&a."));
             }
             return;
         }
 
-        Material offered = offeredMaterial(event);
-        if (offered != null && offered != Material.AIR) {
-            if (!ClaimCustomizationUtil.isIconMaterialAllowed(plugin, offered)) {
-                plugin.getMessages().send(player, "claim.icon-denied", "{icon}", offered.name());
+        ItemStack offered = offeredItem(event);
+        if (offered != null && offered.getType() != Material.AIR) {
+            if (!ClaimCustomizationUtil.isIconAllowed(plugin, offered)) {
+                plugin.getMessages().send(player, "claim.icon-denied", "{icon}", offered.getType().name());
                 return;
             }
-            plugin.getClaimDataStore().setIcon(selectedClaimId, offered);
+            plugin.getClaimDataStore().setIcon(selectedClaimId, offered, player);
             plugin.getClaimDataStore().save();
-            player.sendMessage(colorize("&aClaim icon set to &f" + offered.name() + "&a."));
+            Mini.send(player, colorize("&aClaim icon set to &f" + offered.getType().name() + "&a."));
             return;
         }
 
@@ -476,9 +485,9 @@ public final class ClaimMapEditorGUI extends BaseGUI {
             List<Material> recentIcons = plugin.getClaimDataStore().getIconHistory(selectedClaimId);
             if (recentIcons.size() <= 1) {
                 if (recentIcons.isEmpty()) {
-                    player.sendMessage(colorize("&eThis claim has no stored icons yet."));
+                    Mini.send(player, colorize("&eThis claim has no stored icons yet."));
                 } else {
-                    player.sendMessage(colorize("&eOnly one claim icon is stored right now."));
+                    Mini.send(player, colorize("&eOnly one claim icon is stored right now."));
                 }
                 return;
             }
@@ -486,14 +495,14 @@ public final class ClaimMapEditorGUI extends BaseGUI {
             Material icon = plugin.getClaimDataStore().cycleIcon(selectedClaimId).orElse(null);
             plugin.getClaimDataStore().save();
             if (icon != null) {
-                player.sendMessage(colorize("&aClaim icon switched to &f" + icon.name() + "&a."));
+                Mini.send(player, colorize("&aClaim icon switched to &f" + icon.name() + "&a."));
             }
             return;
         }
 
         if (isRightClick(event)) {
             paneView = !paneView;
-            player.sendMessage(colorize(paneView
+            Mini.send(player, colorize(paneView
                     ? "&eMap view switched to glass panes."
                     : "&eMap view switched to claim icons."));
         }
@@ -502,13 +511,13 @@ public final class ClaimMapEditorGUI extends BaseGUI {
     private void handleModeClick() {
         if (!gp.isShapedClaimsAllowed()) {
             editMode = ClaimEditMode.BASIC;
-            player.sendMessage(colorize("&7Claim Map Editor is forced to &eBasic &7mode while AllowShapedClaims is disabled."));
+            Mini.send(player, colorize("&7Claim Map Editor is forced to &eBasic &7mode while AllowShapedClaims is disabled."));
             return;
         }
 
         editMode = editMode == ClaimEditMode.BASIC ? ClaimEditMode.SHAPED : ClaimEditMode.BASIC;
         MODE_PREFERENCES.put(player.getUniqueId(), editMode);
-        player.sendMessage(colorize(editMode == ClaimEditMode.BASIC
+        Mini.send(player, colorize(editMode == ClaimEditMode.BASIC
                 ? "&eClaim mode set to Basic."
                 : "&dClaim mode set to Shaped."));
     }
@@ -554,7 +563,7 @@ public final class ClaimMapEditorGUI extends BaseGUI {
                 && canSelectClaim(claimAtCell)
                 && (isShiftLeftClick(event) || isShiftRightClick(event))) {
             setSelectedClaim(claimAtCell);
-            player.sendMessage(colorize("&eSelected claim &f#" + selectedClaimId + "&e."));
+            Mini.send(player, colorize("&eSelected claim &f#" + selectedClaimId + "&e."));
             return;
         } else if (claimAtCell == null && isLeftClick(event)) {
             result = mapBridge.commitClaimCells(player, selection, currentZoomLevel(), selectedClaim, bridgeEditMode());
@@ -564,7 +573,7 @@ public final class ClaimMapEditorGUI extends BaseGUI {
             return;
         }
 
-        player.sendMessage(colorize(result.message));
+        Mini.send(player, colorize(result.message));
         if (!result.success
                 && result.failureReason == ClaimMapEditorBridge.FailureReason.SUBDIVISIONS_REQUIRE_CONFIRM
                 && selectedClaim != null
@@ -743,20 +752,17 @@ public final class ClaimMapEditorGUI extends BaseGUI {
         );
     }
 
-    private Material offeredMaterial(InventoryClickEvent event) {
-        return switch (event.getClick()) {
+    /** The item offered onto the icon slot, copied so its custom data survives as the icon. */
+    private ItemStack offeredItem(InventoryClickEvent event) {
+        ItemStack offered = switch (event.getClick()) {
             case NUMBER_KEY -> {
                 int hotbar = event.getHotbarButton();
-                if (hotbar >= 0) {
-                    yield player.getInventory().getItem(hotbar) != null
-                            ? player.getInventory().getItem(hotbar).getType()
-                            : null;
-                }
-                yield null;
+                yield hotbar >= 0 ? player.getInventory().getItem(hotbar) : null;
             }
-            case SWAP_OFFHAND -> player.getInventory().getItemInOffHand().getType();
-            default -> event.getCursor() != null ? event.getCursor().getType() : null;
+            case SWAP_OFFHAND -> player.getInventory().getItemInOffHand();
+            default -> event.getCursor();
         };
+        return offered == null || offered.getType() == Material.AIR ? null : offered.clone();
     }
 
     private boolean isSameClaim(Object a, Object b) {

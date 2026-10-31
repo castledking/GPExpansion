@@ -32,8 +32,10 @@ public class SchedulerFacade {
     public void teleportEntity(org.bukkit.entity.Entity entity, Location to) {
         if (SchedulerAdapter.isFolia()) {
             try {
-                entity.teleportAsync(to);
-            } catch (Throwable ignored) {}
+                entity.getClass().getMethod("teleportAsync", Location.class).invoke(entity, to);
+            } catch (Throwable ignored) {
+                try { entity.teleport(to); } catch (Throwable ignored2) {}
+            }
         } else {
             try {
                 entity.teleport(to);

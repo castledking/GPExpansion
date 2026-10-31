@@ -1,23 +1,22 @@
-# Owned Claims GUI Configuration
-# Shows all main claims owned by the player
+# Owned Claims ("My Claims") GUI Configuration
+# Unified view covering Owned, Trusted, Rented, Bought, Mailboxes, and Listed claims
 
 title: "&6&lMy Claims"
+title-search: "&6&lMy Claims - \"{query}\""
 size: 54
 
 filler:
   material: GRAY_STAINED_GLASS_PANE
 
-# Claim item display - placeholders: {id}, {name}, {location}, {area}, {children}
 items:
   claim:
-    # Material is set dynamically based on claim type
     name: "&6{name}"
     lore:
       - "&7ID: &f{id}"
       - "&7Location: &f{location}"
       - "&7Area: &f{area} blocks"
       - "&7Children: &6{children}"
-  
+
   filter:
     material: HOPPER
     name: "&6&lFilter: {filter}"
@@ -25,33 +24,21 @@ items:
       - "&7Current: &e{filter}"
       - ""
       - "&eClick to cycle filter"
-  
+
   back:
     material: ARROW
     name: "&c&lBack"
     lore:
       - "&7Return to main menu"
-  
+
   prev-page:
     material: ARROW
     name: "&e&l« Previous Page"
     lore:
       - "&7Page {current}/{total}"
-  
+
   next-page:
     material: ARROW
     name: "&e&lNext Page »"
     lore:
       - "&7Page {current}/{total}"
-
-# Action lore lines (shown based on permissions)
-actions:
-  teleport: "&a▸ Left-click to teleport"
-  rename: "&b▸ Right-click to rename"
-  options: "&e▸ Shift+Left-click for options"
-
-# Claim type indicators
-types:
-  rented: "&e⚡ Currently Rented"
-  sold: "&a💰 For Sale"
-  mailbox: "&d📬 Mailbox Claim"

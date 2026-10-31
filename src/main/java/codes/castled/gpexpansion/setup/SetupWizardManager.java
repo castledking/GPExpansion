@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.setup;
+import codes.castled.gpexpansion.util.Mini;
 
 import org.bukkit.entity.Player;
 
@@ -774,6 +775,6 @@ public class SetupWizardManager {
     }
     
     private void sendMessage(Player player, String message) {
-        player.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(message));
+        Mini.send(player, LegacyComponentSerializer.legacyAmpersand().deserialize(message));
     }
 }

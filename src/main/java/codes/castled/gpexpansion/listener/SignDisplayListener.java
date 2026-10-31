@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.listener;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
@@ -103,10 +104,17 @@ public class SignDisplayListener implements Listener {
                     boolean isRented = renterStr != null && expiry != null && expiry > now;
                     boolean isRenter = isRented && renterStr.equalsIgnoreCase(p.getUniqueId().toString());
                     
+                    if (plugin.getMarketManager() != null
+                            && ("RENT".equals(signType) || "SELL".equals(signType) || "MAILBOX".equals(signType))
+                            && plugin.getMarketManager().store().get(codes.castled.gpexpansion.market.MarketListing.key(sign.getLocation())) == null) {
+                        plugin.getMarketManager().syncSign(sign);
+                    }
+
                     // Check if this is a mailbox and handle display
                     if ("MAILBOX".equals(signType)) {
                         codes.castled.gpexpansion.storage.ClaimDataStore dataStore = plugin.getClaimDataStore();
-                        if (dataStore.isMailbox(claimId)) {
+                        boolean forSale = plugin.getMarketManager() != null && plugin.getMarketManager().isForSaleMailboxPdc(pdc);
+                        if (!forSale && dataStore.isMailbox(claimId)) {
                             UUID owner = dataStore.getMailboxOwner(claimId).orElse(null);
                             if (owner != null) {
                                 String ownerName = Bukkit.getOfflinePlayer(owner).getName();
@@ -114,14 +122,14 @@ public class SignDisplayListener implements Listener {
                                 
                                 // Update sign display for owned mailbox
                                 org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
-                                net.kyori.adventure.text.Component line0 = front.line(0);
+                                net.kyori.adventure.text.Component line0 = Mini.signLine(front, 0);
                                 String line0Str = PlainTextComponentSerializer.plainText().serialize(line0 != null ? line0 : net.kyori.adventure.text.Component.empty());
                                 String expectedLine0 = PlainTextComponentSerializer.plainText().serialize(getMailboxHeader(b));
                                 if (!line0Str.equals(expectedLine0)) {
-                                    front.line(0, getMailboxHeader(b));
-                                    front.line(1, LegacyComponentSerializer.legacySection().deserialize("§a" + ownerName));
-                                    front.line(2, LegacyComponentSerializer.legacySection().deserialize("§0(Click to open)"));
-                                    front.line(3, net.kyori.adventure.text.Component.empty());
+                                    Mini.signLine(front, 0, getMailboxHeader(b));
+                                    Mini.signLine(front, 1, LegacyComponentSerializer.legacySection().deserialize("§a" + ownerName));
+                                    Mini.signLine(front, 2, LegacyComponentSerializer.legacySection().deserialize("§0(Click to open)"));
+                                    Mini.signLine(front, 3, net.kyori.adventure.text.Component.empty());
                                     sign.update();
                                 }
                             }
@@ -132,7 +140,7 @@ public class SignDisplayListener implements Listener {
 
                     // Toggle display for renter near sign
                     org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
-                    net.kyori.adventure.text.Component line0Comp = front.line(0);
+                    net.kyori.adventure.text.Component line0Comp = Mini.signLine(front, 0);
                     String line0Plain = PlainTextComponentSerializer.plainText().serialize(line0Comp != null ? line0Comp : net.kyori.adventure.text.Component.empty());
                     
                     // Check eviction state for this claim
@@ -162,10 +170,10 @@ public class SignDisplayListener implements Listener {
                     // When eviction is pending: always show [Evicted] for everyone (not per-player)
                     if (evictionPending) {
                         if (!line0Plain.equalsIgnoreCase("[Evicted]")) {
-                            front.line(0, LegacyComponentSerializer.legacySection().deserialize("§4§l[Evicted]"));
+                            Mini.signLine(front, 0, LegacyComponentSerializer.legacySection().deserialize("§4§l[Evicted]"));
                         }
-                        front.line(2, LegacyComponentSerializer.legacySection().deserialize("§4Remaining Time"));
-                        front.line(3, LegacyComponentSerializer.legacySection().deserialize("§c" + formatDuration(evictionRemaining)));
+                        Mini.signLine(front, 2, LegacyComponentSerializer.legacySection().deserialize("§4Remaining Time"));
+                        Mini.signLine(front, 3, LegacyComponentSerializer.legacySection().deserialize("§c" + formatDuration(evictionRemaining)));
                         sign.update();
                         continue;
                     }
@@ -173,15 +181,15 @@ public class SignDisplayListener implements Listener {
                     // No eviction pending: show [Renew] for renter, [Rented] for others when rented
                     if (isRenter) {
                         if (!line0Plain.equalsIgnoreCase("[Renew]")) {
-                            front.line(0, LegacyComponentSerializer.legacySection().deserialize("§a§l[Renew]"));
+                            Mini.signLine(front, 0, LegacyComponentSerializer.legacySection().deserialize("§a§l[Renew]"));
                             sign.update();
                         }
                     } else {
                         if (line0Plain.equalsIgnoreCase("[Renew]") || line0Plain.equalsIgnoreCase("[Evicted]")) {
                             if (isRented) {
-                                front.line(0, LegacyComponentSerializer.legacySection().deserialize("§c§l[Rented]"));
+                                Mini.signLine(front, 0, LegacyComponentSerializer.legacySection().deserialize("§c§l[Rented]"));
                                 String renterName = resolveRenterName(renterStr);
-                                front.line(1, LegacyComponentSerializer.legacySection().deserialize("§0" + renterName));
+                                Mini.signLine(front, 1, LegacyComponentSerializer.legacySection().deserialize("§0" + renterName));
                                 String ecoAmt = pdc.get(keyEcoAmt, PersistentDataType.STRING);
                                 String ecoKindStr = pdc.get(keyEcoKind, PersistentDataType.STRING);
                                 String perClick = pdc.get(keyPerClick, PersistentDataType.STRING);
@@ -190,8 +198,8 @@ public class SignDisplayListener implements Listener {
                                 if (perClick == null) perClick = "";
                                 if (maxCap == null) maxCap = "";
                                 String ecoFormatted = formatEcoForSign(ecoKindStr, ecoAmt);
-                                front.line(2, LegacyComponentSerializer.legacySection().deserialize("§0" + ecoFormatted + "§0/" + perClick));
-                                front.line(3, LegacyComponentSerializer.legacySection().deserialize("§0Max: " + maxCap));
+                                Mini.signLine(front, 2, LegacyComponentSerializer.legacySection().deserialize("§0" + ecoFormatted + "§0/" + perClick));
+                                Mini.signLine(front, 3, LegacyComponentSerializer.legacySection().deserialize("§0Max: " + maxCap));
                             } else {
                                 boolean hanging = isHangingSign(type);
                                 String kind = pdc.get(keyKind, PersistentDataType.STRING);
@@ -200,7 +208,7 @@ public class SignDisplayListener implements Listener {
                                     : (hanging ? "sign-interaction.sign-display-buy-hanging" : "sign-interaction.sign-display-buy-full");
                                 String display = LegacyComponentSerializer.legacySection().serialize(
                                     LegacyComponentSerializer.legacyAmpersand().deserialize(plugin.getMessages().getRaw(displayKey)));
-                                front.line(0, LegacyComponentSerializer.legacySection().deserialize(display));
+                                Mini.signLine(front, 0, LegacyComponentSerializer.legacySection().deserialize(display));
                             }
                             sign.update();
                         }
@@ -254,7 +262,7 @@ public class SignDisplayListener implements Listener {
         String scrollSrc = PlainTextComponentSerializer.plainText().serialize(LegacyComponentSerializer.legacySection().deserialize(base));
         if (scrollSrc.length() <= room) {
             org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
-            front.line(2, LegacyComponentSerializer.legacySection().deserialize("§0" + scrollSrc + "§0/" + perClick));
+            Mini.signLine(front, 2, LegacyComponentSerializer.legacySection().deserialize("§0" + scrollSrc + "§0/" + perClick));
             sign.update();
             return;
         }
@@ -289,7 +297,7 @@ public class SignDisplayListener implements Listener {
         
         pdc.set(keyScrollIdx, PersistentDataType.INTEGER, idx + 1);
         org.bukkit.block.sign.SignSide front = sign.getSide(org.bukkit.block.sign.Side.FRONT);
-        front.line(2, LegacyComponentSerializer.legacySection().deserialize("§0" + view + "§0/" + perClick));
+        Mini.signLine(front, 2, LegacyComponentSerializer.legacySection().deserialize("§0" + view + "§0/" + perClick));
         sign.update();
     }
 

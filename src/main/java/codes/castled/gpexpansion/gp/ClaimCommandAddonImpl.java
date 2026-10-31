@@ -153,13 +153,23 @@ public class ClaimCommandAddonImpl {
                 if (args != null && args.length == 2) out.add("[claimId]");
                 break;
             case "evict":
-                // First argument after "evict": cancel | status | [claimId] | [player] (args = after subcommand only)
                 if (args != null && args.length <= 1) {
                     String prefix = (args.length == 1) ? args[0].toLowerCase(Locale.ROOT) : "";
-                    for (String s : Arrays.asList("cancel", "status", "[claimId]", "[player]")) {
+                    for (String s : Arrays.asList("cancel", "status", "mailbox", "[claimId]", "[player]")) {
                         if (s.toLowerCase(Locale.ROOT).startsWith(prefix)) out.add(s);
                     }
+                } else if (args != null && args.length == 2 && "mailbox".equalsIgnoreCase(args[0])) {
+                    out.add("<mailboxId>");
                 }
+                break;
+            case "removelisting":
+                if (args != null && args.length <= 1) {
+                    out.add("<claimId>");
+                }
+                break;
+            case "market":
+            case "shop":
+            case "listed":
                 break;
             case "cancelrent":
                 if (sender.hasPermission("griefprevention.claim.cancelrent")
@@ -316,6 +326,14 @@ public class ClaimCommandAddonImpl {
         }
         if (sender.hasPermission("griefprevention.claim.gui.globallist")) {
             out.add("globallist");
+        }
+        if (sender.hasPermission(codes.castled.gpexpansion.market.MarketManager.PERM_MARKET)) {
+            out.add("market");
+            out.add("shop");
+        }
+        if (sender.hasPermission(codes.castled.gpexpansion.market.MarketManager.PERM_LISTED)) {
+            out.add("listed");
+            out.add("removelisting");
         }
         if (sender.hasPermission("griefprevention.claim.teleport")) {
             out.add("tp");

@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.gui;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -16,6 +17,8 @@ import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.inventory.Inventory;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
+import codes.castled.gpexpansion.market.MarketListing;
+import codes.castled.gpexpansion.market.MarketManager;
 
 import java.io.File;
 import java.io.IOException;
@@ -72,7 +75,12 @@ public class GUIManager implements Listener {
             "global-claim-list.yml",
             "global-claim-settings.yml",
             "icon-selection.yml",
-            "buyclaimblocks-confirm.yml"
+            "buyclaimblocks-confirm.yml",
+            "claim-transfer.yml",
+            "flags.yml",
+            "claim-market.yml",
+            "market-listing-edit.yml",
+            "listed-claims.yml"
         };
         
         for (String fileName : guiFiles) {
@@ -219,14 +227,49 @@ public class GUIManager implements Listener {
         openGUI(player, new MainMenuGUI(this, player));
     }
     
-    // Open owned claims menu
+    // Open owned claims menu ("My Claims")
     public void openOwnedClaims(Player player) {
         OwnedClaimsGUI.openAsync(this, player, null);
     }
     
-    // Open trusted claims menu
+    // Open trusted claims view inside unified My Claims GUI
     public void openTrustedClaims(Player player) {
-        openGUI(player, new TrustedClaimsGUI(this, player));
+        OwnedClaimsGUI.openAsyncWithState(this, player, null, OwnedClaimsGUI.FilterType.TRUSTED.name(), 0);
+    }
+
+    // Open Claim Market GUI
+    public void openClaimMarket(Player player) {
+        openClaimMarket(player, null);
+    }
+
+    public void openClaimMarket(Player player, String initialQuery) {
+        if (!plugin.getConfigManager().isMarketEnabled()) {
+            plugin.getMessages().send(player, "market.disabled");
+            return;
+        }
+        if (!player.hasPermission(MarketManager.PERM_MARKET)) {
+            plugin.getMessages().send(player, "general.no-permission");
+            return;
+        }
+        ClaimMarketGUI.openAsync(this, player, initialQuery);
+    }
+
+    // Open Listed Claims GUI
+    public void openListedClaims(Player player) {
+        openListedClaims(player, null);
+    }
+
+    public void openListedClaims(Player player, String parentClaimFilter) {
+        if (!player.hasPermission(MarketManager.PERM_LISTED)) {
+            plugin.getMessages().send(player, "general.no-permission");
+            return;
+        }
+        ListedClaimsGUI.openAsync(this, player, parentClaimFilter, () -> openMainMenu(player));
+    }
+
+    // Open Market Listing Editor GUI
+    public void openMarketListingEdit(Player player, MarketListing listing, Runnable backAction) {
+        openGUI(player, new MarketListingEditGUI(this, player, listing, backAction));
     }
     
     // Open claim options menu (hopper style)
@@ -312,8 +355,18 @@ public class GUIManager implements Listener {
         AllPlayerClaimsGUI.openAsync(this, player, null);
     }
     
-    // Open claim flags menu (GPFlags integration)
+    // Open claim flags menu: the built-in flags, or GPFlags' list when built-in flags are off
     public void openClaimFlags(Player player, Object claim, String claimId) {
+        codes.castled.gpexpansion.flags.ClaimFlagManager flags = plugin.getClaimFlagManager();
+        if (flags != null && flags.isEnabled()) {
+            openGUI(player, new FlagsGUI(this, player, claim, claimId));
+        } else {
+            openGPFlags(player, claim, claimId);
+        }
+    }
+
+    // Open GPFlags' own flag list for a claim
+    public void openGPFlags(Player player, Object claim, String claimId) {
         openGUI(player, new ClaimFlagsGUI(this, player, claim, claimId));
     }
     
@@ -335,7 +388,7 @@ public class GUIManager implements Listener {
         if (held == Material.GOLDEN_SHOVEL) {
             return true;
         }
-        player.sendMessage(Component.text("Try doing " + retryCommand + " again while holding golden shovel to access the " + guiName + ".", NamedTextColor.RED));
+        Mini.send(player, Component.text("Try doing " + retryCommand + " again while holding golden shovel to access the " + guiName + ".", NamedTextColor.RED));
         return false;
     }
 }

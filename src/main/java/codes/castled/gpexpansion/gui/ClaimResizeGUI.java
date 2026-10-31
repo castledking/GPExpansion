@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.gui;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Location;
@@ -187,7 +188,7 @@ public class ClaimResizeGUI extends BaseGUI {
 
     private void attemptResize(GPBridge.ResizeDirection direction, int offset) {
         if (openingLocation == null) {
-            player.sendMessage(colorize("&cCannot resize: player location is unavailable."));
+            Mini.send(player, colorize("&cCannot resize: player location is unavailable."));
             return;
         }
         if (!canManageClaim()) {
@@ -196,33 +197,33 @@ public class ClaimResizeGUI extends BaseGUI {
         }
         boolean segmentAware = gp.usesSegmentAwareResize(claim, direction);
         if (!segmentAware && !gp.canResizeClaim(claim)) {
-            player.sendMessage(colorize("&cResize is not available on this GriefPrevention build."));
+            Mini.send(player, colorize("&cResize is not available on this GriefPrevention build."));
             return;
         }
         if ((direction == GPBridge.ResizeDirection.UP || direction == GPBridge.ResizeDirection.DOWN) && !canUseVerticalResize()) {
-            player.sendMessage(colorize("&cVertical resize is only available for 3D claims."));
+            Mini.send(player, colorize("&cVertical resize is only available for 3D claims."));
             return;
         }
 
         if (segmentAware) {
             GPBridge.ResizePreview preview = gp.previewResizeClaim(player, claim, direction, offset, openingLocation);
             if (!preview.supported) {
-                player.sendMessage(colorize("&cResize preview is not available on this GriefPrevention build."));
+                Mini.send(player, colorize("&cResize preview is not available on this GriefPrevention build."));
                 return;
             }
             if (!preview.valid) {
-                player.sendMessage(colorize(getResizeFailureMessage(direction, offset, preview)));
+                Mini.send(player, colorize(getResizeFailureMessage(direction, offset, preview)));
                 return;
             }
 
             GPBridge.ResizeResult result = gp.resizeClaim(player, claim, direction, offset, openingLocation);
             if (!result.success) {
-                player.sendMessage(colorize(getResizeApplyFailureMessage(result)));
+                Mini.send(player, colorize(getResizeApplyFailureMessage(result)));
                 return;
             }
 
             String amount = (preview.clampedOffset > 0 ? "+" : "") + preview.clampedOffset;
-            player.sendMessage(colorize("&aResized &e" + friendlyDirection(direction) + " &aby &f" + amount + "&a. New size: &f" + formatDimensions(result.preview.newCorners)));
+            Mini.send(player, colorize("&aResized &e" + friendlyDirection(direction) + " &aby &f" + amount + "&a. New size: &f" + formatDimensions(result.preview.newCorners)));
             gp.refreshClaimVisualization(player, result.claim != null ? result.claim : claim);
             manager.openClaimResize(player, result.claim, claimId);
             return;
@@ -230,22 +231,22 @@ public class ClaimResizeGUI extends BaseGUI {
 
         GPBridge.ResizePreview preview = gp.previewResizeClaim(player, claim, direction, offset, openingLocation);
         if (!preview.supported) {
-            player.sendMessage(colorize("&cResize preview is not available on this GriefPrevention build."));
+            Mini.send(player, colorize("&cResize preview is not available on this GriefPrevention build."));
             return;
         }
         if (!preview.valid) {
-            player.sendMessage(colorize(getResizeFailureMessage(direction, offset, preview)));
+            Mini.send(player, colorize(getResizeFailureMessage(direction, offset, preview)));
             return;
         }
 
         GPBridge.ResizeResult result = gp.resizeClaim(player, claim, direction, offset, openingLocation);
         if (!result.success) {
-            player.sendMessage(colorize(getResizeApplyFailureMessage(result)));
+            Mini.send(player, colorize(getResizeApplyFailureMessage(result)));
             return;
         }
 
         String amount = (preview.clampedOffset > 0 ? "+" : "") + preview.clampedOffset;
-        player.sendMessage(colorize("&aResized &e" + friendlyDirection(direction) + " &aby &f" + amount + "&a. New size: &f" + formatDimensions(result.preview.newCorners)));
+        Mini.send(player, colorize("&aResized &e" + friendlyDirection(direction) + " &aby &f" + amount + "&a. New size: &f" + formatDimensions(result.preview.newCorners)));
         gp.refreshClaimVisualization(player, result.claim != null ? result.claim : claim);
         manager.openClaimResize(player, result.claim, claimId);
     }

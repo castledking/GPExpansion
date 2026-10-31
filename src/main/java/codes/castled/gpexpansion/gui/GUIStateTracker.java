@@ -40,6 +40,8 @@ public class GUIStateTracker {
         MAIN_MENU,
         OWNED_CLAIMS,
         TRUSTED_CLAIMS,
+        CLAIM_MARKET,
+        LISTED_CLAIMS,
         ALL_PLAYER_CLAIMS,
         ADMIN_CLAIMS,
         GLOBAL_CLAIM_LIST,
@@ -117,6 +119,15 @@ public class GUIStateTracker {
                 
             case TRUSTED_CLAIMS:
                 manager.openTrustedClaims(player);
+                break;
+
+            case CLAIM_MARKET:
+                ClaimMarketGUI.openAsyncWithState(manager, player, state.searchQuery, state.filterType, state.page);
+                break;
+
+            case LISTED_CLAIMS:
+                ListedClaimsGUI.openAsyncWithState(manager, player, state.claimId, state.filterType, state.page,
+                    () -> manager.openMainMenu(player));
                 break;
                 
             case ALL_PLAYER_CLAIMS:

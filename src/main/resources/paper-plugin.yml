@@ -107,10 +107,14 @@ commands:
     usage: /<command>
     aliases: [globalclaimslist]
     permission: griefprevention.claim.gui.globallist
+  claimmarket:
+    description: Open the Claim Market GUI
+    usage: /<command> [search]
+    aliases: [claimshop]
+    permission: griefprevention.claim.market
   approveclaim:
     description: Approve a pending global claim listing
     usage: /<command> <claimId>
-    aliases: [aclaim]
     permission: griefprevention.approveclaim
   cancelrent:
     description: Cancel your active rental
@@ -147,6 +151,14 @@ permissions:
     default: true
 
   # griefprevention.claims is registered by GriefPrevention itself; do not redeclare here.
+
+  griefprevention.claimslist.teleport:
+    description: Allows teleporting to claims directly from the list
+    default: op
+  
+  griefprevention.claimslistother.teleport:
+    description: Allows teleporting to other claims directly from the list
+    default: op
 
   griefprevention.claim.name:
     description: Allows using /claim name
@@ -364,6 +376,10 @@ permissions:
     description: Allows creating buy signs (alias for sell)
     default: op
 
+  griefprevention.sign.create.buy.anywhere:
+    description: Allows placing buy signs outside their target claim
+    default: op
+
   griefprevention.sign.use.buy:
     description: Allows using buy signs (alias for sell)
     default: op
@@ -419,6 +435,10 @@ permissions:
   # === MAILBOX SIGN PERMISSIONS ===
   griefprevention.sign.create.mailbox:
     description: Allows creating mailbox signs
+    default: op
+
+  griefprevention.sign.create.mailbox.anywhere:
+    description: Allows placing mailbox signs outside the managed claim
     default: op
 
   griefprevention.sign.use.mailbox:
@@ -548,7 +568,7 @@ permissions:
     default: op
 
   gpx.admin:
-    description: Allows viewing migration notices
+    description: Base permission for GPExpansion admin commands (children permissions are dynamically managed)
     default: op
 
   griefprevention.claimfly.use:
@@ -795,4 +815,45 @@ permissions:
 
   griefprevention.claim.format.reset:
     description: Allows using &r (reset) in claim names/descriptions
+    default: op
+
+  # === BUILT-IN CLAIM FLAGS & CLAIM MARKET PERMISSIONS ===
+  griefprevention.claim.flags.bypass:
+    description: Bypasses built-in GPExpansion claim flag restrictions and allows editing any flag
+    default: op
+
+  griefprevention.claim.listed:
+    description: Allows viewing and managing your active claim & mailbox listings (/claim listed)
+    default: true
+
+  griefprevention.claim.market:
+    description: Allows opening the Claim Market GUI (/claim market, /claimmarket, /claimshop)
+    default: true
+
+  griefprevention.claim.market.buy:
+    description: Allows renting or purchasing claims and mailboxes directly from the Claim Market GUI
+    default: true
+
+  griefprevention.claim.market.teleport:
+    description: Allows teleporting to market listings that permit market teleportation
+    default: true
+
+  griefprevention.claim.market.edit:
+    description: Allows editing price, visibility, teleport, and notes on your own market listings
+    default: true
+
+  griefprevention.claim.market.mail.deposit:
+    description: Allows remotely depositing gift items into mailboxes from the Claim Market GUI
+    default: true
+
+  griefprevention.claim.market.mail.letter:
+    description: Allows sending written letters into mailboxes from the Claim Market GUI
+    default: true
+
+  griefprevention.claim.market.mail.open-own:
+    description: Allows remotely opening your own mailboxes from My Claims or the Claim Market GUI
+    default: true
+
+  griefprevention.claim.market.admin:
+    description: Allows managing, editing, or removing any player's market listings and mail settings
     default: op

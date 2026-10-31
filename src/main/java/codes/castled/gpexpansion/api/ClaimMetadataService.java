@@ -79,6 +79,17 @@ public interface ClaimMetadataService {
     @NotNull Optional<Material> getIcon(@NotNull String claimId);
 
     /**
+     * Get the claim icon as a full item, including any custom NBT or data components
+     * (custom model data, item model, player head texture, name, dye colour...).
+     *
+     * @param claimId the claim ID string
+     * @return a copy of the icon item, or empty if none set
+     */
+    default @NotNull Optional<org.bukkit.inventory.ItemStack> getIconItem(@NotNull String claimId) {
+        return getIcon(claimId).map(org.bukkit.inventory.ItemStack::new);
+    }
+
+    /**
      * Get the claim's locator-bar waypoint colour.
      *
      * @param claim the GP3D claim

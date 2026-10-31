@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.listener;
+import codes.castled.gpexpansion.util.Mini;
 
 import codes.castled.gpexpansion.GPExpansionPlugin;
 import codes.castled.gpexpansion.permission.PermissionManager;
@@ -46,7 +47,7 @@ public final class AccrualListener implements Listener {
         applyMaxBlocks(player, profile);
 
         if (event.getBlocksToAccrue() > 0 && plugin.getConfigManager().shouldNotifyOnAccrue()) {
-            player.sendMessage(plugin.getMessages().get("commands.accruals-received",
+            Mini.send(player, plugin.getMessages().get("commands.accruals-received",
                 "{amount}", String.valueOf(event.getBlocksToAccrue()),
                 "{profile}", profile.getName()));
         }
@@ -97,7 +98,7 @@ public final class AccrualListener implements Listener {
 
         if (existingClaims >= maxClaims) {
             event.setCancelled(true);
-            player.sendMessage(plugin.getMessages().get("commands.accruals-claim-limit",
+            Mini.send(player, plugin.getMessages().get("commands.accruals-claim-limit",
                 "{max}", String.valueOf(maxClaims),
                 "{profile}", profile.getName()));
             return;
@@ -182,7 +183,7 @@ public final class AccrualListener implements Listener {
             playerData.setAccruedClaimBlocks(profile.getMaxBlocks());
             GriefPrevention.instance.dataStore.asyncSavePlayerData(player.getUniqueId(), playerData);
             if (plugin.getConfigManager().shouldNotifyAccrualCap()) {
-                player.sendMessage(plugin.getMessages().get("commands.accruals-cap-reached",
+                Mini.send(player, plugin.getMessages().get("commands.accruals-cap-reached",
                     "{max}", String.valueOf(profile.getMaxBlocks()),
                     "{profile}", profile.getName()));
             }

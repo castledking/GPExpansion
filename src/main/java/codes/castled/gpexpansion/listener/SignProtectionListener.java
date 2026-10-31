@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.listener;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
@@ -267,11 +268,47 @@ public class SignProtectionListener implements Listener {
         Optional<Object> claimOpt = gp.findClaimById(claimId);
         boolean adminBypass = canAdminister(p);
         boolean owner = false;
-        boolean isSelfMailbox = "MAILBOX".equals(signKind) && !claimId.isEmpty() && dataStore.isMailbox(claimId);
-        if (isSelfMailbox) {
-            // Self-mailbox: only the true mailbox creator/owner can sneak+break; claim owner (e.g. landlord) cannot
+        boolean forSaleMailbox = "MAILBOX".equals(signKind)
+            && plugin.getMarketManager() != null
+            && plugin.getMarketManager().isForSaleMailboxPdc(sign.getPersistentDataContainer());
+        boolean isOwnedMailbox = "MAILBOX".equals(signKind) && !forSaleMailbox && !claimId.isEmpty() && dataStore.isMailbox(claimId);
+        boolean isSelfMailbox = false;
+        if (forSaleMailbox) {
+            String parentClaimId = plugin.getMarketManager().resolveParentClaimId(claimId, signBlock.getLocation());
+            UUID parentOwner = parentClaimId != null ? gp.findClaimById(parentClaimId).map(gp::getClaimOwner).orElse(null) : null;
+            owner = parentOwner != null && parentOwner.equals(p.getUniqueId());
+            isSelfMailbox = true; // no renter eviction needed for unpurchased for-sale mailbox
+        } else if (isOwnedMailbox) {
             UUID mailboxOwner = dataStore.getMailboxOwner(claimId).orElse(null);
-            owner = p.getUniqueId().equals(mailboxOwner);
+            String parentClaimId = plugin.getMarketManager() != null
+                ? plugin.getMarketManager().resolveParentClaimId(claimId, signBlock.getLocation())
+                : claimId;
+            UUID parentOwner = parentClaimId != null ? gp.findClaimById(parentClaimId).map(gp::getClaimOwner).orElse(null) : null;
+            boolean soldMailbox = parentOwner != null && mailboxOwner != null && !parentOwner.equals(mailboxOwner);
+            if (p.getUniqueId().equals(mailboxOwner)) {
+                owner = true;
+                isSelfMailbox = true; // buyer/self-owner can sneak+break their own mailbox sign
+            } else if (soldMailbox && parentOwner.equals(p.getUniqueId())) {
+                // Parent claim owner trying to break a SOLD mailbox sign: require mailbox eviction!
+                boolean evictionBypass = p.hasPermission("griefprevention.eviction.bypass");
+                if (!evictionBypass && !adminBypass) {
+                    ClaimDataStore.EvictionData eviction = dataStore.getEviction(claimId).orElse(null);
+                    if (eviction == null) {
+                        plugin.getMessages().send(p, "market.mailbox-evict-required",
+                            "{command}", "/claim evict mailbox " + claimId);
+                        return false;
+                    }
+                    if (System.currentTimeMillis() < eviction.effectiveAt
+                            && plugin.getConfigManager().isRentEvictionSignBreakBlockedUntilEffective()) {
+                        String timeRemaining = formatDuration(eviction.effectiveAt - System.currentTimeMillis());
+                        plugin.getMessages().send(p, "eviction.notice-pending");
+                        plugin.getMessages().send(p, "eviction.time-remaining", "{time}", timeRemaining);
+                        return false;
+                    }
+                }
+                owner = true;
+                isSelfMailbox = true;
+            }
         } else {
             if (claimOpt.isPresent()) {
                 try {
@@ -286,7 +323,7 @@ public class SignProtectionListener implements Listener {
             return false;
         }
         
-        // Self-mailbox: no eviction flow; go straight to sneak+break confirmation
+        // Owned/for-sale mailbox (once authorized above): go straight to sneak+break confirmation
         String renterStr = sign.getPersistentDataContainer().get(keyRenter, PersistentDataType.STRING);
         
         // Check if this rental sign has an active renter - require eviction process (unless player has bypass permission)
@@ -357,13 +394,13 @@ public class SignProtectionListener implements Listener {
                     Component message = LegacyComponentSerializer.legacyAmpersand().deserialize(warningMessage)
                             .clickEvent(ClickEvent.suggestCommand("/claim evict " + renterName))
                             .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, hoverText));
-                    p.sendMessage(message);
+                    Mini.send(p, message);
                 } catch (IllegalArgumentException ignored) {
                     // Fallback to regular message if UUID parsing fails
                     Component base = LegacyComponentSerializer.legacySection().deserialize("§e" + plugin.getMessages().getRaw("eviction.confirm-deletion-click"))
                             .clickEvent(ClickEvent.runCommand("/gpexpansion:rentalsignconfirm "+signBlock.getWorld().getName()+" "+signBlock.getX()+" "+signBlock.getY()+" "+signBlock.getZ()))
                             .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, Component.text(plugin.getMessages().getRaw("eviction.confirm-deletion"))));
-                    p.sendMessage(base);
+                    Mini.send(p, base);
                     plugin.getMessages().send(p, "eviction.confirm-deletion-alt");
                 }
             } else {
@@ -371,7 +408,7 @@ public class SignProtectionListener implements Listener {
                 Component base = LegacyComponentSerializer.legacySection().deserialize("§e" + plugin.getMessages().getRaw("eviction.confirm-deletion-click"))
                         .clickEvent(ClickEvent.runCommand("/gpexpansion:rentalsignconfirm "+signBlock.getWorld().getName()+" "+signBlock.getX()+" "+signBlock.getY()+" "+signBlock.getZ()))
                         .hoverEvent(HoverEvent.hoverEvent(HoverEvent.Action.SHOW_TEXT, Component.text(plugin.getMessages().getRaw("eviction.confirm-deletion"))));
-                p.sendMessage(base);
+                Mini.send(p, base);
                 plugin.getMessages().send(p, "sign-protection.confirm-alternative");
             }
 
@@ -400,18 +437,23 @@ public class SignProtectionListener implements Listener {
 
             ClaimDataStore dataStore = plugin.getClaimDataStore();
 
-            // Self-mailbox sign: delete subdivision (real protocol only) and clear mailbox data
-            if ("MAILBOX".equals(signKind) && claimId != null && dataStore.isMailbox(claimId)) {
+            // Mailbox sign (self, for-sale, or evicted sold mailbox): delete subdivision (real protocol only) and clear data
+            if ("MAILBOX".equals(signKind) && claimId != null) {
+                if (plugin.getMarketManager() != null) {
+                    plugin.getMarketManager().removeListingAt(signBlock.getLocation());
+                    plugin.getMarketManager().store().forgetMailbox(claimId);
+                }
                 if (!claimId.startsWith("v:")) {
                     Optional<Object> claimOpt = gp.findClaimById(claimId);
-                    if (claimOpt.isPresent()) {
+                    if (claimOpt.isPresent() && gp.isSubdivision(claimOpt.get())) {
                         gp.deleteClaim(claimOpt.get());
                     }
                 }
                 dataStore.clearMailbox(claimId);
+                dataStore.clearEviction(claimId);
                 dataStore.save();
                 if (player != null) {
-                    boolean virtualMailbox = claimId != null && claimId.startsWith("v:");
+                    boolean virtualMailbox = claimId.startsWith("v:");
                     plugin.getMessages().send(player, virtualMailbox ? "mailbox.self-deleted-virtual" : "mailbox.self-deleted");
                 }
                 return true; // allow break - sign is removed
@@ -422,6 +464,9 @@ public class SignProtectionListener implements Listener {
                 String renterStr = sign.getPersistentDataContainer().get(keyRenter, PersistentDataType.STRING);
                 if (renterStr == null || renterStr.isEmpty()) {
                     // Available for rent - allow owner to destroy the sign
+                    if (plugin.getMarketManager() != null) {
+                        plugin.getMarketManager().removeListingAt(signBlock.getLocation());
+                    }
                     if (claimId != null && !claimId.isEmpty()) {
                         dataStore.clearRental(claimId);
                         dataStore.clearEviction(claimId);

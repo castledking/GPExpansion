@@ -6,6 +6,8 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
+import codes.castled.gpexpansion.market.MarketManager;
+
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -25,12 +27,12 @@ public class MainMenuGUI extends BaseGUI {
     
     // Slot positions for non-admin (3 items centered)
     private int ownedClaimsSlot = 11;
-    private int trustedClaimsSlot = 13;
+    private int claimMarketSlot = 13;
     private int globalListSlot = 15;
     
     // Slot positions for admin (4 items centered)
     private int adminOwnedClaimsSlot = 10;
-    private int adminTrustedClaimsSlot = 12;
+    private int adminClaimMarketSlot = 12;
     private int adminGlobalListSlot = 14;
     private int adminMenuSlot = 16;
 
@@ -42,15 +44,18 @@ public class MainMenuGUI extends BaseGUI {
         super(manager, player, "main-menu");
         this.isAdmin = player.hasPermission(ADMIN_PERMISSION);
         
-        // Load slot positions from config
+        // Load slot positions from config (with backward-compatible fallback to trusted-claims slot keys)
         if (config != null) {
-            // Non-admin slots
             ownedClaimsSlot = config.getInt("slots.owned-claims", 11);
-            trustedClaimsSlot = config.getInt("slots.trusted-claims", 13);
+            claimMarketSlot = config.contains("slots.claim-market")
+                ? config.getInt("slots.claim-market", 13)
+                : config.getInt("slots.trusted-claims", 13);
             globalListSlot = config.getInt("slots.global-list", 15);
-            // Admin slots
+
             adminOwnedClaimsSlot = config.getInt("slots-admin.admin-owned-claims", 10);
-            adminTrustedClaimsSlot = config.getInt("slots-admin.admin-trusted-claims", 12);
+            adminClaimMarketSlot = config.contains("slots-admin.admin-claim-market")
+                ? config.getInt("slots-admin.admin-claim-market", 12)
+                : config.getInt("slots-admin.admin-trusted-claims", 12);
             adminGlobalListSlot = config.getInt("slots-admin.admin-global-list", 14);
             adminMenuSlot = config.getInt("slots-admin.admin-menu", 16);
         }
@@ -65,17 +70,21 @@ public class MainMenuGUI extends BaseGUI {
         fillBorder(createFiller());
         
         if (isAdmin) {
-            // Admin view - show all options: owned claims, trusted claims, global list, admin menu
+            // Admin view - show all options: owned claims, claim market, global list, admin menu
             inventory.setItem(adminOwnedClaimsSlot, createOwnedClaimsItem());
-            inventory.setItem(adminTrustedClaimsSlot, createTrustedClaimsItem());
+            if (plugin.getConfigManager().isMarketEnabled() && player.hasPermission(MarketManager.PERM_MARKET)) {
+                inventory.setItem(adminClaimMarketSlot, createClaimMarketItem());
+            }
             if (globalClaimsEnabled() && player.hasPermission(GLOBALLIST_PERMISSION)) {
                 inventory.setItem(adminGlobalListSlot, createGlobalListItem());
             }
             inventory.setItem(adminMenuSlot, createAdminMenuItem());
         } else {
-            // Player view - show owned claims, trusted claims, global list (centered for 3 items)
+            // Player view - show owned claims, claim market, global list (centered for 3 items)
             inventory.setItem(ownedClaimsSlot, createOwnedClaimsItem());
-            inventory.setItem(trustedClaimsSlot, createTrustedClaimsItem());
+            if (plugin.getConfigManager().isMarketEnabled() && player.hasPermission(MarketManager.PERM_MARKET)) {
+                inventory.setItem(claimMarketSlot, createClaimMarketItem());
+            }
             if (globalClaimsEnabled() && player.hasPermission(GLOBALLIST_PERMISSION)) {
                 inventory.setItem(globalListSlot, createGlobalListItem());
             }
@@ -109,27 +118,28 @@ public class MainMenuGUI extends BaseGUI {
         
         // Default item
         List<String> lore = Arrays.asList(
-            "&7View all claims you own",
+            "&7View owned, trusted, rented, bought,",
+            "&7mailbox, and listed claims",
             "",
             "&eClick to view your claims"
         );
         return createItem(Material.DIAMOND, "&b&lMy Claims", lore);
     }
     
-    private ItemStack createTrustedClaimsItem() {
+    private ItemStack createClaimMarketItem() {
         Map<String, String> placeholders = new HashMap<>();
         
-        if (config != null && config.contains("items.trusted-claims")) {
-            return createItemFromConfig("items.trusted-claims", placeholders);
+        if (config != null && config.contains("items.claim-market")) {
+            return createItemFromConfig("items.claim-market", placeholders);
         }
         
-        // Default item
         List<String> lore = Arrays.asList(
-            "&7View claims you are trusted in",
+            "&7Browse claims & mailboxes for rent or sale",
+            "&7and send remote gifts or letters.",
             "",
-            "&eClick to view trusted claims"
+            "&eClick to open Claim Market"
         );
-        return createItem(Material.EMERALD, "&a&lTrusted Claims", lore);
+        return createItem(Material.EMERALD, "&a&lClaim Market", lore);
     }
     
     private ItemStack createGlobalListItem() {
@@ -155,22 +165,22 @@ public class MainMenuGUI extends BaseGUI {
         playClickSound();
         
         if (isAdmin) {
-            // Admin view click handling
             if (slot == adminOwnedClaimsSlot) {
                 manager.openOwnedClaims(player);
-            } else if (slot == adminTrustedClaimsSlot) {
-                manager.openTrustedClaims(player);
+            } else if (slot == adminClaimMarketSlot && plugin.getConfigManager().isMarketEnabled()
+                    && player.hasPermission(MarketManager.PERM_MARKET)) {
+                manager.openClaimMarket(player);
             } else if (slot == adminGlobalListSlot && globalClaimsEnabled() && player.hasPermission(GLOBALLIST_PERMISSION)) {
                 manager.openGlobalClaimList(player);
             } else if (slot == adminMenuSlot) {
                 manager.openAdminMenu(player);
             }
         } else {
-            // Player view click handling
             if (slot == ownedClaimsSlot) {
                 manager.openOwnedClaims(player);
-            } else if (slot == trustedClaimsSlot) {
-                manager.openTrustedClaims(player);
+            } else if (slot == claimMarketSlot && plugin.getConfigManager().isMarketEnabled()
+                    && player.hasPermission(MarketManager.PERM_MARKET)) {
+                manager.openClaimMarket(player);
             } else if (slot == globalListSlot && globalClaimsEnabled() && player.hasPermission(GLOBALLIST_PERMISSION)) {
                 manager.openGlobalClaimList(player);
             }

@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.command;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -29,14 +30,14 @@ public class ConfirmCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         if (!(sender instanceof Player)) {
-            sender.sendMessage(Component.text("Only players can use this.", NamedTextColor.RED));
+            Mini.send(sender, Component.text("Only players can use this.", NamedTextColor.RED));
             return true;
         }
         Player player = (Player) sender;
 
         ConfirmationService svc = plugin.getConfirmationService();
         if (svc == null) {
-            sender.sendMessage(Component.text("Confirmation service unavailable.", NamedTextColor.RED));
+            Mini.send(sender, Component.text("Confirmation service unavailable.", NamedTextColor.RED));
             return true;
         }
 
@@ -55,7 +56,7 @@ public class ConfirmCommand implements CommandExecutor, TabCompleter {
                 token = null;
                 accept = false;
             } else {
-                sender.sendMessage(Component.text("Usage: /" + label + " [accept|cancel] or /" + label + " <token> <accept|cancel>", NamedTextColor.YELLOW));
+                Mini.send(sender, Component.text("Usage: /" + label + " [accept|cancel] or /" + label + " <token> <accept|cancel>", NamedTextColor.YELLOW));
                 return true;
             }
         } else {
@@ -66,13 +67,13 @@ public class ConfirmCommand implements CommandExecutor, TabCompleter {
             } else if (action.equals("cancel") || action.equals("deny") || action.equals("no")) {
                 accept = false;
             } else {
-                sender.sendMessage(Component.text("Second argument must be 'accept' or 'cancel'.", NamedTextColor.RED));
+                Mini.send(sender, Component.text("Second argument must be 'accept' or 'cancel'.", NamedTextColor.RED));
                 return true;
             }
         }
 
         if (!svc.handle(player, token, accept)) {
-            sender.sendMessage(Component.text("No pending confirmation or invalid/expired token.", NamedTextColor.RED));
+            Mini.send(sender, Component.text("No pending confirmation or invalid/expired token.", NamedTextColor.RED));
             return true;
         }
 

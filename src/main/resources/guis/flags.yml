@@ -1,0 +1,127 @@
+# Built-in Claim Flags GUI (/claim flags, Claim Options -> Claim Flags)
+# Works without GPFlags. When GPFlags is installed a button opens its flag list too.
+#
+# Left-click a flag to Allow it, right-click to Deny it, Q or shift-click to reset it.
+# Filter flags (Block Interactions, Mob Interactions, Mob Spawn, Command Usage, Incoming
+# Player Damage): left-click to edit entries in chat, right-click to switch whitelist/blacklist.
+#
+# Title placeholders: {name}, {id}, {category}
+
+title: "&8Flags &7- &f{name} &8({category})"
+size: 54
+
+filler:
+  material: GRAY_STAINED_GLASS_PANE
+
+slots:
+  info: 0
+  category-player: 2
+  category-entity: 4
+  category-natural: 6
+  gpflags: 8
+  prev-page: 45
+  reset-all: 47
+  back: 49
+  next-page: 53
+
+# Slots that hold flags (36 per page by default)
+flag-slots: [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+             27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44]
+
+categories:
+  player:
+    name: "&f&lPlayer"
+    title: "Player"
+    material: SKELETON_SKULL
+    selected-material: PLAYER_HEAD
+  entity:
+    name: "&c&lMobs & Entities"
+    title: "Mobs & Entities"
+    material: EGG
+    selected-material: CREEPER_SPAWN_EGG
+  natural:
+    name: "&6&lEnvironment"
+    title: "Environment"
+    material: DEAD_BUSH
+    selected-material: OAK_SAPLING
+
+items:
+  info:
+    material: BOOK
+    name: "&b&lClaim Flags"
+    # Placeholders: {name}, {id}, {set}
+    lore:
+      - "&7Claim: &f{name} &8(#{id})"
+      - "&7Flags set here: &f{set}"
+      - ""
+      - "&aAllow &7lets outsiders do it, even"
+      - "&7where GriefPrevention would stop them."
+      - "&cDeny &7stops outsiders, mobs or nature."
+      - "&7Unset flags follow GriefPrevention."
+      - ""
+      - "&7Players with the listed trust are"
+      - "&7never affected (except by PvP)."
+  gpflags:
+    material: WRITABLE_BOOK
+    name: "&d&lGPFlags"
+    lore:
+      - "&7Open GPFlags' own flag list"
+      - "&7for this claim."
+      - ""
+      - "&eClick to open"
+  reset-all:
+    material: LAVA_BUCKET
+    name: "&c&lReset All Flags"
+    armed-name: "&4&lConfirm Reset"
+  back:
+    name: "&c&lBack"
+    lore: "&7Return to claim options"
+  prev-page:
+    name: "&e&l« Previous Page"
+  next-page:
+    name: "&e&lNext Page »"
+
+states:
+  allowed: "&aAllowed"
+  denied: "&cDenied"
+  unset: "&7Not set"
+  whitelist: "&aWhitelist"
+  blacklist: "&cBlacklist"
+
+text:
+  category-all: "All"
+  category-count: "&7{count} flags"
+  category-select: "&eClick to show only these"
+  category-selected: "&eClick to show all flags"
+  page: "&7Page {current}/{total}"
+  flag-name: "{color}&l{flag}"
+  current: "&8» &7Current: {value}"
+  entries: "&8» &7Entries: &f{count}"
+  entries-more: "&8   ...and {more} more"
+  from-parent: "&8   (inherited from the parent claim)"
+  from-default: "&8   (server default)"
+  unset-hint: "&8   GriefPrevention and vanilla decide"
+  applies-to: "&8Applies to: &7{who}"
+  who-everyone: "&feveryone in the claim"
+  who-access: "&fplayers without access trust"
+  who-container: "&fplayers without container trust"
+  who-build: "&fplayers without build trust"
+  no-edit: "&8You can't change this flag"
+  allow: "&eLeft-click: &aAllow"
+  deny: "&eRight-click: &cDeny"
+  reset-flag: "&eQ / Shift-click: &7reset to default"
+  filter-edit: "&eLeft-click: &7edit entries"
+  filter-mode: "&eRight-click: &7switch whitelist/blacklist"
+  reset: "&7Clear every flag set on this claim."
+  reset-action: "&eClick to arm, click again to confirm"
+  reset-armed: "&cClick again to clear every flag on this claim"
+
+# Optional per-flag overrides, keyed by flag id (shown in claimflags.yml):
+#   flags:
+#     pvp:
+#       name: "Player Combat"
+#       material: NETHERITE_SWORD
+#       description: "Whether players can fight here."
+#     villager_farm:
+#       texture: "<head texture hash or base64>"
+flags: {}

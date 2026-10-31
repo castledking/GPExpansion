@@ -17,11 +17,20 @@ items:
     material: PAPER
     name: "&e&lInstructions"
     lore:
-      - "&7Place any item from your inventory"
-      - "&7into the center slot below"
+      - "&7Click any item onto the center slot,"
+      - "&7press its hotbar key over the slot,"
+      - "&7or shift-click it in your inventory"
       - "&7to set it as the claim icon."
       - ""
+      - "&7Custom items keep their look."
       - "&7The item will NOT be consumed."
+
+  # Shown in the center slot when the claim already has an icon
+  current:
+    name: "&a&lCurrent Icon"
+    lore:
+      - "&7Click an item onto this slot"
+      - "&7to replace it."
   
   back:
     material: ARROW

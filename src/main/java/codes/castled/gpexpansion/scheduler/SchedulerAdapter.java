@@ -65,6 +65,36 @@ public final class SchedulerAdapter {
 
     // ====================== GLOBAL (MAIN THREAD EQUIVALENT) ======================
 
+    /**
+     * Runs {@code task} on the global region scheduler (Folia semantics).
+     * On non-Folia servers this runs on the main thread.
+     */
+    public static void runGlobalRegion(Plugin plugin, Runnable task) {
+        Objects.requireNonNull(plugin);
+        Objects.requireNonNull(task);
+        if (FOLIA_PRESENT) {
+            try {
+                Object global = getGlobalScheduler();
+                Consumer<Object> consumer = ignored -> task.run();
+                Method run = findMethod(global, "run", Plugin.class, Consumer.class);
+                if (run != null) {
+                    run.invoke(global, plugin, consumer);
+                    return;
+                }
+                // Fallback execute (fire-and-forget)
+                Method execute = findMethod(global, "execute", Plugin.class, Consumer.class);
+                if (execute != null) {
+                    execute.invoke(global, plugin, consumer);
+                    return;
+                }
+                throw new UnsupportedOperationException("No compatible global run method found");
+            } catch (Throwable t) {
+                throw new UnsupportedOperationException("Failed to schedule global task on Folia", t);
+            }
+        }
+        new TaskHandle(Bukkit.getScheduler().runTask(plugin, task));
+    }
+
     public static TaskHandle runGlobal(Plugin plugin, Runnable runnable) {
         Objects.requireNonNull(plugin);
         Objects.requireNonNull(runnable);

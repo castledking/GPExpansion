@@ -64,6 +64,11 @@ public final class GPExpansionPlugin extends JavaPlugin {
     private codes.castled.gpexpansion.waypoint.ClaimWaypointManager claimWaypointManager;
     private codes.castled.gpexpansion.waypoint.WaypointModeStore waypointModeStore;
     private codes.castled.gpexpansion.integration.map.ClaimMapIntegrationsService claimMapIntegrationsService;
+    private codes.castled.gpexpansion.transfer.ClaimTransferService claimTransferService;
+    private codes.castled.gpexpansion.flags.ClaimFlagStore claimFlagStore;
+    private codes.castled.gpexpansion.flags.ClaimFlagManager claimFlagManager;
+    private codes.castled.gpexpansion.gui.ChatPromptManager chatPromptManager;
+    private codes.castled.gpexpansion.market.MarketManager marketManager;
 
     public codes.castled.gpexpansion.waypoint.WaypointModeStore getWaypointModeStore() {
         return waypointModeStore;
@@ -140,6 +145,17 @@ public final class GPExpansionPlugin extends JavaPlugin {
         
         // Initialize GUI manager
         guiManager = new codes.castled.gpexpansion.gui.GUIManager(this);
+        claimTransferService = new codes.castled.gpexpansion.transfer.ClaimTransferService(this);
+        chatPromptManager = new codes.castled.gpexpansion.gui.ChatPromptManager(this);
+
+        // Built-in claim flags (no GPFlags required)
+        claimFlagStore = new codes.castled.gpexpansion.flags.ClaimFlagStore(this);
+        claimFlagStore.load();
+        claimFlagManager = new codes.castled.gpexpansion.flags.ClaimFlagManager(this, claimFlagStore);
+
+        // Claim Market manager (listings, purchase history, remote mailbox mail/letters)
+        marketManager = new codes.castled.gpexpansion.market.MarketManager(this);
+        marketManager.start();
         
         // Initialize sign limit manager
         signLimitManager = new codes.castled.gpexpansion.permission.SignLimitManager(this);
@@ -170,6 +186,11 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Register before the normal sign listeners so selection clicks are consumed first.
         signMoveManager = new SignMoveManager(this);
         Bukkit.getPluginManager().registerEvents(signMoveManager, this);
+        // Conditionally register Paper-only PlayerOpenSignEvent handler
+        if (codes.castled.gpexpansion.platform.PlatformDetection.classExists("io.papermc.paper.event.player.PlayerOpenSignEvent")) {
+            Bukkit.getPluginManager().registerEvents(new SignMoveManager.PaperSignMoveListener(signMoveManager), this);
+            debug("- Registered PaperSignMoveListener for PlayerOpenSignEvent");
+        }
 
         registerPluginCommands();
 
@@ -199,8 +220,17 @@ public final class GPExpansionPlugin extends JavaPlugin {
         debug("- Registered CommandInterceptListener: " + commandListener.getClass().getName());
         // Protect rent/buy signs and their supports from griefing and enforce deletion flow
         Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.SignProtectionListener(this), this);
-        // Prevent claim abandonment during active rentals
+        // Prevent claim abandonment during active rentals / sold mailboxes / market listings
         Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.ClaimAbandonListener(this), this);
+        // Protect virtual-protocol mailbox containers and sync broken signs out of MarketManager
+        Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.MailboxContainerListener(this), this);
+        // Market unread mail join notifications
+        Bukkit.getPluginManager().registerEvents(marketManager, this);
+        registerClaimFlagListeners();
+        Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.gui.ChatPromptManager.LegacyListener(this, chatPromptManager), this);
+        if (codes.castled.gpexpansion.platform.PlatformDetection.classExists("io.papermc.paper.event.player.AsyncChatEvent")) {
+            Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.gui.ChatPromptManager.PaperListener(this, chatPromptManager), this);
+        }
         // Join reminders
         Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.listener.ReminderJoinListener(this), this);
         // Dynamic sign display ([Renew], [Evicted] countdown, item scroll)
@@ -215,8 +245,15 @@ public final class GPExpansionPlugin extends JavaPlugin {
         debug("- Registered ClaimFlyListener for claim flight feature");
         // Claim waypoint markers (vanilla locator bar bowties)
         if (configManager.areClaimWaypointsEnabled()) {
-            Bukkit.getPluginManager().registerEvents(
-                new codes.castled.gpexpansion.listener.ClaimWaypointListener(this), this);
+            codes.castled.gpexpansion.listener.ClaimWaypointListener cwl =
+                new codes.castled.gpexpansion.listener.ClaimWaypointListener(this);
+            Bukkit.getPluginManager().registerEvents(cwl, this);
+            // Conditionally register Paper-only WorldGameRuleChangeEvent handler
+            if (codes.castled.gpexpansion.platform.PlatformDetection.classExists("io.papermc.paper.event.world.WorldGameRuleChangeEvent")) {
+                Bukkit.getPluginManager().registerEvents(
+                    new codes.castled.gpexpansion.listener.ClaimWaypointListener.PaperGameRuleListener(cwl), this);
+                debug("- Registered PaperGameRuleListener for WorldGameRuleChangeEvent");
+            }
             getServer().getMessenger().registerOutgoingPluginChannel(this,
                 codes.castled.gpexpansion.waypoint.ClaimWaypointManager.CLAIM_DATA_CHANNEL);
             // Only unmodified clients need the pack; CrowBar pins the bowtie sprite itself.
@@ -248,6 +285,20 @@ public final class GPExpansionPlugin extends JavaPlugin {
         displayEnabledHeader();
         
         debug(() -> "GPExpansion enabled");
+    }
+
+    private void registerClaimFlagListeners() {
+        codes.castled.gpexpansion.flags.ClaimFlagListener flagListener =
+            new codes.castled.gpexpansion.flags.ClaimFlagListener(claimFlagManager);
+        Bukkit.getPluginManager().registerEvents(flagListener, this);
+        try {
+            Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.flags.ClaimFlagGPListener(
+                claimFlagManager, flagListener, claimFlagStore::save), this);
+        } catch (NoClassDefFoundError | RuntimeException e) {
+            getLogger().warning("This GriefPrevention build lacks the events needed for flags to override its protection ("
+                + e.getMessage() + "); Deny flags still work, Allow flags on protected actions won't.");
+        }
+        debug("- Registered built-in claim flag listeners");
     }
 
     private void registerAccrualListener() {
@@ -470,7 +521,9 @@ public final class GPExpansionPlugin extends JavaPlugin {
                     "setclaimspawn",
                     "resizeclaim",
                     "claimmap",
-                    "claimbar"
+                    "claimbar",
+                    "claimmarket",
+                    "claimshop"
             );
         } catch (ReflectiveOperationException e) {
             getLogger().warning("Failed to clean up duplicate command labels: " + e.getMessage());
@@ -537,15 +590,28 @@ public final class GPExpansionPlugin extends JavaPlugin {
 
         Bukkit.getPluginManager().registerEvents(new SetupChatListener(this, setupWizardManager), this);
         debug("- Registered SetupChatListener for wizard commands");
+        // Conditionally register Paper-only AsyncChatEvent handler
+        if (codes.castled.gpexpansion.platform.PlatformDetection.classExists("io.papermc.paper.event.player.AsyncChatEvent")) {
+            Bukkit.getPluginManager().registerEvents(
+                new SetupChatListener.PaperSetupChatListener(this, setupWizardManager), this);
+            debug("- Registered PaperSetupChatListener for AsyncChatEvent");
+        }
 
         descriptionInputManager = new codes.castled.gpexpansion.gui.DescriptionInputManager(this);
         Bukkit.getPluginManager().registerEvents(new codes.castled.gpexpansion.gui.DescriptionChatListener(this, descriptionInputManager), this);
         debug("- Registered DescriptionChatListener for claim descriptions");
+        // Conditionally register Paper-only AsyncChatEvent handler
+        if (codes.castled.gpexpansion.platform.PlatformDetection.classExists("io.papermc.paper.event.player.AsyncChatEvent")) {
+            Bukkit.getPluginManager().registerEvents(
+                new codes.castled.gpexpansion.gui.DescriptionChatListener.PaperDescriptionChatListener(this, descriptionInputManager), this);
+            debug("- Registered PaperDescriptionChatListener for AsyncChatEvent");
+        }
 
         // Chat we capture for wizards/description input must not leak into Discord relay.
         new codes.castled.gpexpansion.listener.DiscordSRVChatCaptureBridge(this, player -> {
             java.util.UUID playerId = player.getUniqueId();
-            return setupWizardManager.hasActiveSession(playerId) || descriptionInputManager.hasPending(playerId);
+            return setupWizardManager.hasActiveSession(playerId) || descriptionInputManager.hasPending(playerId)
+                || chatPromptManager.hasPending(playerId);
         }).register();
 
         MailboxCommand mailboxCommand = new MailboxCommand(this);
@@ -675,6 +741,17 @@ public final class GPExpansionPlugin extends JavaPlugin {
         );
         registerRuntimeCommand(map, claimBarWrapper);
 
+        Command claimMarketWrapper = new PaperCommandWrapper(
+                this,
+                "claimmarket",
+                "Open the Claim Market GUI",
+                "/claimmarket",
+                java.util.Arrays.asList("claimshop"),
+                claimCommand,
+                claimCommand
+        );
+        registerRuntimeCommand(map, claimMarketWrapper);
+
         // /buyclaimblocks - opens the hopper confirmation GUI (migrated from GP3D).
         // Unregister any prior owner (GP3D itself or other plugins) first so our
         // handler wins the command dispatch.
@@ -799,6 +876,12 @@ public final class GPExpansionPlugin extends JavaPlugin {
         if (claimDataStore != null) {
             claimDataStore.save();
         }
+        if (claimFlagStore != null) {
+            claimFlagStore.save();
+        }
+        if (marketManager != null) {
+            marketManager.shutdown();
+        }
         if (claimFlyManager != null) {
             claimFlyManager.save();
         }
@@ -835,6 +918,14 @@ public final class GPExpansionPlugin extends JavaPlugin {
         
         // Reload GUI configurations
         guiManager.reload();
+
+        // Reload flag settings (values are saved on every change, so the file is current)
+        if (claimFlagManager != null) {
+            claimFlagManager.reloadSettings();
+        }
+        if (marketManager != null) {
+            marketManager.reload();
+        }
         
         // Re-apply debug setting
         GPBridge.setDebug(configManager.isDebugEnabled());
@@ -889,6 +980,26 @@ public final class GPExpansionPlugin extends JavaPlugin {
         return gp3dClaimMode;
     }
     
+    public codes.castled.gpexpansion.flags.ClaimFlagStore getClaimFlagStore() {
+        return claimFlagStore;
+    }
+
+    public codes.castled.gpexpansion.flags.ClaimFlagManager getClaimFlagManager() {
+        return claimFlagManager;
+    }
+
+    public codes.castled.gpexpansion.gui.ChatPromptManager getChatPromptManager() {
+        return chatPromptManager;
+    }
+
+    public codes.castled.gpexpansion.transfer.ClaimTransferService getClaimTransferService() {
+        return claimTransferService;
+    }
+
+    public codes.castled.gpexpansion.market.MarketManager getMarketManager() {
+        return marketManager;
+    }
+
     public codes.castled.gpexpansion.gui.GUIManager getGUIManager() {
         return guiManager;
     }

@@ -1,0 +1,9 @@
+# Listed Claims GUI Configuration
+# Manage active rentals, sold mailboxes, and for-sale signs across your claims
+
+title: "&6&lListed Claims"
+title-child: "&6&lMailboxes in {claim}"
+size: 54
+
+filler:
+  material: GRAY_STAINED_GLASS_PANE

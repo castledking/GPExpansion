@@ -1,4 +1,5 @@
 package codes.castled.gpexpansion.reminder;
+import codes.castled.gpexpansion.util.Mini;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
@@ -227,7 +228,7 @@ public class RentalReminderService {
         // Replace the default message with our custom one that includes time
         message = message.replace("&6Your rented claim has expired. &7(Location: " + coords + ")", 
                                "&6Your rented claim will expire in: &e" + formatDuration(remainingMs) + " &7(Location: " + coords + ")");
-        player.sendMessage(color(message));
+        Mini.send(player, color(message));
     }
 
     private Component color(String amp) {
@@ -279,7 +280,7 @@ public class RentalReminderService {
 
             // Expired while offline?
             if (entry.expiry <= now && entry.pendingPayment) {
-                player.sendMessage(color("&6Your rented claim has expired."));
+                Mini.send(player, color("&6Your rented claim has expired."));
                 entry.pendingPayment = false; // clear flag after shown
                 dataStore.save();
                 continue;
