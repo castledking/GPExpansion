@@ -61,6 +61,15 @@ public class ClaimOptionsGUI extends BaseGUI {
             globalSettingsSlot = config.getInt("items.global-settings.slot", globalSettingsSlot);
             transferSlot = config.getInt("items.transfer.slot", transferSlot);
             backSlot = config.getInt("items.back.slot", backSlot);
+
+            if (globalSettingsSlot == transferSlot && globalSettingsSlot == 42) {
+                if (teleportSlot == 20 && resizeSlot == 22 && trustSlot == 24) {
+                    teleportSlot = 19;
+                    resizeSlot = 21;
+                    trustSlot = 23;
+                }
+                globalSettingsSlot = 25;
+            }
         }
     }
 
@@ -81,10 +90,10 @@ public class ClaimOptionsGUI extends BaseGUI {
         inventory.setItem(teleportSlot, createTeleportItem());
         inventory.setItem(resizeSlot, createResizeItem());
         inventory.setItem(trustSlot, createTrustItem());
+        inventory.setItem(globalSettingsSlot, createGlobalSettingsItem());
         inventory.setItem(abandonSlot, createAbandonItem());
         inventory.setItem(viewChildrenSlot, createViewChildrenItem());
         inventory.setItem(claimFlagsSlot, createClaimFlagsItem());
-        inventory.setItem(globalSettingsSlot, createGlobalSettingsItem());
         inventory.setItem(transferSlot, createTransferItem());
         inventory.setItem(backSlot, createBackItem());
     }

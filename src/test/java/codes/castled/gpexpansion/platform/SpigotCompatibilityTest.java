@@ -1,5 +1,6 @@
 package codes.castled.gpexpansion.platform;
 
+import codes.castled.gpexpansion.gui.GUIManager;
 import codes.castled.gpexpansion.util.Mini;
 import net.kyori.adventure.text.Component;
 import net.md_5.bungee.api.chat.BaseComponent;
@@ -89,6 +90,31 @@ class SpigotCompatibilityTest {
         Component guiTitle = Mini.fromLegacyAmpersand("&#33ccff&lClaim Market");
         assertEquals("Claim Market", Mini.plain(guiTitle));
         assertTrue(Mini.inventoryTitle(guiTitle).contains("\u00a7x\u00a73\u00a73\u00a7c\u00a7c\u00a7f\u00a7f"));
+    }
+
+    @Test
+    void claimOptionsGuiMigratesLegacyMiddleRowAndGlobalSettingsSlot() throws Exception {
+        YamlConfiguration legacy = new YamlConfiguration();
+        legacy.set("items.summary.slot", 4);
+        legacy.set("items.teleport.slot", 20);
+        legacy.set("items.resize.slot", 22);
+        legacy.set("items.trust.slot", 24);
+        legacy.set("items.abandon.slot", 36);
+        legacy.set("items.view-children.slot", 38);
+        legacy.set("items.claim-flags.slot", 40);
+        legacy.set("items.claim-flags.lore", List.of("&7Toggle GPFlags for this claim."));
+        legacy.set("items.global-settings.slot", 42);
+        // Simulate an already-merged transfer item colliding on slot 42
+        legacy.set("items.transfer.slot", 42);
+        legacy.set("items.back.slot", 44);
+
+        assertTrue(GUIManager.migrateGuiConfig("claim-options.yml", legacy));
+        assertEquals(19, legacy.getInt("items.teleport.slot"));
+        assertEquals(21, legacy.getInt("items.resize.slot"));
+        assertEquals(23, legacy.getInt("items.trust.slot"));
+        assertEquals(25, legacy.getInt("items.global-settings.slot"));
+        assertEquals(42, legacy.getInt("items.transfer.slot"));
+        assertFalse(GUIManager.migrateGuiConfig("claim-options.yml", legacy));
     }
 
     private static boolean hasRunCommand(BaseComponent[] components, String expectedValue) {

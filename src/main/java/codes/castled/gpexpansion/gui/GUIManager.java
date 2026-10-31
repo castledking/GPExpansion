@@ -5,6 +5,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Material;
 import org.bukkit.Bukkit;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
@@ -26,6 +27,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -108,13 +110,14 @@ public class GUIManager implements Listener {
         }
         
         FileConfiguration config = YamlConfiguration.loadConfiguration(file);
+        boolean migrated = migrateGuiConfig(fileName, config);
         
         // Load defaults from jar if available
         try (InputStream defStream = plugin.getResource("guis/" + fileName)) {
             if (defStream != null) {
                 YamlConfiguration defConfig = YamlConfiguration.loadConfiguration(
                     new InputStreamReader(defStream, StandardCharsets.UTF_8));
-                boolean needsSave = createdFile;
+                boolean needsSave = createdFile || migrated;
                 if (!needsSave) {
                     for (String key : defConfig.getKeys(true)) {
                         if (!config.contains(key)) {
@@ -135,6 +138,65 @@ public class GUIManager implements Listener {
         
         String key = fileName.replace(".yml", "");
         guiConfigs.put(key, config);
+    }
+
+    /**
+     * Migrates pre-1.2.6 GUI layouts in-place so existing servers don't end up with slot
+     * collisions when new buttons are merged via {@code copyDefaults(true)}.
+     */
+    public static boolean migrateGuiConfig(String fileName, FileConfiguration config) {
+        if (!"claim-options.yml".equals(fileName) || config == null) {
+            return false;
+        }
+        boolean changed = false;
+
+        int teleportSlot = config.getInt("items.teleport.slot", -1);
+        int resizeSlot = config.getInt("items.resize.slot", -1);
+        int trustSlot = config.getInt("items.trust.slot", -1);
+        int globalSettingsSlot = config.getInt("items.global-settings.slot", -1);
+        int transferSlot = config.getInt("items.transfer.slot", 42);
+
+        // Pre-1.2.6 claim-options.yml had teleport=20, resize=22, trust=24, global-settings=42.
+        // Adding transfer at slot 42 overwrote global-settings unless the middle row is nudged
+        // left by 1 (19, 21, 23) and global-settings moves to slot 25.
+        if (globalSettingsSlot == 42 && transferSlot == 42) {
+            if (teleportSlot == 20 && resizeSlot == 22 && trustSlot == 24) {
+                config.set("items.teleport.slot", 19);
+                config.set("items.resize.slot", 21);
+                config.set("items.trust.slot", 23);
+                config.set("items.global-settings.slot", 25);
+                changed = true;
+            } else if (!isSlotUsedByOtherItem(config, 25, "global-settings")) {
+                config.set("items.global-settings.slot", 25);
+                changed = true;
+            }
+        }
+
+        List<String> flagsLore = config.getStringList("items.claim-flags.lore");
+        if (!flagsLore.isEmpty() && "&7Toggle GPFlags for this claim.".equals(flagsLore.get(0))) {
+            config.set("items.claim-flags.lore", List.of(
+                "&7Choose what outsiders, mobs and",
+                "&7nature can do in this claim.",
+                "",
+                "{flags_status}",
+                "{flags_action}"
+            ));
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private static boolean isSlotUsedByOtherItem(FileConfiguration config, int slot, String ignoredItemKey) {
+        ConfigurationSection items = config.getConfigurationSection("items");
+        if (items == null) return false;
+        for (String key : items.getKeys(false)) {
+            if (key.equals(ignoredItemKey)) continue;
+            if (items.getInt(key + ".slot", -1) == slot) {
+                return true;
+            }
+        }
+        return false;
     }
     
     public void reload() {
