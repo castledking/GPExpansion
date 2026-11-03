@@ -196,6 +196,7 @@ When [CrowBar](https://github.com/castledking/CrowBar), a Fabric client mod, is 
 
 - Works automatically when both GPExpansion and CrowBar are installed — no extra configuration needed.
 - Claim names appear above the bowtie waypoint marker on the locator bar.
+- CrowBar's claim key (`Z`) and `/claim bar` share one setting: each press moves to the next mode (own, trusted, both, off) and saves it, and `/claim bar` moves the key along. Older CrowBar versions keep their own key mode within what `/claim bar` allows.
 - Compatible with Minecraft 1.21.6–1.21.11, 26.1.x, and 26.2.
 
 <p>

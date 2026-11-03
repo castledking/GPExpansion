@@ -6,11 +6,12 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * How much of a player's claim set appears on their vanilla locator bar.
+ * How much of a player's claim set appears on their locator bar, chosen with {@code /claim bar}.
  *
- * <p>The mode only narrows the vanilla {@code ClientboundTrackedWaypointPacket} path. The CrowBar
- * plugin-channel payload is deliberately unaffected: CrowBar clients render their own waypoints
- * from it, and the mode is a no-op for them anyway (see {@code ClaimWaypointManager}).
+ * <p>Applies to both delivery paths: vanilla {@code ClientboundTrackedWaypointPacket} markers and
+ * the CrowBar plugin-channel payload (see {@code ClaimWaypointManager}). CrowBar's claim key cycles
+ * this same mode, in {@link #ARGUMENTS} order, over {@code crowbar:claim_mode}. Older CrowBar
+ * versions without that channel can narrow it with their own claim key, but never widen it.
  */
 public enum WaypointBarMode {
 
@@ -20,7 +21,7 @@ public enum WaypointBarMode {
     TRUSTED,
     /** Owned, trusted, and published claims — the default/current behaviour. */
     BOTH,
-    /** Nothing appears on the vanilla bar. */
+    /** No claim markers at all, for vanilla and CrowBar clients alike. */
     OFF;
 
     /** The values a player can type, in a stable order. */

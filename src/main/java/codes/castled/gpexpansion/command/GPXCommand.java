@@ -276,16 +276,8 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
 
         boolean crowbarOnly = plugin.getConfigManager().areClaimWaypointsCrowbarOnly();
         boolean packetsActive = manager.vanillaPacketsActive();
-        Object locatorBarRule = null;
-        Object gpLocatorRule = ClaimWaypointManager.locatorBarRule();
-        if (gpLocatorRule != null) {
-            try {
-                java.lang.reflect.Method getGameRuleValue = player.getWorld().getClass().getMethod("getGameRuleValue", java.lang.Object.class);
-                locatorBarRule = getGameRuleValue.invoke(player.getWorld(), gpLocatorRule);
-            } catch (ReflectiveOperationException ignored) {
-                // fallback if method not found
-            }
-        }
+        org.bukkit.GameRule<Boolean> gpLocatorRule = ClaimWaypointManager.locatorBarRule();
+        Boolean locatorBarRule = gpLocatorRule == null ? null : player.getWorld().getGameRuleValue(gpLocatorRule);
 
         java.util.List<me.ryanhamshire.GriefPrevention.Claim> visible = manager.visibleClaimsFor(player);
         java.util.Map<String, codes.castled.gpexpansion.waypoint.ClaimWaypointManager.SentWaypoint> sent =
@@ -293,6 +285,9 @@ public class GPXCommand implements CommandExecutor, TabCompleter {
 
         player.sendMessage("§6Claim waypoints §7— §fmode: §e" + (crowbarOnly ? "crowbar-only" : "crowbar + vanilla")
             + " §7| vanilla packets: §e" + (packetsActive ? "active" : "off")
+            + " §7| claim bar: §e" + plugin.getWaypointModeStore().get(player.getUniqueId()).name().toLowerCase(java.util.Locale.ROOT)
+            + " §7| CrowBar client: §e" + player.getListeningPluginChannels().contains(ClaimWaypointManager.CLAIM_DATA_CHANNEL)
+            + " §7| claim key follows /claim bar: §e" + player.getListeningPluginChannels().contains(ClaimWaypointManager.CLAIM_MODE_CHANNEL)
             + " §7| locatorBar: §e" + locatorBarRule
             + " §7| visible to you: §e" + visible.size());
 

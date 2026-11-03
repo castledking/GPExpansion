@@ -5,64 +5,68 @@ import codes.castled.gpexpansion.util.Mini;
 import net.kyori.adventure.text.Component;
 import net.md_5.bungee.api.chat.BaseComponent;
 import net.md_5.bungee.api.chat.ClickEvent;
-import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.permissions.PermissionDefault;
+import org.bukkit.plugin.PluginDescriptionFile;
 import org.junit.jupiter.api.Test;
+import org.yaml.snakeyaml.Yaml;
 
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class SpigotCompatibilityTest {
 
     @Test
-    void pluginYmlAndPaperPluginYmlExistAndStayInSync() throws Exception {
-        YamlConfiguration paperYml = loadResourceYaml("/paper-plugin.yml");
-        YamlConfiguration spigotYml = loadResourceYaml("/plugin.yml");
+    void pluginYmlIsTheOnlyDescriptorAndKeepsLoadOrder() throws Exception {
+        assertNull(SpigotCompatibilityTest.class.getResource("/paper-plugin.yml"),
+                "paper-plugin.yml must not ship: Paper prefers it over plugin.yml and would load GPX "
+                        + "in an isolated classloader that Bukkit add-ons cannot see");
 
-        assertEquals(paperYml.getString("name"), spigotYml.getString("name"));
-        assertEquals(paperYml.getString("main"), spigotYml.getString("main"));
-        assertEquals(paperYml.getString("api-version"), spigotYml.getString("api-version"));
-        assertTrue(spigotYml.getBoolean("folia-supported"), "plugin.yml must declare folia-supported: true");
-
-        // Load-order parity: GPExpansion loads before GriefPrevention on both platforms
-        assertEquals("AFTER", paperYml.getString("dependencies.server.GriefPrevention.load"));
-        assertTrue(spigotYml.getStringList("loadbefore").contains("GriefPrevention"),
-                "plugin.yml must declare loadbefore: [GriefPrevention]");
-
-        // Soft-depend parity for BEFORE dependencies
-        ConfigurationSection serverDeps = paperYml.getConfigurationSection("dependencies.server");
-        assertNotNull(serverDeps);
-        List<String> expectedSoftDepends = new ArrayList<>();
-        for (String dep : serverDeps.getKeys(false)) {
-            if ("BEFORE".equalsIgnoreCase(serverDeps.getString(dep + ".load"))) {
-                expectedSoftDepends.add(dep);
-            }
+        // Parse exactly like the server does; throws InvalidDescriptionException if Bukkit would reject it
+        PluginDescriptionFile desc;
+        try (InputStream in = SpigotCompatibilityTest.class.getResourceAsStream("/plugin.yml")) {
+            assertNotNull(in, "Missing classpath resource: /plugin.yml");
+            desc = new PluginDescriptionFile(in);
         }
-        assertEquals(expectedSoftDepends, spigotYml.getStringList("softdepend"),
-                "plugin.yml softdepend must match paper-plugin.yml BEFORE dependencies");
+        assertEquals("GPExpansion", desc.getName());
+        assertFalse(desc.getVersion().contains("${"), "plugin.yml version must be Maven-filtered");
+        assertNotNull(SpigotCompatibilityTest.class.getResource("/" + desc.getMain().replace('.', '/') + ".class"),
+                "plugin.yml main class must exist: " + desc.getMain());
+        assertNotNull(desc.getAPIVersion(), "plugin.yml must declare api-version");
 
-        // Permission node & default parity
-        ConfigurationSection paperPerms = paperYml.getConfigurationSection("permissions");
-        ConfigurationSection spigotPerms = spigotYml.getConfigurationSection("permissions");
-        assertNotNull(paperPerms, "paper-plugin.yml permissions missing");
-        assertNotNull(spigotPerms, "plugin.yml permissions missing");
+        // GPX enables before GriefPrevention so its runtime /claim registers first and wins the label
+        assertTrue(desc.getLoadBefore().contains("GriefPrevention"),
+                "plugin.yml must declare loadbefore: [GriefPrevention]");
+        assertTrue(desc.getDepend().isEmpty(), "GPX must not hard-depend on any plugin");
+        for (String excluded : List.of("GriefPrevention", "Nexo", "DiscordSRV")) {
+            assertFalse(desc.getSoftDepend().contains(excluded),
+                    excluded + " must stay out of softdepend (load-order cycle / /claim label takeover)");
+        }
 
-        Set<String> paperKeys = paperPerms.getKeys(false);
-        Set<String> spigotKeys = spigotPerms.getKeys(false);
-        assertEquals(paperKeys, spigotKeys, "Permission nodes in plugin.yml and paper-plugin.yml must match 1:1");
+        // Commands are registered at runtime; Bukkit registers plugin.yml commands before onEnable,
+        // so a commands: section would take the labels away from the real handlers.
+        assertTrue(desc.getCommands().isEmpty(), "plugin.yml must not declare commands (registered at runtime)");
 
-        for (String perm : paperKeys) {
-            assertEquals(
-                    String.valueOf(paperPerms.get(perm + ".default")),
-                    String.valueOf(spigotPerms.get(perm + ".default")),
-                    "Default mismatch for permission " + perm
-            );
+        // Raw SnakeYAML like Bukkit: YamlConfiguration would split dotted permission names into paths.
+        Map<?, ?> raw = loadRawYaml("/plugin.yml");
+        assertEquals(Boolean.TRUE, raw.get("folia-supported"), "plugin.yml must declare folia-supported: true");
+        assertInstanceOf(Map.class, raw.get("permissions"), "plugin.yml permissions missing");
+        Map<?, ?> perms = (Map<?, ?>) raw.get("permissions");
+        assertTrue(perms.containsKey("gpx.player") && perms.containsKey("gpx.admin"),
+                "plugin.yml must keep the gpx.player and gpx.admin base permissions");
+        for (Map.Entry<?, ?> perm : perms.entrySet()) {
+            assertTrue(perm.getValue() == null || perm.getValue() instanceof Map,
+                    "Permission " + perm.getKey() + " must be a mapping");
+            Object def = perm.getValue() instanceof Map<?, ?> node ? node.get("default") : null;
+            if (def != null) {
+                assertNotNull(PermissionDefault.getByName(def.toString()),
+                        "Invalid default for permission " + perm.getKey() + ": " + def);
+            }
         }
     }
 
@@ -133,12 +137,12 @@ class SpigotCompatibilityTest {
         return false;
     }
 
-    private static YamlConfiguration loadResourceYaml(String path) throws Exception {
+    private static Map<?, ?> loadRawYaml(String path) throws Exception {
         try (InputStream in = SpigotCompatibilityTest.class.getResourceAsStream(path)) {
             assertNotNull(in, "Missing classpath resource: " + path);
-            YamlConfiguration yaml = new YamlConfiguration();
-            yaml.load(new InputStreamReader(in, StandardCharsets.UTF_8));
-            return yaml;
+            Object root = new Yaml().load(new InputStreamReader(in, StandardCharsets.UTF_8));
+            assertInstanceOf(Map.class, root, path + " must be a YAML mapping");
+            return (Map<?, ?>) root;
         }
     }
 }

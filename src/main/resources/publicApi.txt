@@ -2,7 +2,7 @@
  GPExpansion (GPX) - PUBLIC API FOR ADD-ON DEVELOPERS
 ================================================================================
  Repo    : https://github.com/castledking/GPExpansion
- Requires: Paper 1.20+, Java 21, GriefPrevention3D
+ Requires: Spigot, Paper, Purpur, or Folia 1.20+, Java 25, GriefPrevention3D
  Scope   : Everything below is safe to depend on from a separate plugin.
            Anything not listed here is internal and may change without notice.
 ================================================================================
@@ -38,7 +38,7 @@ pom.xml:
     </dependency>
   </dependencies>
 
-Compile with Java 21 (<release>21</release>) to match GPX.
+Compile with Java 25 (<release>25</release>) to match GPX.
 
 You must declare the GriefPrevention dependency yourself. GPX declares it at
 <scope>provided</scope>, and provided-scope dependencies are NOT transitive, so
@@ -57,8 +57,8 @@ FORKS - GriefPrevention3D vs upstream GriefPrevention
 
 Either satisfies the compile-time requirement. Both forks use the package
 me.ryanhamshire.GriefPrevention and register under the plugin name
-GriefPrevention, so the type references and the paper-plugin.yml block below
-are identical for both.
+GriefPrevention, so the type references and the plugin.yml entry below are
+identical for both.
 
   GP3D      com.github.castledking:GriefPrevention3D:18.2.7   (JitPack)
   Upstream  com.griefprevention:GriefPrevention:18.0.0-SNAPSHOT
@@ -70,17 +70,26 @@ GPX itself treats GriefPrevention as required: false and runs on either.
 Behavioural differences that reach the API are called out inline below under
 GPBridge. The short version: everything an add-on needs works on both forks.
 
-paper-plugin.yml:
+plugin.yml:
 
-  dependencies:
-    server:
-      GPExpansion:
-        load: BEFORE
-        required: true
-        join-classpath: true
+  depend: [GPExpansion]        # or softdepend: [GPExpansion] for an optional hook
 
-  join-classpath: true is REQUIRED. Without it Paper's isolated classloaders
-  will not expose GPX's classes to your plugin and you will get NoClassDefFound.
+  GPX is a plain Bukkit plugin (plugin.yml only) on Spigot, Paper, Purpur, and
+  Folia, so this one entry exposes GPX's classes to your plugin everywhere.
+  With softdepend, check Bukkit.getPluginManager().isPluginEnabled("GPExpansion")
+  before touching any GPX type.
+
+  If your add-on is itself a Paper plugin (paper-plugin.yml), declare instead:
+
+    dependencies:
+      server:
+        GPExpansion:
+          load: BEFORE
+          required: true
+          join-classpath: true
+
+  join-classpath: true is REQUIRED there. Without it Paper's isolated plugin
+  classloader will not expose GPX's classes and you will get NoClassDefFound.
 
 
 --------------------------------------------------------------------------------

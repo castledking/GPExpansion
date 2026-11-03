@@ -19,12 +19,23 @@ import java.util.function.Consumer;
 public final class SchedulerAdapter {
 
     private static final boolean FOLIA_PRESENT;
+    /** Paper/Folia {@code Bukkit.isOwnedByCurrentRegion(Location)}; null on Spigot. */
+    private static final Method IS_OWNED_BY_CURRENT_REGION;
 
     static {
         FOLIA_PRESENT = detectFolia();
+        IS_OWNED_BY_CURRENT_REGION = resolveIsOwnedByCurrentRegion();
     }
 
     private SchedulerAdapter() {}
+
+    private static Method resolveIsOwnedByCurrentRegion() {
+        try {
+            return Bukkit.class.getMethod("isOwnedByCurrentRegion", Location.class);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
 
     private static boolean detectFolia() {
         try {
@@ -37,6 +48,23 @@ public final class SchedulerAdapter {
 
     public static boolean isFolia() {
         return FOLIA_PRESENT;
+    }
+
+    /**
+     * True when the calling thread may read or modify blocks at {@code location}: the owning region
+     * thread on Folia, the main thread on Paper/Spigot. Async scheduler threads never qualify, so callers
+     * that can run off-thread should fall back to cached data when this returns false.
+     */
+    public static boolean isOwnedByCurrentRegion(Location location) {
+        if (location == null || location.getWorld() == null) return false;
+        if (IS_OWNED_BY_CURRENT_REGION == null) {
+            return Bukkit.isPrimaryThread();
+        }
+        try {
+            return Boolean.TRUE.equals(IS_OWNED_BY_CURRENT_REGION.invoke(null, location));
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static Object getGlobalScheduler() throws Exception {

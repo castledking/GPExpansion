@@ -251,6 +251,17 @@ public final class GPExpansionPlugin extends JavaPlugin {
             }
             getServer().getMessenger().registerOutgoingPluginChannel(this,
                 codes.castled.gpexpansion.waypoint.ClaimWaypointManager.CLAIM_DATA_CHANNEL);
+            // CrowBar's claim key and /claim bar share one mode. Registered here, once: Paper only
+            // tells clients which channels a plugin listens on as they join, and that announcement
+            // is how CrowBar knows its claim key can ask for a new mode.
+            getServer().getMessenger().registerOutgoingPluginChannel(this,
+                codes.castled.gpexpansion.waypoint.ClaimWaypointManager.CLAIM_MODE_CHANNEL);
+            getServer().getMessenger().registerIncomingPluginChannel(this,
+                codes.castled.gpexpansion.waypoint.ClaimWaypointManager.CLAIM_MODE_CHANNEL,
+                (channel, player, message) -> {
+                    codes.castled.gpexpansion.waypoint.ClaimWaypointManager manager = claimWaypointManager;
+                    if (manager != null) manager.handleModeRequest(player, message);
+                });
             // Only unmodified clients need the pack; CrowBar pins the bowtie sprite itself.
             if (!configManager.areClaimWaypointsCrowbarOnly()) {
                 claimWaypointPackService = new codes.castled.gpexpansion.pack.ClaimWaypointPackService(this);
@@ -739,7 +750,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
         Command claimBarWrapper = new PaperCommandWrapper(
                 this,
                 "claimbar",
-                "Choose which claims appear on your vanilla locator bar",
+                "Choose which claims appear on your locator bar",
                 "/claimbar [own|trusted|both|off]",
                 java.util.Collections.emptyList(),
                 claimCommand,
@@ -947,6 +958,11 @@ public final class GPExpansionPlugin extends JavaPlugin {
         // Reload sign limit config and clear cached limits
         if (signLimitManager != null) {
             signLimitManager.reloadConfig();
+        }
+
+        // Delivery and enable/disable changes must update existing clients immediately.
+        if (claimWaypointManager != null) {
+            claimWaypointManager.rebuildAll();
         }
 
         // Restart map integrations so config toggles (and enable/disable) take effect.

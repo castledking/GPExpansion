@@ -96,8 +96,11 @@ public final class ClaimWaypointListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChannelRegistered(PlayerRegisterChannelEvent event) {
-        if (ClaimWaypointManager.CLAIM_DATA_CHANNEL.equals(event.getChannel())) {
-            // This is the earliest reliable point at which CrowBar has advertised its receiver.
+        String channel = event.getChannel();
+        if (ClaimWaypointManager.CLAIM_DATA_CHANNEL.equals(channel)
+            || ClaimWaypointManager.CLAIM_MODE_CHANNEL.equals(channel)) {
+            // This is the earliest reliable point at which CrowBar has advertised its receivers.
+            // A CrowBar that registers the mode channel gets its whole claim list and the mode.
             rebuildNextTick(event.getPlayer());
         }
     }

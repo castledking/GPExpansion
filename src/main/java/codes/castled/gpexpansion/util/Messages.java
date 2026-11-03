@@ -223,10 +223,10 @@ public class Messages {
         DEFAULTS.put("claim.main-id-missing", "&cCould not determine main claim ID.");
         DEFAULTS.put("claim.must-own-action", "&cYou must own this claim to {action}.");
         DEFAULTS.put("claim.abandon-subdivision-warning", "&7This will delete &6{count} subdivision{plural}.");
-        DEFAULTS.put("claim.bar-current", "&7Your locator bar mode is &e{mode}&7. The bar shows: &e{what}&7.");
-        DEFAULTS.put("claim.bar-set", "&aLocator bar mode set to &e{mode}&a. The bar now shows: &e{what}&a.");
-        DEFAULTS.put("claim.bar-current-mode-off", "&7Your locator bar mode is &eoff&7. Nothing appears on the bar.");
-        DEFAULTS.put("claim.bar-set-mode-off", "&aLocator bar mode set to &eoff&a. Nothing appears on the bar.");
+        DEFAULTS.put("claim.bar-current", "&7Your claim marker mode is &e{mode}&7. The bar shows: &e{what}&7.");
+        DEFAULTS.put("claim.bar-set", "&aClaim marker mode set to &e{mode}&a. The bar now shows: &e{what}&a.");
+        DEFAULTS.put("claim.bar-current-mode-off", "&7Your claim markers are &eoff&7. Player dots are controlled separately.");
+        DEFAULTS.put("claim.bar-set-mode-off", "&aClaim markers are now &eoff&a. Player dots are controlled separately.");
         DEFAULTS.put("claim.bar-mode-what-own", "only your own claims");
         DEFAULTS.put("claim.bar-mode-what-trusted", "your claims and claims you can access");
         DEFAULTS.put("claim.bar-mode-what-both", "your claims, claims you can access, and published claims");
@@ -921,6 +921,11 @@ public class Messages {
             plugin.getLogger().info("Removed deprecated lang key permissions.anywhere-denied.");
         }
         
+        if (replaceRetiredDefaults(langConfig)) {
+            saveLanguageFile();
+            plugin.getLogger().info("Updated unchanged /claim bar messages to the new claim-marker wording.");
+        }
+
         // Auto-bump version if no migrations needed and version is older than project version
         String projectVersion = getProjectVersion();
         String currentLangVersion = langConfig.getString("version", "0.1.3a");
@@ -931,6 +936,32 @@ public class Messages {
         currentVersion = langConfig.getString("version", "0.1.3a");
     }
     
+    /** Shipped texts that were reworded; installs still holding them verbatim get the new default. */
+    private static final Map<String, String> RETIRED_DEFAULTS = Map.of(
+        // /claim bar only controls claim markers; the old text claimed the whole bar went empty.
+        "claim.bar-current", "&7Your locator bar mode is &e{mode}&7. The bar shows: &e{what}&7.",
+        "claim.bar-set", "&aLocator bar mode set to &e{mode}&a. The bar now shows: &e{what}&a.",
+        "claim.bar-current-mode-off", "&7Your locator bar mode is &eoff&7. Nothing appears on the bar.",
+        "claim.bar-set-mode-off", "&aLocator bar mode set to &eoff&a. Nothing appears on the bar."
+    );
+
+    /**
+     * Replaces messages that still match a retired default word for word. Customised messages are
+     * left alone, and once replaced nothing matches again, so this is safe to run on every load.
+     *
+     * @return true when the lang file changed
+     */
+    static boolean replaceRetiredDefaults(org.bukkit.configuration.ConfigurationSection lang) {
+        boolean changed = false;
+        for (Map.Entry<String, String> retired : RETIRED_DEFAULTS.entrySet()) {
+            if (retired.getValue().equals(lang.getString(retired.getKey()))) {
+                lang.set(retired.getKey(), DEFAULTS.get(retired.getKey()));
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
     /**
      * Get the project version from plugin.yml
      * Falls back to reading from pom.properties or hardcoded version

@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.logging.Level;
 
 /**
  * Unified "My Claims" GUI covering Owned, Trusted, Rented, Bought, Mailboxes, and Listed claims.
@@ -145,15 +146,26 @@ public class OwnedClaimsGUI extends BaseGUI {
         });
     }
 
+    /**
+     * Rebuild {@link #filteredClaims} for the current filter. A loader failure is logged and leaves the
+     * filter empty so the GUI still repaints on the selected filter; otherwise the async refresh dies,
+     * the hopper keeps showing the old filter, and the next click appears to skip one.
+     */
     private void loadClaims() {
         filteredClaims.clear();
-        switch (currentFilter) {
-            case OWNED -> loadOwnedClaims();
-            case TRUSTED -> loadTrustedClaims();
-            case RENTED -> loadRentedByMeClaims();
-            case BOUGHT -> loadBoughtClaims();
-            case MAILBOXES -> loadOwnMailboxes();
-            case LISTED -> loadListedClaims();
+        try {
+            switch (currentFilter) {
+                case OWNED -> loadOwnedClaims();
+                case TRUSTED -> loadTrustedClaims();
+                case RENTED -> loadRentedByMeClaims();
+                case BOUGHT -> loadBoughtClaims();
+                case MAILBOXES -> loadOwnMailboxes();
+                case LISTED -> loadListedClaims();
+            }
+        } catch (RuntimeException e) {
+            filteredClaims.clear();
+            plugin.getLogger().log(Level.WARNING,
+                "Failed to load My Claims filter " + currentFilter + " for " + player.getName(), e);
         }
     }
 

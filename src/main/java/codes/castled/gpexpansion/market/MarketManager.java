@@ -152,7 +152,12 @@ public final class MarketManager implements Listener {
         }
     }
 
-    /** True when a mailbox ID in ClaimDataStore still has an unpurchased for-sale sign attached. */
+    /**
+     * True when a mailbox ID in ClaimDataStore still has an unpurchased for-sale sign attached.
+     * Safe from any thread: the sign itself is only read when the caller owns its region; otherwise
+     * (async GUI loaders, other Folia regions) the synced market listings decide, exactly as they
+     * already do when the sign's chunk is unloaded.
+     */
     public boolean isMailboxStillForSale(String mailboxId) {
         if (mailboxId == null) return false;
         for (MarketListing listing : store.listings()) {
@@ -161,7 +166,9 @@ public final class MarketManager implements Listener {
             }
         }
         Location signLoc = plugin.getClaimDataStore().getMailboxSignLocation(mailboxId).orElse(null);
-        if (signLoc != null && signLoc.getWorld() != null && signLoc.getWorld().isChunkLoaded(signLoc.getBlockX() >> 4, signLoc.getBlockZ() >> 4)) {
+        if (signLoc != null && signLoc.getWorld() != null
+                && SchedulerAdapter.isOwnedByCurrentRegion(signLoc)
+                && signLoc.getWorld().isChunkLoaded(signLoc.getBlockX() >> 4, signLoc.getBlockZ() >> 4)) {
             if (signLoc.getBlock().getState() instanceof Sign sign) {
                 return isForSaleMailboxPdc(sign.getPersistentDataContainer());
             }

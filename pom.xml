@@ -17,14 +17,17 @@
     <maven.compiler.target>25</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <!--
-      Claim waypoints need a Paper API >= 1.21.11: LivingEntity#setWaypointStyle and
-      #setWaypointColor landed after 1.21.6, and Attribute.WAYPOINT_TRANSMIT_RANGE in 1.21.6.
+      GPExpansion is a plain Bukkit plugin (plugin.yml only) and compiles against the Spigot
+      API, so nothing Paper-only can reach the shipped jar. Paper/Folia schedulers, claim
+      waypoints, and newer game rules are reached through reflection at runtime. The paper
+      profile compiles the same sources against Paper's API to catch Spigot API that Paper
+      has since removed or changed.
     -->
-    <paper.version>26.2.build.40-alpha</paper.version>
     <spigot.version>1.21.4-R0.1-SNAPSHOT</spigot.version>
-    <server.api.group>io.papermc.paper</server.api.group>
-    <server.api.artifact>paper-api</server.api.artifact>
-    <server.api.version>${paper.version}</server.api.version>
+    <paper.version>26.2.build.40-alpha</paper.version>
+    <server.api.group>org.spigotmc</server.api.group>
+    <server.api.artifact>spigot-api</server.api.artifact>
+    <server.api.version>${spigot.version}</server.api.version>
     <adventure.minimessage.version>5.2.0</adventure.minimessage.version>
     <vault.api.version>1.7</vault.api.version>
     <griefprevention3d.version>18.2.7</griefprevention3d.version>
@@ -32,6 +35,10 @@
   </properties>
 
   <repositories>
+    <repository>
+      <id>spigotmc-repo</id>
+      <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
+    </repository>
     <repository>
       <id>papermc-repo</id>
       <url>https://repo.papermc.io/repository/maven-public/</url>
@@ -72,29 +79,33 @@
   </repositories>
 
   <profiles>
-    <!-- Compiles the module against the Spigot API instead of Paper. Any compile
-         error points at a Paper-only API touchpoint that needs a Spigot fallback. -->
+    <!-- Compiles the module against the Paper API instead of Spigot. Any compile error
+         points at Spigot API that Paper removed or changed, which would break the
+         shipped (Spigot-compiled) jar on Paper servers. -->
     <profile>
-      <id>spigot-compat</id>
+      <id>paper</id>
       <properties>
-        <server.api.group>org.spigotmc</server.api.group>
-        <server.api.artifact>spigot-api</server.api.artifact>
-        <server.api.version>${spigot.version}</server.api.version>
+        <server.api.group>io.papermc.paper</server.api.group>
+        <server.api.artifact>paper-api</server.api.artifact>
+        <server.api.version>${paper.version}</server.api.version>
       </properties>
-      <repositories>
-        <repository>
-          <id>spigotmc-repo</id>
-          <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
-        </repository>
-      </repositories>
+      <dependencies>
+        <!-- Paper exposes this type on JavaPlugin; Mockito inspects that API during tests. -->
+        <dependency>
+          <groupId>net.kyori</groupId>
+          <artifactId>adventure-text-logger-slf4j</artifactId>
+          <version>${adventure.minimessage.version}</version>
+          <scope>test</scope>
+        </dependency>
+      </dependencies>
     </profile>
   </profiles>
 
   <dependencies>
-    <!-- Server API. Paper by default; the spigot-compat profile compiles the same
-         sources against the Spigot API to catch any use of Paper-only interfaces.
-         Exclude Paper's Adventure 5.x so our shaded/relocated Adventure stays
-         self-consistent across Spigot, Paper 1.21.x, and Paper 26.2+. -->
+    <!-- Server API. Spigot by default; the paper profile compiles the same sources
+         against the Paper API. Exclude any Adventure the API pulls in (Paper ships
+         Adventure 5.x) so our shaded/relocated Adventure stays self-consistent
+         across Spigot, Paper 1.21.x, and Paper 26.2+. -->
     <dependency>
       <groupId>${server.api.group}</groupId>
       <artifactId>${server.api.artifact}</artifactId>
@@ -182,6 +193,12 @@
       <version>${junit.version}</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <version>5.23.0</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -221,6 +238,24 @@
             <arg>-Xmaxwarns</arg>
             <arg>2000</arg>
           </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.5.1</version>
+        <configuration>
+          <archive>
+            <manifestEntries>
+              <!--
+                No NMS bytecode ships in this jar; the only server-internals access is
+                WaypointPacketBridge's reflection, which uses Mojang names. Declaring the
+                mojang namespace stops Paper 1.20.5+ from remapping this Bukkit plugin and
+                rewriting that reflection as Spigot names. Spigot ignores the attribute.
+              -->
+              <paperweight-mappings-namespace>mojang</paperweight-mappings-namespace>
+            </manifestEntries>
+          </archive>
         </configuration>
       </plugin>
       <plugin>

@@ -35,8 +35,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * Claim positions come from GP3D's in-memory claim data and reach clients two ways:
  *
  * <ul>
- *   <li><b>CrowBar clients</b> receive the full claim set on the {@code crowbar:claim_data} plugin
- *       channel — position, name, colour, ownership — and render it themselves.
+ *   <li><b>CrowBar clients</b> receive their claims on the {@code crowbar:claim_data} plugin
+ *       channel — position, name, colour, ownership — and render them themselves. CrowBar's claim
+ *       key and {@code /claim bar} share one mode, kept in step over {@code crowbar:claim_mode}.
  *   <li><b>Unmodified clients</b> (when {@code claim-waypoints.crowbar-only} is false) are sent
  *       vanilla {@code ClientboundTrackedWaypointPacket}s directly via {@link WaypointPacketBridge}.
  *       The packet is self-contained, so no armor stand, attribute, or loaded chunk needs to
@@ -62,11 +63,29 @@ public final class ClaimWaypointManager {
     /** Plugin channel CrowBar listens on for claim data. */
     public static final String CLAIM_DATA_CHANNEL = "crowbar:claim_data";
 
+    /**
+     * Plugin channel for the {@code /claim bar} mode, both ways. A CrowBar client that registers it
+     * follows the player's mode, and its claim key asks to change it rather than keeping a mode of
+     * its own. See {@link #sendModeState} and {@link #handleModeRequest}.
+     */
+    public static final String CLAIM_MODE_CHANNEL = "crowbar:claim_mode";
+
+    /** Who may change their mode, by command or by CrowBar's claim key. */
+    public static final String BAR_PERMISSION = "griefprevention.claim.bar";
+
+    private static final int MAX_MODE_REQUEST_BYTES = 256;
+
     private final GPExpansionPlugin plugin;
     private final NamespacedKey markerKey;
 
     /** What each online player currently has on their vanilla locator bar, keyed by claim ID. */
     private final Map<UUID, Map<String, SentWaypoint>> sentByPlayer = new ConcurrentHashMap<>();
+
+    /**
+     * The last claim key request handled for each player. Echoed in every mode message so CrowBar can
+     * tell a confirmation from an older message that crossed a newer request on the wire.
+     */
+    private final Map<UUID, Integer> modeRequestsHandled = new ConcurrentHashMap<>();
 
     private boolean loggedBridgeFailure;
 
@@ -90,17 +109,27 @@ public final class ClaimWaypointManager {
         rebuildAll();
     }
 
-    /** Withdraws every sent waypoint so clients are not left with stale markers after a reload. */
+    /**
+     * Withdraws every sent waypoint so clients are not left with stale markers after a reload, and
+     * hands CrowBar's claim key back to the client.
+     */
     public void shutdown() {
         for (Player viewer : Bukkit.getOnlinePlayers()) {
-            withdrawAll(viewer);
+            withdrawFrom(viewer);
         }
         sentByPlayer.clear();
+    }
+
+    private void withdrawFrom(Player viewer) {
+        sendModeState(viewer, false);
+        sendClaimData(viewer, List.of(), false, false);
+        withdrawAll(viewer);
     }
 
     /** Forgets a leaving player's sent state; their client discards waypoints on disconnect. */
     public void handleQuit(Player player) {
         sentByPlayer.remove(player.getUniqueId());
+        modeRequestsHandled.remove(player.getUniqueId());
     }
 
     private boolean enabled() {
@@ -154,7 +183,10 @@ public final class ClaimWaypointManager {
      * directly on that viewer's final list instead of repeatedly walking the union of all claims.
      */
     public void rebuildAll() {
-        if (!enabled()) return;
+        if (!enabled()) {
+            shutdown();
+            return;
+        }
 
         List<Player> viewers = new ArrayList<>(Bukkit.getOnlinePlayers());
         boolean sendPackets = vanillaPacketsActive();
@@ -173,7 +205,11 @@ public final class ClaimWaypointManager {
      * normal path for joins, plugin-channel registration, and world changes.
      */
     public void rebuildViewer(Player viewer) {
-        if (!enabled() || viewer == null || !viewer.isOnline()) return;
+        if (viewer == null || !viewer.isOnline()) return;
+        if (!enabled()) {
+            withdrawFrom(viewer);
+            return;
+        }
 
         boolean sendPackets = vanillaPacketsActive();
         List<PreparedClaim> claims = prepareClaimsFor(List.of(viewer))
@@ -182,7 +218,10 @@ public final class ClaimWaypointManager {
     }
 
     private void applyViewer(Player viewer, List<PreparedClaim> claims, boolean sendPackets) {
-        sendClaimData(viewer, claims, sendPackets);
+        boolean followsMode = followsBarMode(viewer);
+        // The mode goes first so CrowBar already filters by it when the claims arrive.
+        sendModeState(viewer, followsMode);
+        sendClaimData(viewer, claims, sendPackets, followsMode);
         if (sendPackets) {
             syncViewer(viewer, claims);
         } else {
@@ -249,10 +288,9 @@ public final class ClaimWaypointManager {
         boolean barEnabled = locatorRule == null
             || !Boolean.FALSE.equals(viewer.getWorld().getGameRuleValue(locatorRule));
         long range = plugin.getConfigManager().getClaimWaypointTransmitRange();
-        // The bar mode narrows the vanilla packet path only. CrowBar clients render their own
-        // waypoints from the channel payload, so the mode is meaningless for them and stays on
-        // the full default rather than letting `off` fight their mod's rendering.
-        WaypointBarMode mode = isCrowBarClient(viewer) ? WaypointBarMode.BOTH : modeStore().get(viewer.getUniqueId());
+        // The bar mode applies to every client. CrowBar hides these markers by uuid and draws its
+        // claims from the payload, by the same mode (see sendClaimData and sendModeState).
+        WaypointBarMode mode = modeStore().get(viewer.getUniqueId());
         UUID viewerId = viewer.getUniqueId();
 
         if (barEnabled) {
@@ -406,7 +444,9 @@ public final class ClaimWaypointManager {
      *
      * <p>Admin claims (no owner) never appear on the vanilla bar, whichever mode is active.
      * {@code both} matches the historical behaviour: own claims, anything the viewer holds trust
-     * on, and published claims. {@code trusted} includes owned claims for simplicity.
+     * on, and published claims. {@code trusted} includes owned claims for simplicity. CrowBar
+     * follows the same rules through {@link #crowBarShows}, except that its {@code both} keeps every
+     * viewable claim.
      */
     private boolean allowedByMode(WaypointBarMode mode, PreparedClaim claim, UUID viewerId) {
         switch (mode) {
@@ -427,14 +467,82 @@ public final class ClaimWaypointManager {
         }
     }
 
+    /** Whether CrowBar draws {@code claim} in {@code mode}: the bar's rules, but {@code both} keeps all. */
+    private boolean crowBarShows(WaypointBarMode mode, PreparedClaim claim, UUID viewerId) {
+        return mode == WaypointBarMode.BOTH || allowedByMode(mode, claim, viewerId);
+    }
+
+    // ------------------------------------------------------------------ CrowBar claim key
+
     /**
-     * Whether this player has CrowBar installed.
-     *
-     * <p>Detected from the plugin channels the client registered on join. CrowBar registers a
-     * receiver for the claim data channel, and only a client with the mod will have done so.
+     * Whether this viewer's CrowBar follows their {@code /claim bar} mode: it registered
+     * {@link #CLAIM_MODE_CHANNEL}, and the player may change their mode. A CrowBar without either
+     * keeps its own claim key mode within what the payload sends, as older versions did.
      */
-    private boolean isCrowBarClient(Player player) {
-        return player.getListeningPluginChannels().contains(CLAIM_DATA_CHANNEL);
+    private boolean followsBarMode(Player viewer) {
+        return viewer.getListeningPluginChannels().contains(CLAIM_MODE_CHANNEL)
+            && viewer.hasPermission(BAR_PERMISSION);
+    }
+
+    /**
+     * Tells a CrowBar client the player's {@code /claim bar} mode on {@link #CLAIM_MODE_CHANNEL}:
+     * {@code {"mode":"off","modes":["own","trusted","both","off"],"ack":3}}, where {@code modes} is
+     * the claim key's cycle and {@code ack} the last request handled. An empty {@code modes} hands
+     * the claim key back to the client.
+     */
+    private void sendModeState(Player viewer, boolean followsMode) {
+        if (!viewer.getListeningPluginChannels().contains(CLAIM_MODE_CHANNEL)) return;
+        UUID viewerId = viewer.getUniqueId();
+        com.google.gson.JsonArray modes = new com.google.gson.JsonArray();
+        if (followsMode) {
+            for (String mode : WaypointBarMode.ARGUMENTS) modes.add(mode);
+        }
+        com.google.gson.JsonObject root = new com.google.gson.JsonObject();
+        root.addProperty("mode", modeStore().get(viewerId).name().toLowerCase(Locale.ROOT));
+        root.add("modes", modes);
+        root.addProperty("ack", modeRequestsHandled.getOrDefault(viewerId, 0));
+        sendJson(viewer, CLAIM_MODE_CHANNEL, root);
+    }
+
+    /**
+     * Handles a {@link #CLAIM_MODE_CHANNEL} message: CrowBar's claim key asking for a
+     * {@code /claim bar} mode, as {@code {"mode":"own","seq":4}}. The mode is set as the command
+     * would set it. Either way the viewer is rebuilt, which answers with the mode now in force, so a
+     * refused or unknown request puts the client back where the server is.
+     */
+    public void handleModeRequest(Player player, byte[] message) {
+        if (player == null || !player.isOnline() || !enabled()) return;
+        ModeRequest request = parseModeRequest(message);
+        if (request == null) return;
+
+        UUID playerId = player.getUniqueId();
+        modeRequestsHandled.merge(playerId, request.seq(), Math::max);
+        WaypointBarMode mode = request.mode();
+        if (mode != null && player.hasPermission(BAR_PERMISSION) && mode != modeStore().get(playerId)) {
+            modeStore().set(playerId, mode);
+        }
+        rebuildViewer(player);
+    }
+
+    /** A claim key request; {@code mode} is null when the client named a mode this server lacks. */
+    record ModeRequest(@Nullable WaypointBarMode mode, int seq) {}
+
+    /** Reads {@code {"mode":"own","seq":4}}, or null when the message is malformed. */
+    static @Nullable ModeRequest parseModeRequest(byte[] message) {
+        if (message == null || message.length > MAX_MODE_REQUEST_BYTES) return null;
+        try {
+            com.google.gson.JsonElement root =
+                com.google.gson.JsonParser.parseString(new String(message, StandardCharsets.UTF_8));
+            if (!root.isJsonObject()) return null;
+            com.google.gson.JsonElement mode = root.getAsJsonObject().get("mode");
+            com.google.gson.JsonElement seq = root.getAsJsonObject().get("seq");
+            if (mode == null || !mode.isJsonPrimitive() || seq == null || !seq.isJsonPrimitive()) return null;
+            int number = seq.getAsInt();
+            if (number < 1) return null;
+            return new ModeRequest(WaypointBarMode.fromString(mode.getAsString()), number);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     // ------------------------------------------------------------------ CrowBar payload
@@ -444,14 +552,26 @@ public final class ClaimWaypointManager {
      *
      * <p>Sends each viewer the claims that viewer is allowed to see, with position, name and
      * colour. Scoping per viewer keeps claim names and locations from leaking to players who have
-     * no access to them. Positions come from GP3D's in-memory claim data rather than from an
-     * entity, so a claim keeps rendering when its terrain is unloaded. Clients without CrowBar
-     * ignore the channel.
+     * no access to them. Positions come from GP3D's in-memory claim data rather than from an entity,
+     * so a claim keeps rendering when its terrain is unloaded. Clients without CrowBar ignore the
+     * channel.
+     *
+     * <p>A client that follows the bar mode gets every viewable claim, each listing the modes that
+     * show it, so its claim key switches without waiting for a new list. Any other CrowBar gets
+     * the claims its {@code /claim bar} mode shows and picks within them with its claim key.
      */
-    private void sendClaimData(Player viewer, List<PreparedClaim> claims, boolean vanillaPackets) {
+    private void sendClaimData(Player viewer, List<PreparedClaim> claims, boolean vanillaPackets,
+                               boolean followsMode) {
         com.google.gson.JsonArray entries = new com.google.gson.JsonArray();
+        UUID viewerId = viewer.getUniqueId();
+        WaypointBarMode mode = modeStore().get(viewerId);
 
         for (PreparedClaim claim : claims) {
+            // An older CrowBar replaces its claim list with this payload, so `off` empties it and
+            // `own` or `trusted` narrow it. Either way the payload is a superset of syncViewer's
+            // markers, so each vanilla marker still has its uuid here for CrowBar's duplicate
+            // suppression.
+            if (!followsMode && !crowBarShows(mode, claim, viewerId)) continue;
             Location anchor = claim.anchor();
             // Cross-world claims cannot be drawn on a bar that is relative to the viewer.
             if (!anchor.getWorld().equals(viewer.getWorld())) continue;
@@ -459,7 +579,7 @@ public final class ClaimWaypointManager {
             com.google.gson.JsonObject json = new com.google.gson.JsonObject();
             json.addProperty("id", claim.id());
             json.addProperty("name", claim.name());
-            json.addProperty("owned", viewer.getUniqueId().equals(claim.claim().getOwnerID()));
+            json.addProperty("owned", viewerId.equals(claim.claim().getOwnerID()));
             json.addProperty("x", anchor.getX());
             json.addProperty("y", anchor.getY());
             json.addProperty("z", anchor.getZ());
@@ -472,14 +592,27 @@ public final class ClaimWaypointManager {
                 json.addProperty("uuid", claim.waypointId().toString());
             }
 
+            if (followsMode) {
+                com.google.gson.JsonArray modes = new com.google.gson.JsonArray();
+                for (WaypointBarMode candidate : WaypointBarMode.values()) {
+                    if (crowBarShows(candidate, claim, viewerId)) {
+                        modes.add(candidate.name().toLowerCase(Locale.ROOT));
+                    }
+                }
+                json.add("modes", modes);
+            }
+
             entries.add(json);
         }
 
         com.google.gson.JsonObject root = new com.google.gson.JsonObject();
         root.add("claims", entries);
+        sendJson(viewer, CLAIM_DATA_CHANNEL, root);
+    }
+
+    private void sendJson(Player viewer, String channel, com.google.gson.JsonObject root) {
         try {
-            viewer.sendPluginMessage(plugin, CLAIM_DATA_CHANNEL,
-                root.toString().getBytes(StandardCharsets.UTF_8));
+            viewer.sendPluginMessage(plugin, channel, root.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception ignored) {
             // A client that never registered the channel is normal, not an error.
         }

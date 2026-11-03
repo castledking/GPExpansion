@@ -279,13 +279,29 @@ public final class ClaimFlagListener implements Listener {
             candidates.add(Candidate.of(ClaimFlag.USE_ARMOR_STANDS));
         } else if (entity instanceof ItemFrame) {
             candidates.add(Candidate.of(ClaimFlag.USE_ITEM_FRAMES));
-        } else if (entity instanceof Minecart || entity instanceof Boat) {
+        } else if (isVehicle(entity)) {
             candidates.add(Candidate.of(ClaimFlag.USE_VEHICLES));
         }
         if (!(entity instanceof Player)) {
             candidates.add(new Candidate(ClaimFlag.MOB_INTERACTION_FILTER, key(entity.getType())));
         }
         return candidates;
+    }
+
+    /**
+     * Flags a player placing an entity falls under, most specific first: boats and minecarts check
+     * Place Vehicles and fall back to Place Entities when a claim leaves Place Vehicles unset.
+     */
+    static List<Candidate> entityPlaceCandidates(Entity entity) {
+        if (isVehicle(entity)) {
+            return List.of(Candidate.of(ClaimFlag.PLACE_VEHICLES), Candidate.of(ClaimFlag.ENTITY_PLACE));
+        }
+        return List.of(Candidate.of(ClaimFlag.ENTITY_PLACE));
+    }
+
+    /** Boats (including chest boats and rafts) and every minecart variant. */
+    private static boolean isVehicle(Entity entity) {
+        return entity instanceof Minecart || entity instanceof Boat;
     }
 
     /** Flag for a player hurting an entity, or null when no flag covers the victim. */
@@ -330,7 +346,7 @@ public final class ClaimFlagListener implements Listener {
         if (trigger instanceof VehicleDestroyEvent || trigger instanceof VehicleDamageEvent) {
             return List.of(Candidate.of(ClaimFlag.BREAK_VEHICLES));
         }
-        if (trigger instanceof EntityPlaceEvent) return List.of(Candidate.of(ClaimFlag.ENTITY_PLACE));
+        if (trigger instanceof EntityPlaceEvent e) return entityPlaceCandidates(e.getEntity());
         if (trigger instanceof BlockIgniteEvent) return List.of(Candidate.of(ClaimFlag.USE_LIGHTER));
         if (trigger instanceof BlockFertilizeEvent) return List.of(Candidate.of(ClaimFlag.BLOCK_FERTILIZE));
         if (trigger instanceof CauldronLevelChangeEvent) return List.of(Candidate.of(ClaimFlag.USE_CAULDRONS));
@@ -495,7 +511,8 @@ public final class ClaimFlagListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityPlace(EntityPlaceEvent event) {
         if (event.getPlayer() != null) {
-            denyPlayer(event.getPlayer(), event.getEntity().getLocation(), event, ClaimFlag.ENTITY_PLACE);
+            denyPlayer(event.getPlayer(), event.getEntity().getLocation(), event,
+                entityPlaceCandidates(event.getEntity()));
         }
     }
 

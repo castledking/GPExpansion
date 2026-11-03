@@ -104,8 +104,11 @@ public enum ClaimFlag {
         "Whether outsiders without build trust can use item frames."),
     USE_VEHICLES("use_vehicles", Category.PLAYER, Trust.ACCESS, "Use Vehicles", "MINECART",
         "Whether outsiders without access trust can ride boats and minecarts."),
-    ENTITY_PLACE("entity_place", Category.PLAYER, Trust.BUILD, "Place Entities", "OAK_BOAT",
-        "Whether outsiders without build trust can place vehicles and armor stands."),
+    ENTITY_PLACE("entity_place", Category.PLAYER, Trust.BUILD, "Place Entities", "ARMOR_STAND",
+        "Whether outsiders without build trust can place armor stands, end crystals and vehicles. "
+            + "Place Vehicles overrides this one for boats and minecarts."),
+    PLACE_VEHICLES("place_vehicles", Category.PLAYER, Trust.BUILD, "Place Vehicles", "OAK_BOAT",
+        "Whether outsiders without build trust can place boats and minecarts."),
     PLACE_HANGINGS("place_hangings", Category.PLAYER, Trust.BUILD, "Place Hangings", "PAINTING",
         "Whether outsiders without build trust can place paintings and item frames."),
     BREAK_HANGINGS("break_hangings", Category.PLAYER, Trust.BUILD, "Break Hangings", "PAINTING",

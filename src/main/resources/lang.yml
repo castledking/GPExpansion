@@ -602,10 +602,10 @@ claim:
 
   # Locator bar mode
   bar-usage: "&eUsage: {usage}"
-  bar-current: "&7Your locator bar mode is &e{mode}&7. The bar shows: &e{what}&7."
-  bar-set: "&aLocator bar mode set to &e{mode}&a. The bar now shows: &e{what}&a."
-  bar-current-mode-off: "&7Your locator bar mode is &eoff&7. Nothing appears on the bar."
-  bar-set-mode-off: "&aLocator bar mode set to &eoff&a. Nothing appears on the bar."
+  bar-current: "&7Your claim marker mode is &e{mode}&7. The bar shows: &e{what}&7."
+  bar-set: "&aClaim marker mode set to &e{mode}&a. The bar now shows: &e{what}&a."
+  bar-current-mode-off: "&7Your claim markers are &eoff&7. Player dots are controlled separately."
+  bar-set-mode-off: "&aClaim markers are now &eoff&a. Player dots are controlled separately."
   bar-mode-what-own: "only your own claims"
   bar-mode-what-trusted: "your claims and claims you can access"
   bar-mode-what-both: "your claims, claims you can access, and published claims"

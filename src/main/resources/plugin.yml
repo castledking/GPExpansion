@@ -7,8 +7,14 @@ author: castledking
 website: https://castled.codes
 folia-supported: true
 
-# GPExpansion loads before GriefPrevention so /claim takeover and GP3D addon wiring
-# follow the exact same load order on Spigot as paper-plugin.yml (load: AFTER).
+# GPExpansion is a plain Bukkit plugin on every platform (Spigot, Paper, Purpur, Folia);
+# this is its only descriptor. Do not add a paper-plugin.yml: Paper would prefer it and
+# load GPX in an isolated classloader that add-ons cannot see.
+
+# With upstream GriefPrevention, GPExpansion must enable first so our /claim registers
+# before GP's and wins the unprefixed label. GriefPrevention3D (which only provides
+# "GriefPrevention") keeps its own /claim and GPX plugs into it as a claim-command addon,
+# which works in either enable order; Paper does not apply loadbefore through provides.
 loadbefore:
   - GriefPrevention
 
@@ -21,9 +27,19 @@ softdepend:
   - Oraxen
   - Dynmap
   - BlueMap
+# Nexo is omitted from load order to avoid a circular dependency:
+#   GriefPrevention -> GPExpansion -> Nexo -> Vulcan -> GSit -> GriefPrevention
+# It is still used at runtime (glyph parsing in GUIs) via reflection when present.
+#
+# DiscordSRV is omitted from load order to avoid a circular dependency:
+#   GPExpansion -> DiscordSRV -> Skript -> GriefPrevention -> GPExpansion
+# It is still used at runtime via reflection through DiscordSRVChatCaptureBridge,
+# which hooks whenever DiscordSRV enables.
 
-# Commands are registered dynamically at runtime via CommandMap + PaperCommandWrapper
-# in GPExpansionPlugin#registerPluginCommands() (matching Paper's runtime command setup).
+# No commands: section on purpose. Commands are registered at runtime via CommandMap +
+# PaperCommandWrapper in GPExpansionPlugin#registerPluginCommands(). Bukkit registers
+# plugin.yml commands just before onEnable, so declaring them here would claim the labels
+# for plain PluginCommands and push our real commands to the gpexpansion: prefix.
 
 permissions:
   gpx.player:
@@ -73,7 +89,7 @@ permissions:
     default: op
 
   griefprevention.claim.bar:
-    description: Allows choosing which claims appear on your vanilla locator bar (/claim bar or /claimbar)
+    description: Allows choosing which claims appear on your locator bar (/claim bar or /claimbar)
     default: true
 
   griefprevention.claim.color.anywhere:

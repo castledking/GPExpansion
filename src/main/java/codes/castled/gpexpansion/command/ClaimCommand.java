@@ -558,11 +558,11 @@ public class ClaimCommand implements CommandExecutor, TabCompleter {
     /**
      * Handle /claim bar [mode] and standalone /claimbar [mode].
      *
-     * <p>Chooses which of the viewer's claims appear on their vanilla locator bar. No argument
-     * reports the current mode. Modes: {@code own} (owned claims only), {@code trusted} (owned
-     * claims plus anything the player holds access trust on), {@code both} (also published claims,
-     * the default), {@code off} (nothing on the bar). The mode never affects CrowBar clients's
-     * waypoints, which they render themselves.
+     * <p>Chooses which of the viewer's claims appear on their locator bar. No argument reports the
+     * current mode. Modes: {@code own} (owned claims only), {@code trusted} (owned claims plus
+     * anything the player holds access trust on), {@code both} (also published claims, the
+     * default), {@code off} (no claim markers). CrowBar's claim key cycles this same mode, and the
+     * rebuild below tells CrowBar about the change.
      */
     private boolean handleBar(CommandSender sender, String[] args) {
         if (!requirePlayer(sender)) return true;

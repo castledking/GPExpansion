@@ -20,11 +20,13 @@ import java.util.UUID;
  * of those constraints: no entities, no chunk tickets, no {@code hideEntity} bookkeeping, and
  * exact per-player control because we choose the recipients.
  *
- * <p>Reflection rather than an NMS dependency because GPExpansion builds against {@code paper-api}
- * only. Paper has shipped Mojang mappings at runtime since 1.20.5 and stopped versioning the
+ * <p>Reflection rather than an NMS dependency because GPExpansion builds against the plain server
+ * API only. Paper has shipped Mojang mappings at runtime since 1.20.5 and stopped versioning the
  * CraftBukkit package, so these names are stable; every handle was verified against the 26.2
- * server jar. Everything resolves once in the static initialiser, and any failure flips
- * {@link #isAvailable()} so callers degrade to CrowBar-only delivery instead of throwing per send.
+ * server jar. The jar manifest declares {@code paperweight-mappings-namespace: mojang} so Paper
+ * does not rewrite this Bukkit plugin's reflection as Spigot names. Everything resolves once in the
+ * static initialiser, and any failure (such as a Spigot-mapped server) flips {@link #isAvailable()}
+ * so callers degrade to CrowBar-only delivery instead of throwing per send.
  */
 final class WaypointPacketBridge {
 
