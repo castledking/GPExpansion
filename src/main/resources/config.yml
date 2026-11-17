@@ -695,6 +695,10 @@ integrations:
   # Default claim marker colours on Dynmap/BlueMap. A per-claim /claim color
   # (named colour or #RRGGBB hex) overrides these for that claim.
   colors:
+    # When true, player claims without a custom /claim color receive a unique
+    # deterministic colour hashed from the owner's name instead of sharing
+    # main-claim. Admin claims still use admin-claim.
+    per-player: false
     main-claim: "#FFD700"
     admin-claim: "#FF8C00"
   dynmap:

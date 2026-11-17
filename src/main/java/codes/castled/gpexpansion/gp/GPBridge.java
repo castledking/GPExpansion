@@ -5083,9 +5083,10 @@ public class GPBridge {
 
     /**
      * Return the claim's outline as a single polygon of {@code double[]} corners:
-     * {@code { xs, zs }}. Shaped (GP3D) claims use their real polygon corners;
-     * rectangular claims use the 4 inflated corners used by the reference map plugins.
-     * Returns {@code null} when the claim has no usable geometry.
+     * {@code { xs, zs }}. Shaped (GP3D) claims use their real polygon corners inflated
+     * outward by one block on {@code +X}/{@code +Z} edges so the rendered footprint covers
+     * every protected block; rectangular claims use the 4 inflated corners used by the
+     * reference map plugins. Returns {@code null} when the claim has no usable geometry.
      */
     public double[][] getClaimOutline(Object claim) {
         if (!isAvailable() || claim == null) return null;
@@ -5096,13 +5097,10 @@ public class GPBridge {
             try {
                 PolygonView view = buildPolygonView(polygon);
                 if (view != null && view.xs.length >= 3) {
-                    double[] xs = new double[view.xs.length];
-                    double[] zs = new double[view.zs.length];
-                    for (int i = 0; i < view.xs.length; i++) {
-                        xs[i] = view.xs[i];
-                        zs[i] = view.zs[i];
+                    double[][] outline = inflateOrthogonalOutline(view.xs, view.zs);
+                    if (outline != null) {
+                        return outline;
                     }
-                    return new double[][]{xs, zs};
                 }
             } catch (ReflectiveOperationException e) {
                 if (DEBUG) e.printStackTrace();
@@ -5120,6 +5118,99 @@ public class GPBridge {
                 corners.z1, corners.z2 + 1.0, corners.z2 + 1.0, corners.z1
         };
         return new double[][]{xs, zs};
+    }
+
+    /**
+     * Convert inclusive block-lattice corners of an orthogonal polygon into world-space
+     * block-footprint corners where each protected block {@code (x, z)} covers
+     * {@code [x, x + 1] x [z, z + 1]}. Any edge whose outward normal points {@code +X} or
+     * {@code +Z} is shifted outward by {@code +1.0}.
+     */
+    static double[][] inflateOrthogonalOutline(int[] rawXs, int[] rawZs) {
+        if (rawXs == null || rawZs == null || rawXs.length != rawZs.length || rawXs.length < 3) {
+            return null;
+        }
+        int n = rawXs.length;
+        int[] px = new int[n];
+        int[] pz = new int[n];
+        int k = 0;
+        for (int i = 0; i < n; i++) {
+            if (k == 0 || rawXs[i] != px[k - 1] || rawZs[i] != pz[k - 1]) {
+                px[k] = rawXs[i];
+                pz[k] = rawZs[i];
+                k++;
+            }
+        }
+        if (k > 1 && px[k - 1] == px[0] && pz[k - 1] == pz[0]) {
+            k--;
+        }
+
+        // Drop collinear intermediate nodes so every remaining corner joins one vertical
+        // and one horizontal edge.
+        boolean changed = true;
+        while (changed && k >= 3) {
+            changed = false;
+            for (int i = 0; i < k; i++) {
+                int prev = (i - 1 + k) % k;
+                int next = (i + 1) % k;
+                long dx1 = (long) px[i] - px[prev];
+                long dz1 = (long) pz[i] - pz[prev];
+                long dx2 = (long) px[next] - px[i];
+                long dz2 = (long) pz[next] - pz[i];
+                if (dx1 * dz2 == dz1 * dx2) {
+                    for (int j = i; j < k - 1; j++) {
+                        px[j] = px[j + 1];
+                        pz[j] = pz[j + 1];
+                    }
+                    k--;
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        if (k < 4) {
+            return null;
+        }
+
+        long signedArea2 = 0L;
+        for (int i = 0; i < k; i++) {
+            int next = (i + 1) % k;
+            int dx = px[next] - px[i];
+            int dz = pz[next] - pz[i];
+            if (dx != 0 && dz != 0) {
+                return null;
+            }
+            signedArea2 += (long) px[i] * pz[next] - (long) px[next] * pz[i];
+        }
+        if (signedArea2 == 0L) {
+            return null;
+        }
+        long orientation = signedArea2 > 0L ? 1L : -1L;
+
+        double[] edgeOffset = new double[k];
+        for (int e = 0; e < k; e++) {
+            int next = (e + 1) % k;
+            long dx = (long) px[next] - px[e];
+            long dz = (long) pz[next] - pz[e];
+            if (dx == 0L) {
+                // Vertical edge: outward X is dz * orientation.
+                edgeOffset[e] = (dz * orientation > 0L) ? 1.0 : 0.0;
+            } else {
+                // Horizontal edge: outward Z is -dx * orientation.
+                edgeOffset[e] = (-dx * orientation > 0L) ? 1.0 : 0.0;
+            }
+        }
+
+        double[] outX = new double[k];
+        double[] outZ = new double[k];
+        for (int i = 0; i < k; i++) {
+            int prevEdge = (i - 1 + k) % k;
+            int nextEdge = i;
+            boolean prevIsVertical = (px[i] == px[prevEdge]);
+            outX[i] = px[i] + (prevIsVertical ? edgeOffset[prevEdge] : edgeOffset[nextEdge]);
+            outZ[i] = pz[i] + (prevIsVertical ? edgeOffset[nextEdge] : edgeOffset[prevEdge]);
+        }
+        return new double[][]{outX, outZ};
     }
 
     /**

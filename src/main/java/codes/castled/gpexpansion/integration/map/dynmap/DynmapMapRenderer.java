@@ -35,6 +35,7 @@ public final class DynmapMapRenderer implements MapRenderer {
     private final double fillOpacityOverride;
     private final int mainClaimColor;
     private final int adminClaimColor;
+    private final boolean perPlayerColors;
     private final boolean showTrustList;
     private final Map<String, AreaMarker> byId = new HashMap<>();
 
@@ -45,6 +46,20 @@ public final class DynmapMapRenderer implements MapRenderer {
             double fillOpacityOverride,
             int mainClaimColor,
             int adminClaimColor,
+            boolean showTrustList
+    ) {
+        this(layerName, strokeWeight, strokeOpacity, fillOpacityOverride,
+                mainClaimColor, adminClaimColor, false, showTrustList);
+    }
+
+    public DynmapMapRenderer(
+            String layerName,
+            int strokeWeight,
+            double strokeOpacity,
+            double fillOpacityOverride,
+            int mainClaimColor,
+            int adminClaimColor,
+            boolean perPlayerColors,
             boolean showTrustList
     ) {
         Plugin dynmap = Bukkit.getPluginManager().getPlugin("dynmap");
@@ -58,6 +73,7 @@ public final class DynmapMapRenderer implements MapRenderer {
         this.fillOpacityOverride = fillOpacityOverride;
         this.mainClaimColor = mainClaimColor;
         this.adminClaimColor = adminClaimColor;
+        this.perPlayerColors = perPlayerColors;
         this.showTrustList = showTrustList;
 
         MarkerAPI markerApi = api.getMarkerAPI();
@@ -100,7 +116,7 @@ public final class DynmapMapRenderer implements MapRenderer {
             if (claim.isShaped3D()) {
                 marker.setRangeY((double) claim.maxY() + 1.0, (double) claim.minY());
             }
-            int lineRgb = MapColors.resolveLineColor(claim, mainClaimColor, adminClaimColor);
+            int lineRgb = MapColors.resolveLineColor(claim, mainClaimColor, adminClaimColor, perPlayerColors);
             double fillAlpha = fillOpacityOverride > 0
                     ? fillOpacityOverride
                     : MapColors.deriveFillAlpha(lineRgb);

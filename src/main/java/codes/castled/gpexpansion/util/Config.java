@@ -273,6 +273,7 @@ public class Config {
 
         // Default claim marker colours for Dynmap/BlueMap. Per-claim values set through
         // /claim color (a named colour or #RRGGBB) override these.
+        DEFAULTS.put("integrations.colors.per-player", false);
         DEFAULTS.put("integrations.colors.main-claim", "#FFD700");
         DEFAULTS.put("integrations.colors.admin-claim", "#FF8C00");
 
@@ -1322,6 +1323,10 @@ public class Config {
             return config.getBoolean("integrations.vault.ignore-vault-missing", true);
         }
         return config.getBoolean("integrations.vault.ignore-missing", true);
+    }
+
+    public boolean isMapPerPlayerColorsEnabled() {
+        return config.getBoolean("integrations.colors.per-player", false);
     }
 
     public boolean isDynmapIntegrationEnabled() {

@@ -82,13 +82,11 @@ public class ClaimMapIntegrationsService {
                 return;
             }
             FileConfiguration cfg = plugin.getConfig();
-            int mainClaimColor = colorOr(cfg.getString("integrations.colors.main-claim", "#FFD700"), 0xFFD700);
-            int adminClaimColor = colorOr(cfg.getString("integrations.colors.admin-claim", "#FF8C00"), 0xFF8C00);
             boolean showTrustList = cfg.getBoolean("integrations.dynmap.show-trust-list", true)
                     || cfg.getBoolean("integrations.bluemap.show-trust-list", true);
             List<ClaimShape> shapes = new ArrayList<>();
             for (Object claim : bridge.getAllClaimsIncludingChildren()) {
-                ClaimShape shape = toShape(claim, mainClaimColor, adminClaimColor, showTrustList);
+                ClaimShape shape = toShape(claim, showTrustList);
                 if (shape != null) {
                     shapes.add(shape);
                 }
@@ -112,7 +110,7 @@ public class ClaimMapIntegrationsService {
         }
     }
 
-    private ClaimShape toShape(Object claim, int mainClaimColor, int adminClaimColor, boolean showTrustList) {
+    private ClaimShape toShape(Object claim, boolean showTrustList) {
         try {
             double[][] outline = bridge.getClaimOutline(claim);
             if (outline == null) {
@@ -183,6 +181,20 @@ public class ClaimMapIntegrationsService {
         return parsed != null ? parsed : fallback;
     }
 
+    private static boolean isPerPlayerColorsEnabled(FileConfiguration cfg) {
+        if (cfg.getBoolean("integrations.colors.per-player", false)) {
+            return true;
+        }
+        String main = cfg.getString("integrations.colors.main-claim", "");
+        if (main == null) {
+            return false;
+        }
+        String normalized = main.trim().toLowerCase(java.util.Locale.ROOT);
+        return normalized.equals("player-hash")
+                || normalized.equals("owner-hash")
+                || normalized.equals("per-player");
+    }
+
     private void hookRenderers() {
         if (dynmapRenderer == null
                 && plugin.getConfigManager().isDynmapIntegrationEnabled()
@@ -208,33 +220,37 @@ public class ClaimMapIntegrationsService {
 
     private MapRenderer createDynmapRenderer() throws Exception {
         Class<?> clazz = Class.forName(DYNAMAP_RENDERER);
-        String layerName = plugin.getConfig().getString("integrations.dynmap.layer-name", "GriefPrevention");
-        int strokeWeight = plugin.getConfig().getInt("integrations.dynmap.colors.stroke-weight", 3);
-        double strokeOpacity = plugin.getConfig().getDouble("integrations.dynmap.colors.stroke-opacity", 1.0);
-        double fillOpacity = plugin.getConfig().getDouble("integrations.dynmap.colors.fill-opacity", 0.0);
-        boolean showTrustList = plugin.getConfig().getBoolean("integrations.dynmap.show-trust-list", true);
-        int mainClaimColor = colorOr(plugin.getConfig().getString("integrations.colors.main-claim", "#FFD700"), 0xFFD700);
-        int adminClaimColor = colorOr(plugin.getConfig().getString("integrations.colors.admin-claim", "#FF8C00"), 0xFF8C00);
+        FileConfiguration cfg = plugin.getConfig();
+        String layerName = cfg.getString("integrations.dynmap.layer-name", "GriefPrevention");
+        int strokeWeight = cfg.getInt("integrations.dynmap.colors.stroke-weight", 3);
+        double strokeOpacity = cfg.getDouble("integrations.dynmap.colors.stroke-opacity", 1.0);
+        double fillOpacity = cfg.getDouble("integrations.dynmap.colors.fill-opacity", 0.0);
+        boolean showTrustList = cfg.getBoolean("integrations.dynmap.show-trust-list", true);
+        int mainClaimColor = colorOr(cfg.getString("integrations.colors.main-claim", "#FFD700"), 0xFFD700);
+        int adminClaimColor = colorOr(cfg.getString("integrations.colors.admin-claim", "#FF8C00"), 0xFF8C00);
+        boolean perPlayerColors = isPerPlayerColorsEnabled(cfg);
         return (MapRenderer) clazz.getConstructor(
-                        String.class, int.class, double.class, double.class, int.class, int.class, boolean.class)
-                .newInstance(layerName, strokeWeight, strokeOpacity, fillOpacity, mainClaimColor, adminClaimColor, showTrustList);
+                        String.class, int.class, double.class, double.class, int.class, int.class, boolean.class, boolean.class)
+                .newInstance(layerName, strokeWeight, strokeOpacity, fillOpacity, mainClaimColor, adminClaimColor, perPlayerColors, showTrustList);
     }
 
     private MapRenderer createBlueMapRenderer() throws Exception {
         Class<?> clazz = Class.forName(BLUEMAP_RENDERER);
-        String markerSetId = plugin.getConfig().getString("integrations.bluemap.marker-set-id", "gpexpansion.claims");
-        String layerName = plugin.getConfig().getString("integrations.bluemap.layer-name", "GriefPrevention");
-        int lineWidth = plugin.getConfig().getInt("integrations.bluemap.colors.line-width", 2);
-        double fillOpacity = plugin.getConfig().getDouble("integrations.bluemap.colors.fill-opacity", 0.0);
-        boolean flatViewOnly = plugin.getConfig().getBoolean("integrations.bluemap.flat-view-only", true);
-        boolean showTrustList = plugin.getConfig().getBoolean("integrations.bluemap.show-trust-list", true);
-        int renderHeight = plugin.getConfig().getInt("integrations.bluemap.render-height", 63);
-        boolean depthTest = plugin.getConfig().getBoolean("integrations.bluemap.depth-test", false);
-        int mainClaimColor = colorOr(plugin.getConfig().getString("integrations.colors.main-claim", "#FFD700"), 0xFFD700);
-        int adminClaimColor = colorOr(plugin.getConfig().getString("integrations.colors.admin-claim", "#FF8C00"), 0xFF8C00);
+        FileConfiguration cfg = plugin.getConfig();
+        String markerSetId = cfg.getString("integrations.bluemap.marker-set-id", "gpexpansion.claims");
+        String layerName = cfg.getString("integrations.bluemap.layer-name", "GriefPrevention");
+        int lineWidth = cfg.getInt("integrations.bluemap.colors.line-width", 2);
+        double fillOpacity = cfg.getDouble("integrations.bluemap.colors.fill-opacity", 0.0);
+        boolean flatViewOnly = cfg.getBoolean("integrations.bluemap.flat-view-only", true);
+        boolean showTrustList = cfg.getBoolean("integrations.bluemap.show-trust-list", true);
+        int renderHeight = cfg.getInt("integrations.bluemap.render-height", 63);
+        boolean depthTest = cfg.getBoolean("integrations.bluemap.depth-test", false);
+        int mainClaimColor = colorOr(cfg.getString("integrations.colors.main-claim", "#FFD700"), 0xFFD700);
+        int adminClaimColor = colorOr(cfg.getString("integrations.colors.admin-claim", "#FF8C00"), 0xFF8C00);
+        boolean perPlayerColors = isPerPlayerColorsEnabled(cfg);
         return (MapRenderer) clazz.getConstructor(
-                        String.class, String.class, int.class, double.class, int.class, int.class, boolean.class, boolean.class, int.class, boolean.class)
-                .newInstance(markerSetId, layerName, lineWidth, fillOpacity, mainClaimColor, adminClaimColor, flatViewOnly, showTrustList, renderHeight, depthTest);
+                        String.class, String.class, int.class, double.class, int.class, int.class, boolean.class, boolean.class, boolean.class, int.class, boolean.class)
+                .newInstance(markerSetId, layerName, lineWidth, fillOpacity, mainClaimColor, adminClaimColor, perPlayerColors, flatViewOnly, showTrustList, renderHeight, depthTest);
     }
 
     private static boolean isEnabled(String pluginName) {

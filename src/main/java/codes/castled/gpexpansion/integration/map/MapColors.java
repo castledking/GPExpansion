@@ -49,8 +49,77 @@ public final class MapColors {
      * admin or main claim default.
      */
     public static int resolveLineColor(ClaimShape claim, int mainClaimColor, int adminClaimColor) {
-        if (claim.markerColor() > 0) return claim.markerColor();
-        return claim.isAdmin() ? adminClaimColor : mainClaimColor;
+        return resolveLineColor(claim, mainClaimColor, adminClaimColor, false);
+    }
+
+    /**
+     * The line colour for a claim: its stored {@code /claim color} if set, otherwise
+     * {@code adminClaimColor} for admin claims, or—when {@code perPlayerColors} is enabled—a
+     * deterministic colour hashed from {@link ClaimShape#ownerName()}, falling back to
+     * {@code mainClaimColor}.
+     */
+    public static int resolveLineColor(
+            ClaimShape claim,
+            int mainClaimColor,
+            int adminClaimColor,
+            boolean perPlayerColors
+    ) {
+        if (claim.markerColor() >= 0) return claim.markerColor();
+        if (claim.isAdmin()) return adminClaimColor;
+        if (perPlayerColors) return ownerColor(claim.ownerName(), mainClaimColor);
+        return mainClaimColor;
+    }
+
+    /**
+     * Derive a deterministic, vivid {@code 0xRRGGBB} colour from a claim owner's name.
+     * Uses FNV-1a + SplitMix64 mixing so similar usernames spread cleanly around the hue
+     * wheel instead of clustering, and clamps saturation/brightness to a readable band.
+     */
+    public static int ownerColor(String ownerName, int fallbackColor) {
+        if (ownerName == null) return fallbackColor;
+        String normalized = ownerName.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty() || "unknown".equals(normalized)) {
+            return fallbackColor;
+        }
+        long h = 0xcbf29ce484222325L;
+        for (int i = 0; i < normalized.length(); i++) {
+            h ^= normalized.charAt(i);
+            h *= 0x100000001b3L;
+        }
+        h ^= (h >>> 30);
+        h *= 0xbf58476d1ce4e5b9L;
+        h ^= (h >>> 27);
+        h *= 0x94d049bb133111ebL;
+        h ^= (h >>> 31);
+
+        float hue = ((h >>> 40) & 0xFFFFFFL) / (float) (1 << 24);
+        float sat = 0.65f + (((h >>> 16) & 0xFFL) / 255.0f) * 0.25f; // [0.65, 0.90]
+        float val = 0.75f + ((h & 0xFFL) / 255.0f) * 0.20f;         // [0.75, 0.95]
+        return hsvToRgb(hue, sat, val);
+    }
+
+    private static int hsvToRgb(float h, float s, float v) {
+        float hh = (h - (float) Math.floor(h)) * 6.0f;
+        int sector = (int) Math.floor(hh);
+        float f = hh - sector;
+        float p = v * (1.0f - s);
+        float q = v * (1.0f - s * f);
+        float t = v * (1.0f - s * (1.0f - f));
+        float r;
+        float g;
+        float b;
+        switch (sector % 6) {
+            case 0 -> { r = v; g = t; b = p; }
+            case 1 -> { r = q; g = v; b = p; }
+            case 2 -> { r = p; g = v; b = t; }
+            case 3 -> { r = p; g = q; b = v; }
+            case 4 -> { r = t; g = p; b = v; }
+            default -> { r = v; g = p; b = q; }
+        }
+        int ri = Math.min(255, Math.max(0, Math.round(r * 255.0f)));
+        int gi = Math.min(255, Math.max(0, Math.round(g * 255.0f)));
+        int bi = Math.min(255, Math.max(0, Math.round(b * 255.0f)));
+        return (ri << 16) | (gi << 8) | bi;
     }
 
     /**

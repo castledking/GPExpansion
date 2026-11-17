@@ -50,6 +50,7 @@ public final class BlueMapMapRenderer implements MapRenderer {
     private final double fillOpacityOverride;
     private final int mainClaimColor;
     private final int adminClaimColor;
+    private final boolean perPlayerColors;
     private final boolean flatViewOnly;
     private final boolean showTrustList;
     private final int renderHeight;
@@ -67,12 +68,30 @@ public final class BlueMapMapRenderer implements MapRenderer {
             int renderHeight,
             boolean depthTestEnabled
     ) {
+        this(markerSetId, layerName, lineWidth, fillOpacityOverride, mainClaimColor,
+                adminClaimColor, false, flatViewOnly, showTrustList, renderHeight, depthTestEnabled);
+    }
+
+    public BlueMapMapRenderer(
+            String markerSetId,
+            String layerName,
+            int lineWidth,
+            double fillOpacityOverride,
+            int mainClaimColor,
+            int adminClaimColor,
+            boolean perPlayerColors,
+            boolean flatViewOnly,
+            boolean showTrustList,
+            int renderHeight,
+            boolean depthTestEnabled
+    ) {
         this.markerSetId = markerSetId;
         this.layerName = layerName;
         this.lineWidth = lineWidth;
         this.fillOpacityOverride = fillOpacityOverride;
         this.mainClaimColor = mainClaimColor;
         this.adminClaimColor = adminClaimColor;
+        this.perPlayerColors = perPlayerColors;
         this.flatViewOnly = flatViewOnly;
         this.showTrustList = showTrustList;
         this.renderHeight = renderHeight;
@@ -98,7 +117,7 @@ public final class BlueMapMapRenderer implements MapRenderer {
                 if (worldNames == null || !worldNames.contains(claim.worldName())) {
                     continue;
                 }
-                int lineRgb = MapColors.resolveLineColor(claim, mainClaimColor, adminClaimColor);
+                int lineRgb = MapColors.resolveLineColor(claim, mainClaimColor, adminClaimColor, perPlayerColors);
                 Color lineColor = color(lineRgb, 1.0f);
                 float fillAlpha = fillOpacityOverride > 0
                         ? (float) fillOpacityOverride
