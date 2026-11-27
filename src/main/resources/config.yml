@@ -197,6 +197,10 @@ signs:
     # Unrelated marker headers (for example [bank]) are never affected.
     # Set false if another plugin should own one of the same configured headers.
     prevent-bluemap-markers: true
+    # Automatically drop GPExpansion's short [buy] and/or [sell] input headers when
+    # Essentials or Allium enables "buy" and/or "sell" under enabledSigns in its
+    # config.yml, preventing sign collisions. [sell claim] and [buy claim] remain active.
+    yield-to-enabled-signs: true
 
   rent:
     enabled: true

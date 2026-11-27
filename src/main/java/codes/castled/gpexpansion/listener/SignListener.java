@@ -110,10 +110,18 @@ public class SignListener implements Listener {
         Set<String> accepted = new HashSet<>();
         accepted.addAll(fallbacks);
         accepted.addAll(plugin.getConfig().getStringList("signs." + type + "." + formatGroup + ".inputs"));
+        Set<String> excluded = "sell".equals(type)
+            ? codes.castled.gpexpansion.sign.ExternalSignConflicts.conflictedHeaders(plugin)
+            : Set.of();
         String normalizedHeader = normalizeHeader(header);
+        if (!excluded.isEmpty() && excluded.contains(normalizedHeader)) {
+            return false;
+        }
         for (String candidate : accepted) {
             if (candidate == null) continue;
-            if (normalizedHeader.equals(normalizeHeader(candidate))) {
+            String normalizedCandidate = normalizeHeader(candidate);
+            if (!excluded.isEmpty() && excluded.contains(normalizedCandidate)) continue;
+            if (normalizedHeader.equals(normalizedCandidate)) {
                 return true;
             }
         }
@@ -131,7 +139,7 @@ public class SignListener implements Listener {
             List.of("[Rent]"));
     }
 
-    private boolean matchesSellInputHeader(String header) {
+    boolean matchesSellInputHeader(String header) {
         return matchesAnyHeader(header, "sell",
             List.of("[Buy Claim]", "[Buy]", "[Sell Claim]", "[Sell]"),
             List.of("[Buy]", "[Sell]"));
@@ -149,7 +157,7 @@ public class SignListener implements Listener {
             List.of("[Global]"));
     }
 
-    private boolean isEnabledManagedInputHeader(String header) {
+    boolean isEnabledManagedInputHeader(String header) {
         return (matchesRentInputHeader(header) && isSignTypeEnabled("rent"))
             || (matchesSellInputHeader(header) && isSignTypeEnabled("sell"))
             || (matchesMailboxInputHeader(header) && isSignTypeEnabled("mailbox"))
@@ -208,14 +216,14 @@ public class SignListener implements Listener {
 
     private String getOutputHeader(String type, boolean hanging, String fallback) {
         String path = hanging
-            ? "signs." + type + "hanging-sign-formats.outputs.header"
+            ? "signs." + type + ".hanging-sign-formats.outputs.header"
             : "signs." + type + ".sign-formats.outputs.header";
         return plugin.getConfig().getString(path, fallback);
     }
 
     private boolean getOutputDisplayClaimId(String type, boolean hanging, boolean fallback) {
         String path = hanging
-            ? "signs." + type + "hanging-sign-formats.outputs.display-claim-id"
+            ? "signs." + type + ".hanging-sign-formats.outputs.display-claim-id"
             : "signs." + type + ".sign-formats.outputs.display-claim-id";
         return plugin.getConfig().getBoolean(path, fallback);
     }
@@ -1166,13 +1174,8 @@ public class SignListener implements Listener {
             return;
         }
 
-        String signType = rentSign ? "rent" : (sellSign ? "sell" : (mailboxSign ? "mailbox" : "global"));
-        if (!isSignTypeEnabled(signType)) {
-            plugin.getMessages().send(player, "sign-creation.type-disabled", "{signtype}", signType);
-            return;
-        }
-
-        // Invalid signs (missing economy, wrong format) never got proper PDC - don't intercept, let native edit
+        // Invalid signs (missing economy, wrong format) or signs owned by other plugins
+        // never got proper PDC - don't intercept, let native/other plugin handlers run.
         org.bukkit.block.Sign currentSign = (org.bukkit.block.Sign) signLocation.getBlock().getState();
         PersistentDataContainer pdc = currentSign.getPersistentDataContainer();
         String pdcKind = pdc.get(keyKind(), PersistentDataType.STRING);
@@ -1187,6 +1190,12 @@ public class SignListener implements Listener {
             sellSign = false;
             mailboxSign = false;
             globalClaimSign = true;
+        }
+
+        String signType = rentSign ? "rent" : (sellSign ? "sell" : (mailboxSign ? "mailbox" : "global"));
+        if (!isSignTypeEnabled(signType)) {
+            plugin.getMessages().send(player, "sign-creation.type-disabled", "{signtype}", signType);
+            return;
         }
         
         // Check if snapshot is restoring for this claim (rent signs only)

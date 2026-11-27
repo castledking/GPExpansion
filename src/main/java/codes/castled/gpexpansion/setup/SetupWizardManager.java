@@ -117,8 +117,12 @@ public class SetupWizardManager {
 
         private String configuredInput(GPExpansionPlugin plugin, String type, boolean hanging, String fallback) {
             if (plugin == null) return fallback;
+            if ("sell".equals(type)) {
+                return codes.castled.gpexpansion.sign.ExternalSignConflicts
+                    .preferredSellInputHeader(plugin, hanging, fallback);
+            }
             String path = hanging
-                ? "signs." + type + "hanging-sign-formats.inputs"
+                ? "signs." + type + ".hanging-sign-formats.inputs"
                 : "signs." + type + ".sign-formats.inputs";
             java.util.List<String> inputs = plugin.getConfig().getStringList(path);
             for (String input : inputs) {

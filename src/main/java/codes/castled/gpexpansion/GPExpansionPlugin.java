@@ -289,7 +289,10 @@ public final class GPExpansionPlugin extends JavaPlugin {
         }
 
         displayEnabledHeader();
-        
+
+        codes.castled.gpexpansion.scheduler.SchedulerAdapter.runLaterGlobal(
+            this, () -> codes.castled.gpexpansion.sign.ExternalSignConflicts.logActiveConflicts(this), 1L);
+
         debug(() -> "GPExpansion enabled");
     }
 
@@ -975,6 +978,7 @@ public final class GPExpansionPlugin extends JavaPlugin {
             claimMapIntegrationsService = new codes.castled.gpexpansion.integration.map.ClaimMapIntegrationsService(this);
             claimMapIntegrationsService.start();
         }
+        codes.castled.gpexpansion.sign.ExternalSignConflicts.logActiveConflicts(this);
     }
 
     public codes.castled.gpexpansion.permission.PermissionManager getPermissionManager() {

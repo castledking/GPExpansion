@@ -358,7 +358,9 @@ public class ClaimMarketGUI extends BaseGUI {
         lore.add("&7to rent or buy across the server.");
         lore.add("");
         lore.add("&6How to list your claim or mailbox:");
-        lore.add("&7• Place a &f[Rent]&7, &f[Sell]&7, or &f[Mailbox]&7 sign");
+        String sellHeader = codes.castled.gpexpansion.sign.ExternalSignConflicts
+                .preferredSellInputHeader(plugin, false, "[Sell]");
+        lore.add("&7• Place a &f[Rent]&7, &f" + sellHeader + "&7, or &f[Mailbox]&7 sign");
         lore.add("&7  or use Setup Wizards in &f/claim options&7.");
         lore.add("&7• &fShift-click&7 your listing (or click");
         lore.add("&7  &fManage My Listings&7) to edit its price,");

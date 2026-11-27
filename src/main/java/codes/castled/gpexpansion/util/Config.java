@@ -57,6 +57,7 @@ public class Config {
 
         // Sign integration compatibility
         DEFAULTS.put("signs.compatibility.prevent-bluemap-markers", true);
+        DEFAULTS.put("signs.compatibility.yield-to-enabled-signs", true);
         
         // Permission tracking
         DEFAULTS.put("permission-tracking.enabled", true);
@@ -741,6 +742,10 @@ public class Config {
 
     public boolean shouldPreventBlueMapMarkersForManagedSigns() {
         return config.getBoolean("signs.compatibility.prevent-bluemap-markers", true);
+    }
+
+    public boolean shouldYieldToExternalEnabledSigns() {
+        return config.getBoolean("signs.compatibility.yield-to-enabled-signs", true);
     }
 
     public boolean areSelfMailboxesAllowed() {
