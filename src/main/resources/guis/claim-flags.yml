@@ -324,6 +324,10 @@ flags:
     material: BONE
     description: "Prevents damage to pets in the claim."
   
+  nopotioneffects:
+    material: POTION
+    description: "Blocks all or specific potion effects in the claim."
+  
   noplayercroptrampling:
     material: WHEAT
     description: "Prevents players from trampling crops."
@@ -371,6 +375,10 @@ flags:
   permissionfly:
     material: FEATHER
     description: "Allows players with specific permission to fly."
+  
+  playergamemode:
+    material: COMPASS
+    description: "Sets player gamemode in the claim (survival/creative/adventure/spectator)."
   
   playertime:
     material: CLOCK

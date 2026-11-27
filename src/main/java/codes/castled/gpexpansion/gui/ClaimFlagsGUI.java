@@ -18,11 +18,13 @@ import java.util.*;
 public class ClaimFlagsGUI extends BaseGUI {
 
     /** GPFlags permission to toggle flags; still required for actual toggling */
-    private static final String GPFLAGS_SET_FLAG = "gpflags.command.setclaimflag";
+    static final String GPFLAGS_SET_FLAG = "gpflags.command.setclaimflag";
     /** Base permission to open claim flags GUI */
     private static final String BASE_PERMISSION = "griefprevention.claim.gui.flags";
     /** Open flags GUI for other players' claims */
-    private static final String OTHER_PERMISSION = "griefprevention.claim.gui.flags.other";
+    static final String OTHER_PERMISSION = "griefprevention.claim.gui.flags.other";
+    /** GPFlags flag requiring a gamemode argument (handled via sub-menu) */
+    static final String PLAYER_GAMEMODE_FLAG = "PlayerGamemode";
 
     private final Object claim;
     private final String claimId;
@@ -39,12 +41,16 @@ public class ClaimFlagsGUI extends BaseGUI {
     private int infoSlot = 4;
 
     public ClaimFlagsGUI(GUIManager manager, Player player, Object claim, String claimId) {
+        this(manager, player, claim, claimId, 0);
+    }
+
+    public ClaimFlagsGUI(GUIManager manager, Player player, Object claim, String claimId, int initialPage) {
         super(manager, player, "claim-flags");
         this.claim = claim;
         this.claimId = claimId;
         
         GPBridge gp = new GPBridge();
-        this.isOwner = gp.isOwner(claim, player.getUniqueId()) || player.hasPermission("griefprevention.admin");
+        this.isOwner = canModifyClaim(player, claim, gp);
         
         // Load slot positions from config
         if (config != null) {
@@ -55,6 +61,8 @@ public class ClaimFlagsGUI extends BaseGUI {
         }
         
         loadDisplayFlags();
+        int totalPages = Math.max(1, (int) Math.ceil((double) displayFlags.size() / FLAGS_PER_PAGE));
+        this.currentPage = Math.max(0, Math.min(initialPage, totalPages - 1));
     }
 
     private void loadDisplayFlags() {
@@ -183,13 +191,14 @@ public class ClaimFlagsGUI extends BaseGUI {
             }
         }
         
-        if (flag.parameters != null && !flag.parameters.isEmpty()) {
+        String paramLine = GPFlagSubmenuRegistry.formatParameterLine(flag.name, flag.enabled, flag.parameters);
+        if (paramLine != null) {
             lore.add("");
-            lore.add("&7Parameters: &f" + flag.parameters);
+            lore.add(paramLine);
         }
         
         lore.add("");
-        lore.add("&eClick to toggle");
+        lore.add(GPFlagSubmenuRegistry.actionHint(flag.name));
         
         return createItem(material, displayName, lore);
     }
@@ -240,6 +249,7 @@ public class ClaimFlagsGUI extends BaseGUI {
         if (lower.contains("trust") || lower.contains("buy")) return Material.GOLD_INGOT;
         if (lower.contains("villager") || lower.contains("trading")) return Material.EMERALD;
         if (lower.contains("pet")) return Material.BONE;
+        if (lower.contains("potion")) return Material.POTION;
         if (lower.contains("arrow")) return Material.ARROW;
         if (lower.contains("ender") || lower.contains("pearl")) return Material.ENDER_PEARL;
         if (lower.contains("chorus")) return Material.CHORUS_FRUIT;
@@ -248,6 +258,7 @@ public class ClaimFlagsGUI extends BaseGUI {
         if (lower.contains("container") || lower.contains("view")) return Material.BARREL;
         if (lower.contains("notify")) return Material.BELL;
         if (lower.contains("biome")) return Material.GRASS_BLOCK;
+        if (lower.contains("gamemode")) return Material.COMPASS;
         if (lower.contains("time")) return Material.CLOCK;
         if (lower.contains("elytra")) return Material.ELYTRA;
         if (lower.contains("coral")) return Material.BRAIN_CORAL;
@@ -334,21 +345,17 @@ public class ClaimFlagsGUI extends BaseGUI {
     }
 
     private void toggleFlag(FlagDisplayInfo flag) {
-        // Check GPFlags permission for toggling
-        if (!player.hasPermission(GPFLAGS_SET_FLAG)) {
-            plugin.getMessages().send(player, "flags.no-permission");
+        if (!checkModifyPermission(plugin, player, claim, flag.name, isOwner)) {
             return;
         }
-        
-        if (!player.hasPermission("gpflags.flag." + flag.name.toLowerCase())) {
-            plugin.getMessages().send(player, "flags.no-permission-flag", "{flag}", flag.name);
-            return;
-        }
-        
-        // Check access: must be owner or have .other to modify other players' claims
-        if (!isOwner && !player.hasPermission(OTHER_PERMISSION)) {
-            plugin.getMessages().send(player, "flags.not-owner");
-            return;
+
+        // Parameterized GPFlags open a dedicated sub-menu instead of attempting a bare toggle.
+        if (GPFlagSubmenuRegistry.hasSubmenu(flag.name)) {
+            BaseGUI submenu = GPFlagSubmenuRegistry.createSubmenu(manager, player, claim, claimId, flag.name, currentPage);
+            if (submenu != null) {
+                manager.openGUI(player, submenu);
+                return;
+            }
         }
         
         // Toggle based on the effective (enforced) state and always write an explicit
@@ -367,6 +374,39 @@ public class ClaimFlagsGUI extends BaseGUI {
         } else {
             plugin.getMessages().send(player, "flags.toggle-failed", "{flag}", flag.name);
         }
+    }
+
+    static boolean canModifyClaim(Player player, Object claim, GPBridge gp) {
+        if (player.hasPermission("griefprevention.admin") || gp.isOwner(claim, player.getUniqueId())) {
+            return true;
+        }
+        return gp.getTrustLevels(claim, player.getUniqueId()).contains(GPBridge.TrustLevel.MANAGE);
+    }
+
+    static boolean checkModifyPermission(codes.castled.gpexpansion.GPExpansionPlugin plugin, Player player, Object claim, String flagName) {
+        return checkModifyPermission(plugin, player, claim, flagName, canModifyClaim(player, claim, new GPBridge()));
+    }
+
+    private static boolean checkModifyPermission(
+            codes.castled.gpexpansion.GPExpansionPlugin plugin,
+            Player player,
+            Object claim,
+            String flagName,
+            boolean canModify
+    ) {
+        if (!player.hasPermission(GPFLAGS_SET_FLAG)) {
+            plugin.getMessages().send(player, "flags.no-permission");
+            return false;
+        }
+        if (!player.hasPermission("gpflags.flag." + flagName.toLowerCase())) {
+            plugin.getMessages().send(player, "flags.no-permission-flag", "{flag}", flagName);
+            return false;
+        }
+        if (!canModify && !player.hasPermission(OTHER_PERMISSION)) {
+            plugin.getMessages().send(player, "flags.not-owner");
+            return false;
+        }
+        return true;
     }
 
     private void refresh() {

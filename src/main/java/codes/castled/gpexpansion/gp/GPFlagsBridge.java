@@ -42,6 +42,7 @@ public class GPFlagsBridge {
     private static Method flagGetSetMethod;
     private static Method flagGetDefinitionMethod;
     private static Method flagGetParametersMethod;
+    private static Method flagGetFriendlyParametersMethod;
     
     // FlagDefinition methods
     private static Method defGetNameMethod;
@@ -89,6 +90,11 @@ public class GPFlagsBridge {
             flagGetSetMethod = flagClass.getMethod("getSet");
             flagGetDefinitionMethod = flagClass.getMethod("getFlagDefinition");
             flagGetParametersMethod = flagClass.getMethod("getParameters");
+            try {
+                flagGetFriendlyParametersMethod = flagClass.getMethod("getFriendlyParameters");
+            } catch (NoSuchMethodException ignored) {
+                flagGetFriendlyParametersMethod = null;
+            }
             
             // Cache FlagDefinition methods
             defGetNameMethod = flagDefClass.getMethod("getName");
@@ -165,7 +171,7 @@ public class GPFlagsBridge {
                 
                 if (name.equalsIgnoreCase(flagName)) {
                     boolean isSet = (Boolean) flagGetSetMethod.invoke(flag);
-                    String params = (String) flagGetParametersMethod.invoke(flag);
+                    String params = readFlagParameters(flag);
                     return Optional.of(new ClaimFlagState(name, isSet, params));
                 }
             }
@@ -193,7 +199,7 @@ public class GPFlagsBridge {
                 Object def = flagGetDefinitionMethod.invoke(flag);
                 String name = (String) defGetNameMethod.invoke(def);
                 boolean isSet = (Boolean) flagGetSetMethod.invoke(flag);
-                String params = (String) flagGetParametersMethod.invoke(flag);
+                String params = readFlagParameters(flag);
                 result.put(name.toLowerCase(), new ClaimFlagState(name, isSet, params));
             }
         } catch (Exception e) {
@@ -230,7 +236,7 @@ public class GPFlagsBridge {
                 return Optional.of(new ClaimFlagState(flagName, false, "", isExplicitOnClaim(claim, flagName)));
             }
 
-            String params = (String) flagGetParametersMethod.invoke(flag);
+            String params = readFlagParameters(flag);
             return Optional.of(new ClaimFlagState(flagName, true, params, isExplicitOnClaim(claim, flagName)));
         } catch (Exception e) {
             Bukkit.getLogger().warning("[GPExpansion] Error getting effective flag state: " + e.getMessage());
@@ -263,7 +269,7 @@ public class GPFlagsBridge {
                 Object flag = effectiveMethod.invoke(flagManager, info.getName(), claim, world);
                 boolean explicit = explicitOnClaim.contains(lower);
                 if (flag != null) {
-                    String params = (String) flagGetParametersMethod.invoke(flag);
+                    String params = readFlagParameters(flag);
                     result.put(lower, new ClaimFlagState(info.getName(), true, params, explicit));
                 } else {
                     result.put(lower, new ClaimFlagState(info.getName(), false, "", explicit));
@@ -305,13 +311,22 @@ public class GPFlagsBridge {
      * {@link #unsetFlag}'s delete-instead-of-override behavior (see {@link #toggleEffectiveFlag}).
      */
     public static boolean setFlagState(String claimId, String flagName, boolean active, String... params) {
+        return setFlagState(claimId, flagName, active, (CommandSender) null, params);
+    }
+
+    /**
+     * Directly write an explicit true/false override for a flag on a claim, forwarding
+     * {@code sender} to GPFlags's parameter validation.
+     */
+    public static boolean setFlagState(String claimId, String flagName, boolean active, CommandSender sender, String... params) {
         if (!isAvailable() || claimId == null || flagName == null) return false;
 
         try {
             Object def = getFlagDefinitionByNameMethod.invoke(flagManager, flagName);
             if (def == null) return false;
 
-            Object result = setFlagMethod.invoke(flagManager, claimId, def, active, null, params);
+            String[] safeParams = params != null ? params : new String[0];
+            Object result = setFlagMethod.invoke(flagManager, claimId, def, active, sender, safeParams);
 
             Method isSuccessMethod = result.getClass().getMethod("isSuccess");
             boolean success = (Boolean) isSuccessMethod.invoke(result);
@@ -325,6 +340,20 @@ public class GPFlagsBridge {
             Bukkit.getLogger().warning("[GPExpansion] Error setting flag state: " + e.getMessage());
             return false;
         }
+    }
+
+    private static String readFlagParameters(Object flag) throws Exception {
+        if (flagGetFriendlyParametersMethod != null) {
+            try {
+                Object friendly = flagGetFriendlyParametersMethod.invoke(flag);
+                if (friendly instanceof String s) {
+                    return s;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        Object raw = flagGetParametersMethod.invoke(flag);
+        return raw instanceof String s ? s : "";
     }
 
     private static Method resolveEffectiveFlagMethod(Object claim) throws NoSuchMethodException {

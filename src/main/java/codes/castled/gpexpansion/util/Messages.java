@@ -390,6 +390,8 @@ public class Messages {
         DEFAULTS.put("flags.not-owner", "&cYou can only modify flags on your own claims.");
         DEFAULTS.put("flags.toggled", "&aFlag {flag} {state}.");
         DEFAULTS.put("flags.toggle-failed", "&cFailed to toggle flag {flag}.");
+        DEFAULTS.put("flags.parameter-prompt", "&eEnter {hint} for &6{flag}&e (or type &fcancel&e):");
+        DEFAULTS.put("flags.parameter-failed", "&cCould not set &6{flag}&c: {reason}");
         
         // Mailbox
         DEFAULTS.put("mailbox.invalid-sign", "&cInvalid mailbox sign.");

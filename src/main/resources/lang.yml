@@ -311,6 +311,8 @@ flags:
   not-owner: "&cYou can only modify flags on your own claims."
   toggled: "&aFlag {flag} {state}."
   toggle-failed: "&cFailed to toggle flag {flag}."
+  parameter-prompt: "&eEnter {hint} for &6{flag}&e (or type &fcancel&e):"
+  parameter-failed: "&cCould not set &6{flag}&c: {reason}"
   state-allowed: "&aallowed"
   state-denied: "&cdenied"
   denied: "&c{flag} is disabled in this claim."
